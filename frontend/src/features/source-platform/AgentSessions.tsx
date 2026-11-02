@@ -14,6 +14,7 @@ import {
   summaryText,
   transcriptLabel,
 } from './agentModel';
+import { PageToolbar } from './PageToolbar';
 import { usePeople } from './people';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, sourceApi, when } from './sourceApi';
@@ -147,26 +148,24 @@ export function AgentSessions({
     );
   return (
     <section aria-labelledby="sessions-heading">
-      <div className="agent-head">
-        <div>
-          <h2 id="sessions-heading">Sessions</h2>
-          {rows.length > 0 && (
-            <p className="agent-subtitle">
-              Which session made each commit: the tool, the model and a summary.
-            </p>
-          )}
-        </div>
-        <div className="agent-filters">
-          <Filter label="CLI" value={filters.cli} options={data.clis} onChange={set('cli')} />
-          <Filter
-            label="Model"
-            value={filters.model}
-            options={data.models}
-            onChange={set('model')}
-          />
-          <Filter label="Branch" value={filters.ref} options={branches} onChange={set('ref')} />
-        </div>
-      </div>
+      <PageToolbar
+        title="Sessions"
+        headingId="sessions-heading"
+        search={{ repo, navigate }}
+        filtered={[filters.cli, filters.model, filters.ref].filter(Boolean).length}
+        filters={
+          <>
+            <Filter label="CLI" value={filters.cli} options={data.clis} onChange={set('cli')} />
+            <Filter
+              label="Model"
+              value={filters.model}
+              options={data.models}
+              onChange={set('model')}
+            />
+            <Filter label="Branch" value={filters.ref} options={branches} onChange={set('ref')} />
+          </>
+        }
+      />
       {data.branch_scan_truncated && (
         <p className="source-note">
           Only the newest 2,000 commits of {filters.ref} were searched for sessions.

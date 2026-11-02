@@ -16,6 +16,7 @@ import {
   reasonLabel,
   whoLabel,
 } from './insightsModel';
+import { PageToolbar } from './PageToolbar';
 import { Person } from './Person';
 import { Failure, Loading } from './SourceStatus';
 import { useSource } from './useSource';
@@ -124,10 +125,11 @@ export function RepoInsights({ repo }: { repo: string }) {
   const { data, reload } = insights;
   return (
     <section aria-labelledby="insights-heading" className="insights" aria-busy={insights.loading}>
-      <div className="source-changes-head">
-        <h2 id="insights-heading">Insights</h2>
-        <RangePicker ranges={INSIGHT_RANGES} range={range} onChange={setRange} />
-      </div>
+      <PageToolbar
+        title="Insights"
+        headingId="insights-heading"
+        extra={<RangePicker ranges={INSIGHT_RANGES} range={range} onChange={setRange} />}
+      />
       {!data && !insights.error && <Loading what="insights" />}
       {insights.error && <Failure error={insights.error} what="insights" onRetry={reload} />}
       {data && insightsEmpty(data) && (

@@ -197,9 +197,7 @@ describe('agent tool tabs', () => {
     expect(html).toContain('aria-label="Agent tools"');
     expect(html).toMatch(/aria-current="page" href="[^"]+\/pins"/);
     // The managed agents reviewing the repository are a linked page, not a tab.
-    expect(html).toContain(
-      `href="/source/${repo}/agents/reviewers">Managed agents reviewing this repository<`,
-    );
+    expect(html).toContain(`href="/source/${repo}/agents/reviewers">Managed agents<`);
   });
 
   it('leave Sessions and Memories to their own sidebar pages, with no tab row', () => {

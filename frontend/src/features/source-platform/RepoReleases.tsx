@@ -2,6 +2,8 @@
 // for the owner a form that publishes one for an existing tag.
 import { type FormEvent, useState } from 'react';
 import { EmptyState } from '../../components/EmptyState';
+import type { Navigate } from '../shell/useRoute';
+import { PageToolbar } from './PageToolbar';
 import { usePeople } from './people';
 import { publishRelease, type Release, releasesPath, tagNames } from './releaseModel';
 import { Failure, Loading } from './SourceStatus';
@@ -88,7 +90,6 @@ export function NewReleaseForm({
     return (
       <button
         type="button"
-        className="quiet"
         onClick={() => {
           setTag((t) => t || (tags.at(-1) ?? ''));
           setTitle((t) => t || (tags.at(-1) ?? ''));
@@ -149,27 +150,33 @@ export function RepoReleases({
   owner,
   onOpen,
   hrefOf = () => '#',
+  navigate,
 }: {
   repo: string;
   /** The owner (or an admin) publishes releases. */
   owner: boolean;
   onOpen: (tag: string) => void;
   hrefOf?: (tag: string) => string;
+  navigate: Navigate;
 }) {
   const releases = useSource<{ releases: Release[] }>(releasesPath(repo));
   const refs = useSource<{ refs: Record<string, string> }>(owner ? `/repos/${repo}/refs` : null);
   return (
     <section aria-labelledby="releases-heading">
-      <div className="source-changes-head">
-        <h2 id="releases-heading">Releases</h2>
-        {owner && (
-          <NewReleaseForm
-            repo={repo}
-            tags={tagNames(refs.data?.refs)}
-            onCreated={(r) => onOpen(r.tag)}
-          />
-        )}
-      </div>
+      <PageToolbar
+        title="Releases"
+        headingId="releases-heading"
+        search={{ repo, navigate }}
+        primary={
+          owner && (
+            <NewReleaseForm
+              repo={repo}
+              tags={tagNames(refs.data?.refs)}
+              onCreated={(r) => onOpen(r.tag)}
+            />
+          )
+        }
+      />
       <ReleaseTable releases={releases} hrefOf={hrefOf} onOpen={onOpen} />
     </section>
   );

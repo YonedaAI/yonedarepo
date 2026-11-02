@@ -144,6 +144,7 @@ export async function forkPages(page, { account, repo: { id, name }, shot, clean
   await page.reload();
   await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Commits' }).click();
   const history = page.getByRole('region', { name: 'History', exact: true });
+  await history.getByLabel('Filter').click();
   await history.getByLabel('Branch').selectOption('kit-fork').catch((e) => {
     throw new Error(`the History Branch picker does not offer kit-fork: ${e.message.split('\n')[0]}`);
   });
