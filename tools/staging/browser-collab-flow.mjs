@@ -224,7 +224,7 @@ export async function orgPages(page, { account, member, shot, cleanup }, m) {
     const done = await account.raw('DELETE', `/api/v1/repos/${id}?confirm=${encodeURIComponent(name)}`);
     assert.ok(done.ok, `Delete org repository: ${done.status} ${done.body?.error?.code ?? ''}`);
   });
-  await atRepo(page, account, id);
+  await atRepo(page, account, id, '/files');
 
   // Repository Members: grant the team.
   await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Settings' }).click();

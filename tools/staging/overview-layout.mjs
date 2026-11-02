@@ -21,6 +21,8 @@ export async function checkOverviewLayout(page) {
 
 /** Same served app, with a labelled old-history response; no repository data is changed. */
 export async function overviewStates(page, { repo, shot }) {
+  await page.getByRole('navigation', { name: 'Repository', exact: true }).getByRole('link', { name: 'Overview', exact: true }).click();
+  await page.locator('.readme').waitFor();
   await page.locator('.overview-numbers [aria-busy=true]').waitFor({ state: 'detached' });
   await checkOverviewLayout(page);
   const logs = (url) => url.pathname === `/api/v1/repos/${repo}/log`;
