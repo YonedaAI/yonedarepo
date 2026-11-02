@@ -171,23 +171,21 @@ export function App() {
             ? 'Search'
             : route.view === 'settings'
               ? 'Settings'
-              : route.view === 'device'
-                ? 'Approve a device'
-                : isEmailLink(route)
-                  ? emailLinkTitle(route)
-                  : route.view === 'org'
-                    ? route.org
-                    : route.view === 'profile'
-                      ? route.handle
-                      : route.view === 'repo-name'
-                        ? route.name
-                        : isAgentsRoute(route)
-                          ? 'Agents'
-                          : route.view === 'admin'
-                            ? 'Admin'
-                            : gone
-                              ? 'Repository not found'
-                              : (row?.name ?? loaded?.name ?? repo ?? '');
+              : isEmailLink(route)
+                ? emailLinkTitle(route)
+                : route.view === 'org'
+                  ? route.org
+                  : route.view === 'profile'
+                    ? route.handle
+                    : route.view === 'repo-name'
+                      ? route.name
+                      : isAgentsRoute(route)
+                        ? 'Agents'
+                        : route.view === 'admin'
+                          ? 'Admin'
+                          : gone
+                            ? 'Repository not found'
+                            : (row?.name ?? loaded?.name ?? repo ?? '');
   const activityError = activity.error && !/Sign in/.test(activity.error) ? activity.error : '';
   const refresh = () => {
     setTick((t) => t + 1);
@@ -211,6 +209,17 @@ export function App() {
         session={session}
         navigate={navigate}
         signInError={signInError}
+      />
+    );
+  // A login from the terminal gets one card, with nothing of the app around it.
+  if (route.view === 'device')
+    return (
+      <DevicePage
+        code={route.code}
+        site={window.location.origin}
+        session={session}
+        signInError={signInError}
+        onConnected={() => void session.discover()}
       />
     );
   return (
@@ -411,7 +420,6 @@ export function App() {
                   <p className="source-empty">The admin pages are for operators only.</p>
                 )
               ))}
-            {route.view === 'device' && <DevicePage code={route.code} />}
             {isEmailLink(route) && <EmailLinkPage route={route} />}
             {route.view === 'org' && (
               <OrgPage

@@ -1,0 +1,110 @@
+/* `/device`: one centred card with nothing of the app around it (DevicePage.tsx), and the three
+   lines on a repository with no commits (RepoFirstSteps.tsx). */
+.device-page {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 24px 16px;
+  background: var(--bg);
+}
+.device-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 420px;
+  padding: 32px 24px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: center;
+}
+.device-logo {
+  width: 40px;
+  height: 40px;
+}
+.device-card h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-heading);
+}
+.device-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-base);
+}
+.device-host {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow-x: auto;
+  white-space: nowrap;
+  font:
+    var(--text-mono-dense) / 1.5 "IBM Plex Mono",
+    monospace;
+}
+.device-form,
+.device-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+}
+.device-form > button[type="submit"] {
+  width: 100%;
+}
+.device-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 16px;
+  width: 100%;
+  margin: 0;
+  font-size: var(--text-base);
+}
+.device-facts dt {
+  color: var(--muted);
+}
+.device-facts dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.device-hint {
+  text-align: center;
+}
+.device-card .device-link {
+  align-self: center;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--blue-text);
+  font-size: var(--text-sm);
+  min-height: 0;
+}
+.device-card .device-footer {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.device-code-entry {
+  width: 100%;
+  text-align: left;
+}
+.device-card .account-panel {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  text-align: left;
+}
+.repo-first-steps {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}

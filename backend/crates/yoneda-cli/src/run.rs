@@ -1,5 +1,6 @@
 //! The `yoneda` command: parse, dispatch, report.
 use crate::args::{self, Command, SyncMode};
+use std::io::Write;
 use crate::checkout::Checkout;
 use crate::error::{Error, Result};
 use crate::{
@@ -65,7 +66,8 @@ async fn run(command: Command) -> Result<()> {
             Ok(())
         }
         Command::Completion(shell) => {
-            print!("{}", crate::completion::script(shell));
+            // A shell that stops reading is no failure, and `print!` would panic on it.
+            let _ = std::io::stdout().write_all(crate::completion::script(shell).as_bytes());
             Ok(())
         }
         Command::Login {

@@ -20,8 +20,11 @@ import {
   mcpUrl,
   normalizeUserCode,
   PAT_SCOPES,
+  repoAddress,
   scopeList,
+  setUpstreamCommand,
   windowsInstallCommand,
+  yonedaCloneCommand,
 } from './connect';
 import { forgetRepoNames, rememberRepoName } from './repoNames';
 import { formatSourceRoute, parseSourceRoute } from './sourceRoute';
@@ -75,9 +78,7 @@ describe('the Clone menu', () => {
       const order = copyBlocks(html).map(([label]) => label);
       expect(order.slice(0, 2)).toEqual(['yoneda remote helper (recommended)', 'HTTPS']);
     }
-    expect(loginCommand('https://api.yonedarepo.com')).toBe(
-      'yoneda login --origin https://api.yonedarepo.com',
-    );
+    expect(loginCommand('https://api.yonedarepo.com')).toBe('yoneda login');
   });
   it('builds the HTTPS command with and without a directory', () => {
     expect(httpsCloneCommand(api, repo)).toBe(`git clone ${api}/git/${repo}.git`);
@@ -144,6 +145,19 @@ describe('connect snippets', () => {
     expect(apiOrigin('https://dev.yonedarepo.com', `${api}/`)).toBe(api);
     expect(apiOrigin('https://dev.yonedarepo.com', '  ')).toBe('https://dev.yonedarepo.com');
     expect(apiOrigin('http://127.0.0.1:5173')).toBe('http://127.0.0.1:5173');
+  });
+  it('logs in with no origin where the CLI defaults to, and names any other', () => {
+    expect(loginCommand('https://api.yonedarepo.com')).toBe('yoneda login');
+    expect(loginCommand(api)).toBe(`yoneda login --origin ${api}`);
+  });
+  it('names a repository as <owner>/<name> once it is known, else by id', () => {
+    expect(repoAddress(repo)).toBe(repo);
+    rememberRepoName(repo, 'ada', 'demo');
+    expect(repoAddress(repo)).toBe('ada/demo');
+    expect(cloneCommand(api, repo, 'demo')).toBe(`git clone yoneda::${api}/ada/demo demo`);
+    expect(yonedaCloneCommand(repo)).toBe('yoneda clone ada/demo');
+    expect(setUpstreamCommand(repo)).toBe('yoneda repo remote add origin ada/demo');
+    forgetRepoNames();
   });
   it('builds the clone command and MCP configuration from the origin', () => {
     expect(cloneCommand(api, repo)).toBe(`git clone yoneda::${api}/${repo}`);

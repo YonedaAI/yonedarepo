@@ -494,6 +494,10 @@ a.chip:hover {
   .source-toolbar-end {
     margin-left: 0;
   }
+  /* Beside the branch picker a long name would stand one letter wide. */
+  .source-crumbs {
+    flex-basis: 100%;
+  }
   .file-name {
     width: auto;
     white-space: normal;
