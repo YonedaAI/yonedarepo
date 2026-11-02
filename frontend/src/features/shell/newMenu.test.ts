@@ -3,7 +3,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addedRepo } from '../source-platform/importModel';
+import { addedRepo, showsDetails } from '../source-platform/importModel';
 import { GitHubImportDialog, requestImport } from './GitHubImportDialog';
 import { GitHubRepoList } from './GitHubRepoList';
 import { NewMenu } from './NewMenu';
@@ -32,14 +32,17 @@ describe('NewMenu', () => {
 });
 
 describe('GitHubImportDialog', () => {
-  const html = renderToStaticMarkup(
-    createElement(GitHubImportDialog, {
-      account: 'ada',
-      orgs: [{ org: 'acme', role: 'owner' }] as never,
-      onClose: () => {},
-      onImported: async () => {},
-    }),
-  );
+  const dialog = (publicAddress: boolean) =>
+    renderToStaticMarkup(
+      createElement(GitHubImportDialog, {
+        account: 'ada',
+        orgs: [{ org: 'acme', role: 'owner' }] as never,
+        publicAddress,
+        onClose: () => {},
+        onImported: async () => {},
+      }),
+    );
+  const html = dialog(true);
   it('says plainly what can be added and how much of it', () => {
     expect(html).toContain('Every branch and tag is imported');
     expect(html).not.toContain('5,000');
@@ -49,6 +52,14 @@ describe('GitHubImportDialog', () => {
     expect(html).not.toMatch(/<input[^>]*checked=""[^>]*value="public"/);
     expect(html).toMatch(/<details[^>]*>\s*<summary[^>]*>Branch/);
     expect(html).not.toMatch(/<details[^>]* open/);
+  });
+  it('asks only for the repository when adding from GitHub', () => {
+    const fromGitHub = dialog(false);
+    expect(fromGitHub).toContain('name="url"');
+    expect(fromGitHub).not.toContain('Repository name');
+    expect(fromGitHub).not.toContain('Visibility');
+    expect(fromGitHub).not.toContain('Branch');
+    expect(fromGitHub).not.toContain('Add repository<');
   });
   it('offers the owners the create dialog does', () => {
     expect(html).toContain('<select name="owner"');
@@ -109,5 +120,26 @@ describe('a GitHub repository already added', () => {
     );
     expect(list).toMatch(/rad-belden<\/span><small>Added<\/small>/);
     expect(list).toMatch(/whisper<\/span><small>Public<\/small>/);
+  });
+});
+
+describe('showsDetails', () => {
+  const connected = { connection: 'ok', available: true } as never;
+  const base = { publicAddress: false, github: connected, address: false, starting: false };
+  it('leaves a connected list on its own, and while it loads', () => {
+    expect(showsDetails(base)).toBe(false);
+    expect(showsDetails({ ...base, github: undefined })).toBe(false);
+  });
+  it('asks for the rest once an address is typed', () => {
+    expect(showsDetails({ ...base, address: true })).toBe(true);
+  });
+  it('asks nothing while a picked repository starts', () => {
+    expect(showsDetails({ ...base, address: true, starting: true })).toBe(false);
+  });
+  it('always asks on the public address dialog, and with no GitHub to list', () => {
+    expect(showsDetails({ ...base, publicAddress: true })).toBe(true);
+    expect(
+      showsDetails({ ...base, github: { connection: 'none', available: false } as never }),
+    ).toBe(true);
   });
 });

@@ -17,6 +17,7 @@ import {
   keepPending,
   parseGitHubRepo,
   pickedRepository,
+  showsDetails,
   takePending,
 } from '../source-platform/importModel';
 import type { OrgSummary } from '../source-platform/orgModel';
@@ -25,13 +26,9 @@ import { SourceApiError, sourceApi } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
 import { useBackToTab } from './backToTab';
 import { GitHubRepoList } from './GitHubRepoList';
-import {
-  CREATE_TIMEOUT_MS,
-  type Created,
-  createFailure,
-  REPO_NAME_PATTERN,
-} from './NewRepositoryDialog';
-import { OwnerField, VisibilityField } from './repoFormFields';
+import { ImportDetails } from './ImportDetails';
+import { CREATE_TIMEOUT_MS, type Created, createFailure } from './NewRepositoryDialog';
+import { OwnerField } from './repoFormFields';
 import type { PlatformRepo } from './repoRows';
 
 /** Asks for the import, giving up after `timeoutMs`; the answer comes before the import ends. */
@@ -117,6 +114,13 @@ export function GitHubImportDialog({
   // What the field held on coming back from GitHub. A repository added there can complete what
   // was typed: that is no choice made here, so it waits for Add repository.
   const typedBefore = useRef<string | null>(null);
+  const starting = Boolean(picked) && !taken && !error && typedBefore.current !== source;
+  const details = showsDetails({
+    publicAddress,
+    github,
+    address: parseGitHubRepo(source) !== null,
+    starting,
+  });
   const openedGitHub = useBackToTab(() => {
     typedBefore.current = source;
     listing.reload();
@@ -271,62 +275,22 @@ export function GitHubImportDialog({
             {IMPORT_HINT}
           </p>
         )}
-        <label>
-          Repository name
-          <input
-            name="name"
-            required
-            maxLength={100}
-            pattern={REPO_NAME_PATTERN}
-            title="Letters, digits, . _ and -; not starting with a dot"
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
-              setNamed(event.target.value !== '');
+        {starting && !details && <p role="status">Adding {picked?.full_name}…</p>}
+        {details && (
+          <ImportDetails
+            name={name}
+            onName={(next) => {
+              setName(next);
+              setNamed(next !== '');
             }}
-            placeholder="my-service"
-            autoComplete="off"
-            disabled={busy}
+            onlyPrivate={picked?.private}
+            taken={taken}
+            error={error}
+            busy={busy}
+            onOpen={onOpen}
+            onClose={onClose}
           />
-        </label>
-        {taken && (
-          <p role="status" className="source-meta github-repo-taken">
-            You already have {taken.name}.{' '}
-            <button type="button" onClick={() => onOpen?.(taken.id)}>
-              Open it
-            </button>{' '}
-            or choose another name.
-          </p>
         )}
-        <VisibilityField disabled={busy} onlyPrivate={picked?.private} />
-        <details className="source-details">
-          <summary>Branch (optional)</summary>
-          <label>
-            Branch to import
-            <input
-              name="branch"
-              maxLength={255}
-              placeholder="The repository's default branch"
-              spellCheck={false}
-              autoCapitalize="none"
-              autoComplete="off"
-              disabled={busy}
-            />
-          </label>
-        </details>
-        {error && (
-          <p role="alert" className="form-error">
-            {error}
-          </p>
-        )}
-        <div className="new-repository-actions">
-          <button type="button" className="quiet" disabled={busy} onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" disabled={busy || Boolean(taken)}>
-            {busy ? 'Adding…' : 'Add repository'}
-          </button>
-        </div>
       </form>
     </Dialog>
   );
