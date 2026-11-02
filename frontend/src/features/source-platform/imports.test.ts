@@ -118,6 +118,12 @@ describe('importFailure', () => {
       title: "This repository is private, or it doesn't exist.",
       connect: true,
     });
+    // Hosted Workflows put the error's class before the message.
+    expect(
+      importFailure(
+        'NonRetryableError: REMOTE_AUTH_REQUIRED: The remote answered 401. Connect GitHub to add a private repository',
+      ),
+    ).toMatchObject({ title: "This repository is private, or it doesn't exist.", connect: true });
     expect(importFailure('GITHUB_RECONNECT: Connect GitHub again')).toMatchObject({
       title: "This import can't read GitHub any more.",
       connect: true,
