@@ -1,7 +1,7 @@
 // The repository picker's popup: the search (a combobox over the listbox), the groups of rows
 // and the footer. A row's heart is for the pointer, hidden from assistive technology so the
 // listbox holds only options; RepoPicker gives it its keyboard and screen-reader ways in.
-import { Check, Heart, Plus } from 'lucide-react';
+import { Check, Heart, Plus, Search } from 'lucide-react';
 import type { CSSProperties, KeyboardEvent, MouseEvent, ReactNode, Ref } from 'react';
 import type { SourceRoute } from '../source-platform/sourceRoute';
 import { fullName, optionLabel, type PickerGroup } from './pickerModel';
@@ -73,6 +73,7 @@ export function PickerPanel({
   onKeys,
   onPanelKeys,
   onNew,
+  plain = false,
 }: {
   id: string;
   /** The search box. */
@@ -98,6 +99,8 @@ export function PickerPanel({
   onKeys: (event: KeyboardEvent<HTMLInputElement>) => void;
   onPanelKeys: (event: KeyboardEvent<HTMLElement>) => void;
   onNew?: () => void;
+  /** Search and rows only: no hearts and no footer. */
+  plain?: boolean;
 }) {
   return (
     <div
@@ -108,22 +111,25 @@ export function PickerPanel({
       style={style}
       onKeyDown={onPanelKeys}
     >
-      <input
-        ref={ref}
-        type="search"
-        role="combobox"
-        aria-label="Find repositories"
-        aria-expanded="true"
-        aria-autocomplete="list"
-        aria-controls={`${id}-list`}
-        aria-activedescendant={active && optionDomId(id, active)}
-        aria-describedby={`${id}-hint`}
-        placeholder="Find repositories…"
-        autoComplete="off"
-        value={query}
-        onChange={(event) => onQuery(event.target.value)}
-        onKeyDown={onKeys}
-      />
+      <div className="picker-search">
+        <Search size={15} aria-hidden="true" />
+        <input
+          ref={ref}
+          type="search"
+          role="combobox"
+          aria-label="Find repositories"
+          aria-expanded="true"
+          aria-autocomplete="list"
+          aria-controls={`${id}-list`}
+          aria-activedescendant={active && optionDomId(id, active)}
+          aria-describedby={`${id}-hint`}
+          placeholder="Find repositories…"
+          autoComplete="off"
+          value={query}
+          onChange={(event) => onQuery(event.target.value)}
+          onKeyDown={onKeys}
+        />
+      </div>
       <span className="sr-only" id={`${id}-hint`}>
         Shift+Enter adds or removes a favorite.
       </span>
@@ -158,12 +164,14 @@ export function PickerPanel({
                   )}
                   {row.repo === current && <Check size={14} aria-hidden="true" />}
                 </a>
-                <HeartButton
-                  name={row.name}
-                  on={favorites.has(row.repo)}
-                  inList
-                  onToggle={() => onFlip(row)}
-                />
+                {!plain && (
+                  <HeartButton
+                    name={row.name}
+                    on={favorites.has(row.repo)}
+                    inList
+                    onToggle={() => onFlip(row)}
+                  />
+                )}
               </div>
             ))}
           </div>
@@ -183,15 +191,17 @@ export function PickerPanel({
       <p className="sr-only" role="status">
         {said}
       </p>
-      <div className="picker-foot">
-        {onNew && (
-          <button type="button" onClick={onNew}>
-            <Plus size={15} aria-hidden="true" />
-            New repository
-          </button>
-        )}
-        <a {...linkTo({ view: 'repositories' }, pick)}>View all repositories</a>
-      </div>
+      {!plain && (
+        <div className="picker-foot">
+          {onNew && (
+            <button type="button" onClick={onNew}>
+              <Plus size={15} aria-hidden="true" />
+              New repository
+            </button>
+          )}
+          <a {...linkTo({ view: 'repositories' }, pick)}>View all repositories</a>
+        </div>
+      )}
     </div>
   );
 }

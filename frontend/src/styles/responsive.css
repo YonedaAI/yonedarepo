@@ -66,8 +66,8 @@
   .topbar-crumbs li:nth-last-child(2)::before {
     content: none;
   }
-  .topbar-crumbs .repo-picker {
-    display: none;
+  .repo-picker.compact .picker-button {
+    max-width: 150px;
   }
   .getting-started-panel {
     position: fixed;

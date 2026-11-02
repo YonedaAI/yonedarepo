@@ -35,6 +35,26 @@ describe('breadcrumbs', () => {
     expect(trail?.[0].to).toEqual({ view: 'profile', handle: 'bob', tab: 'repositories' });
   });
 
+  it('shows the repository crumb as the switcher, with no link to click', () => {
+    const repo = 'r0123456789abcdef0123';
+    const html = renderToStaticMarkup(
+      createElement(WorkspaceHeader, {
+        title: 'app',
+        crumbs: breadcrumbs({ view: 'tower', repo }, 'ada', { owner: 'ada', name: 'app' }, 'ada'),
+        switcher: createElement('button', { type: 'button' }, 'app'),
+        loading: false,
+        onRefresh: () => {},
+        authenticated: true,
+        identity: null,
+        onSignIn: () => {},
+        onSignOut: async () => {},
+        onError: () => {},
+      }),
+    );
+    expect(html).toContain('<button type="button">app</button>');
+    expect(html).not.toContain('>app</a>');
+  });
+
   it('shows the title until the repository has a name', () => {
     expect(breadcrumbs({ view: 'tower', repo: 'r0123456789abcdef0123' }, 'ada')).toBeNull();
   });

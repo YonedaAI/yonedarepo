@@ -16,7 +16,7 @@ import {
 export interface Crumb {
   label: string;
   to?: SourceRoute;
-  /** The repository switcher sits beside this crumb. */
+  /** The repository switcher stands in for this crumb's link. */
   switcher?: boolean;
 }
 
