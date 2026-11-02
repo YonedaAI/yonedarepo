@@ -5,13 +5,14 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NO_SESSION } from './agent-hooks-flow.mjs';
 import { accountSession } from './client.mjs';
+import { assertFlight } from './demo-repos-acceptance.mjs';
 import { agentClone, flyAgent, settleLanding, usageOf } from './demo-repos-run.mjs';
 import { AGENTS_BY_KIND, fixPrompt, REPOS, workPrompt } from './demo-repos-plan.mjs';
-import { memoryFromPage, openWeb, writeJson } from './demo-repos-web.mjs';
+import { memoryFromPage, writeJson } from './demo-repos-web.mjs';
 import { McpClient } from './mcp-client.mjs';
 import { judgeTrap } from './memory-plan.mjs';
 
-export function demoFlights({ ctx, state, local, owner, save, scrub, log, origin, account, sessionFile, renew, capUsd, secrets }) {
+export function demoFlights({ ctx, state, local, owner, save, scrub, log, origin, account, sessionFile, renew, capUsd, secrets, stamp }) {
 const fileAnchors = (anchors) => anchors.map((a) => a.split('#')[0]);
 const anchorBody = (spec) => {
   const [path, symbol] = spec.split('#');
@@ -78,15 +79,17 @@ async function pushedBefore(r, id, spec) {
 async function flight(r, id) {
   const record = state.repos[r.key].flights;
   const want = wantOf(r.key, id);
-  if (record[id]?.outcome === want) return log(`${r.key} ${id}: already ${want}`);
   const plan = REPOS[r.key];
   const spec = specOf(r.key, id);
+  const verify = () => assertFlight(record[id], { want, proof: Boolean(spec.oracle) });
+  if (record[id]?.outcome === want) { verify(); return log(`${r.key} ${id}: already ${want}`); }
   const kind = spec.agent ?? plan.agent;
   if (await pushedBefore(r, id, spec)) {
     const settled = await settleLanding(ctx, r, spec.branch, want);
     const [{ parents }] = (await owner.get(`/repos/${r.id}/log?ref=${encodeURIComponent(spec.branch)}&limit=1`)).commits;
     record[id] = { ...settled, run: usageFromEvidence(r.key, id, kind), base: parents?.[0] ?? null, proof: spec.oracle ? await proofOf(r, spec, settled, parents[0]) : undefined };
     save();
+    verify();
     return log(`${r.key} ${id}: adopted #${settled.number} ${settled.outcome} (wanted ${want}); slop ${settled.slop.value}, drift ${settled.drift.value}; proof ${JSON.stringify(record[id].proof ?? null)}`);
   }
   const again = FIXES[id] || spec.continues || record[id]?.number;
@@ -99,6 +102,7 @@ async function flight(r, id) {
   const settled = await settleLanding(ctx, r, spec.branch, want);
   record[id] = { ...settled, run, base: clone.base, proof: spec.oracle ? await proofOf(r, spec, settled, clone.base) : undefined };
   save();
+  verify();
   log(`${r.key} ${id}: #${settled.number} ${settled.outcome} (wanted ${want}); slop ${settled.slop.value}, drift ${settled.drift.value}${record[id].proof ? `; proof ${JSON.stringify(record[id].proof)}` : ''}${settled.reasons.length ? `; ${settled.reasons.join(' | ').slice(0, 160)}` : ''}`);
 }
 
@@ -150,8 +154,10 @@ async function release(r) {
   if (!tags.includes('flight-1')) await ws.git(r.base, null, 'tag', '-a', 'flight-1', flights.clean.landed_commit, '-m', `First flight: ${REPOS[r.key].flights.clean.message}`);
   if (!tags.includes('flight-2')) await ws.git(r.base, null, 'tag', '-a', 'flight-2', flights.fix.landed_commit, '-m', 'Second flight: the go-around, answered');
   // Tags and releases need land, which no agent's token holds: a token for this step alone.
-  const name = `demo-tags-${ts}`;
+  const name = `demo-tags-${stamp}`;
   const tagger = await owner.post(`/repos/${r.id}/tokens`, { name, scopes: ['read', 'write', 'land'] });
+  const tokenPath = `/repos/${r.id}/tokens/${name}`;
+  ctx.tokens.track(tokenPath);
   secrets.add(tagger.token);
   try {
     await ws.git(r.base, tagger.token, 'push', '-q', 'origin', 'refs/tags/flight-1', 'refs/tags/flight-2');
@@ -161,7 +167,7 @@ async function release(r) {
     const notes = [`Landed: ${REPOS[r.key].flights.clean.message} (#${flights.clean.number}) and ${REPOS[r.key].flights.sloppy.message} (#${flights.fix.number}), after review.`, 'Tags flight-1 and flight-2 mark each landing.'].join('\n');
     await ws.ok(join(ws.bin, 'yoneda'), ['release', 'create', 'flight-2', '--title', `flight-${r.key} 2`, '-m', notes, '--asset', archive], { cwd: r.base, token: tagger.token, extra: NO_SESSION });
   } finally {
-    await owner.raw('DELETE', `/repos/${r.id}/tokens/${name}`);
+    await ctx.tokens.revoke(tokenPath);
   }
 }
 
@@ -175,7 +181,8 @@ async function eachRepo(rows, what, body) {
       log(`FAILED ${line}`);
     }
   save();
-  return done.every((d) => d.status === 'fulfilled');
+  assert.ok(done.every((d) => d.status === 'fulfilled'), `${what}: a repository phase failed`);
+  return true;
 }
 
 

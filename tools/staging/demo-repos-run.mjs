@@ -1,8 +1,8 @@
 // One agent's flight for demo-repos.mjs: a copy of the host's clone (the host's Git never touches a
 // directory an agent has had), one stock agent's run in the Docker sandbox, then the Landing its
 // push opened, read through the API until the review agents and CTC have had their say. Each kind
-// of agent gets only its own way to its model: GLM its opencode credential on stdin, MiMo a bearer
-// good for one route of the dev proxy (model-proxy/), Claude Code and Codex the loopback shim,
+// of agent gets only its own way to its model: GLM its opencode credential on stdin,
+// Claude Code and Codex the loopback shim,
 // which alone holds the AI Gateway token (agent-sandbox/gateway-shim.mjs).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';

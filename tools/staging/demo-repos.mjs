@@ -14,7 +14,7 @@
 // Claude Code stops before CLAUDE_CAP_USD in all. Agents' tokens are the owner's, limited to the one
 // repository for a day and revoked at the end.
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -22,6 +22,7 @@ import { hostProblems, spendBudget } from './agent-run-flow.mjs';
 import { egressAllowlist, sandboxOrigin } from './agent-sandbox.mjs';
 import { buildSandbox, dockerAvailable, hostState, modelCredential, startEgress } from './agent-sandbox-host.mjs';
 import { readEnvFile, Session } from './client.mjs';
+import { DemoTokens, finishDemoRun, removeOwnedContainer } from './demo-repos-acceptance.mjs';
 import { demoFlights } from './demo-repos-flights.mjs';
 import { AGENTS_BY_KIND, REPOS } from './demo-repos-plan.mjs';
 import { readBack } from './demo-repos-report.mjs';
@@ -115,6 +116,7 @@ const signedIn = (base) => {
 const owner = signedIn(`${origin}/api/v1`);
 const account = signedIn(origin);
 const ctx = { api: values.api, origin, owner, account, ws: null, evidence, containers: [], egress: {}, timeoutS: Number(values['agent-timeout']), sandboxOrigin: sandboxOrigin(values.api).origin };
+ctx.tokens = new DemoTokens(owner);
 ctx.claudeSpent = (usd) => {
   state.claude_usd = Number(((state.claude_usd ?? 0) + usd).toFixed(4));
   save();
@@ -128,6 +130,7 @@ ctx.claudeBudget = () => {
 
 const mint = async (name, scopes, repos) => {
   const minted = await owner.post('/tokens', { name, scopes, repos, expires_days: 1 });
+  ctx.tokens.track(`/tokens/${minted.id}`);
   secrets.add(minted.token);
   return minted;
 };
@@ -150,16 +153,17 @@ async function pushHistory(key, parent, id) {
   const dir = ws.path(`history-${key}`);
   const reader = await mint(`demo-read-${key}-${ts}`, ['repo:read'], [parent]);
   const writer = await owner.post(`/repos/${id}/tokens`, { name: `demo-history-${ts}`, scopes: ['read', 'write', 'land'] });
+  ctx.tokens.track(`/repos/${id}/tokens/demo-history-${ts}`);
   secrets.add(writer.token);
   await ws.ok('git', ['clone', '-q', '--single-branch', '--branch', 'main', `${ws.api}/git/${parent}.git`, dir], { token: reader.token });
   await ws.git(dir, null, 'remote', 'set-url', 'origin', `${ws.api}/git/${id}.git`);
   const rules = (await owner.get(`/repos/${id}`)).policy;
   await owner.call('PUT', `/repos/${id}/policy`, { policy: { ...rules, approvals: 0, required_checks: [] } });
-  await ws.ok('git', ['push', '-q', 'origin', 'main'], { cwd: dir, token: writer.token });
-  await owner.call('PUT', `/repos/${id}/policy`, { policy: rules });
+  try { await ws.ok('git', ['push', '-q', 'origin', 'main'], { cwd: dir, token: writer.token }); }
+  finally { await owner.call('PUT', `/repos/${id}/policy`, { policy: rules }); }
   log(`${key}: ${await ws.git(dir, null, 'rev-list', '--count', 'main')} commits of ${state.parents[parent].name} pushed`);
-  await owner.raw('DELETE', `/tokens/${reader.id}`);
-  await owner.raw('DELETE', `/repos/${id}/tokens/demo-history-${ts}`);
+  await ctx.tokens.revoke(`/tokens/${reader.id}`);
+  await ctx.tokens.revoke(`/repos/${id}/tokens/demo-history-${ts}`);
   rmSync(dir, { recursive: true, force: true });
 }
 
@@ -187,7 +191,7 @@ async function setup(web) {
   save();
 }
 
-const { specOf, memories, flight, smoke, spendCheck, approvals, release, eachRepo } = demoFlights({ ctx, state, local, owner, save, scrub, log, origin, account, sessionFile, renew: async () => { cookie = await savedCookie(); }, capUsd: Number(values['cap-usd']), secrets });
+const { specOf, memories, flight, smoke, spendCheck, approvals, release, eachRepo } = demoFlights({ ctx, state, local, owner, save, scrub, log, origin, account, sessionFile, renew: async () => { cookie = await savedCookie(); }, capUsd: Number(values['cap-usd']), secrets, stamp: ts });
 
 /** The agent's way out, one proxy per kind: the platform and that kind's model route alone. */
 ctx.egressFor = (kind) => {
@@ -224,19 +228,20 @@ async function main() {
     assert.ok(state.managed, 'run the setup phase first');
     ctx.managed = state.managed;
     const rows = keys.map((key) => ({ key, ...state.repos[key] }));
-    await prepareRepos(rows);
-    const kindsOf = (r) => [...new Set([REPOS[r.key].agent, ...REPOS[r.key].order.map((p) => REPOS[r.key].flights[p]?.agent).filter(Boolean)])];
-    if (agentPhases.length || phases.includes('smoke')) {
-      assert.ok(dockerAvailable(), 'Docker is not available, and agents run only in the sandbox');
-      const sandbox = await buildSandbox(dirname(dirname(dirname(import.meta.filename))));
-      ctx.image = sandbox.image;
-      ctx.budget = spendBudget(Number.POSITIVE_INFINITY);
-      await modelCredentials(rows, agentPhases, phases.includes('smoke') ? rows.flatMap(kindsOf) : []);
-      log(`sandbox ${sandbox.image.slice(0, 19)}, opencode ${sandbox.opencode}`);
-    }
-    const watched = [root];
-    const before = agentPhases.length ? await hostState(watched) : null;
+    const watched = [root, process.cwd(), process.env.PWD];
+    let before = null;
     try {
+      await prepareRepos(rows);
+      const kindsOf = (r) => [...new Set([REPOS[r.key].agent, ...REPOS[r.key].order.map((p) => REPOS[r.key].flights[p]?.agent).filter(Boolean)])];
+      if (agentPhases.length || phases.includes('smoke')) {
+        assert.ok(dockerAvailable(), 'Docker is not available, and agents run only in the sandbox');
+        const sandbox = await buildSandbox(dirname(dirname(dirname(import.meta.filename))));
+        ctx.image = sandbox.image;
+        ctx.budget = spendBudget(Number.POSITIVE_INFINITY);
+        await modelCredentials(rows, agentPhases, phases.includes('smoke') ? rows.flatMap(kindsOf) : []);
+        log(`sandbox ${sandbox.image.slice(0, 19)}, opencode ${sandbox.opencode}`);
+        before = await hostState(watched);
+      }
       for (const phase of phases) {
         if (phase === 'memories') for (const r of rows) await memories(web, r);
         else if (phase === 'smoke') await eachRepo(rows, phase, async (r) => {
@@ -258,9 +263,8 @@ async function main() {
           }
         }
         else if (agentPhases.includes(phase)) {
-          const flown = await eachRepo(rows.filter((r) => REPOS[r.key].order.includes(phase)), phase, (r) => flight(r, phase));
+          await eachRepo(rows.filter((r) => REPOS[r.key].order.includes(phase)), phase, (r) => flight(r, phase));
           await spendCheck();
-          if (!flown) break;
         } else if (phase === 'release') await eachRepo(rows, phase, release);
         else if (phase === 'report') {
           state.report = { ...state.report };
@@ -277,21 +281,27 @@ async function main() {
         }
       }
     } finally {
-      for (const name of ctx.containers) spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
-      for (const [kind, egress] of Object.entries(ctx.egress)) {
-        const stopped = await egress.stop();
-        log(`${kind} egress refused: ${[...new Set(stopped.refused)].join(', ') || 'nothing'}`);
-      }
-      if (before) {
-        const drift = await hostProblems(before, watched);
-        log(drift.length ? `host changed (other sessions work here too, so read it): ${drift.join('; ')}` : 'host checkout and remotes unchanged');
-      }
-      for (const r of rows) if (r.tokenId) await owner.raw('DELETE', `/tokens/${r.tokenId}`);
+      await finishDemoRun({
+        clean: [
+          ...ctx.containers.map(name => async () => removeOwnedContainer(name)),
+          ...Object.entries(ctx.egress).map(([kind, egress]) => async () => {
+            const stopped = await egress.stop();
+            log(`${kind} egress refused: ${[...new Set(stopped.refused)].join(', ') || 'nothing'}`);
+            assert.ok(!stopped.died, 'An agent egress proxy stopped unexpectedly');
+          }),
+          ...ctx.tokens.cleanup(),
+          ...Object.entries(state.parents ?? {}).map(([id, was]) => async () => { assert.equal(await parentRefs(id), was.refs, 'A retained parent repository changed during the demo'); }),
+        ],
+        check: async () => {
+          const drift = before ? await hostProblems(before, watched) : [];
+          if (before && drift.length === 0) log('host checkout and remotes unchanged');
+          return drift;
+        },
+      });
     }
   } finally {
-    await web?.close();
-    ctx.ws?.dispose();
-    save();
+    try { await finishDemoRun({ clean: ctx.tokens.cleanup(), check: async () => [] }); }
+    finally { await web?.close(); ctx.ws?.dispose(); save(); }
   }
 }
 
