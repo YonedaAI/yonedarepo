@@ -141,6 +141,27 @@ export function addedRepo<
   );
 }
 
+/**
+ * Whether the import dialog asks for a name, visibility and branch. A repository from the list
+ * needs none of them: picking it is the whole request. A pasted address does.
+ */
+export function showsDetails({
+  publicAddress,
+  github,
+  address,
+  starting,
+}: {
+  publicAddress: boolean;
+  github?: GitHubConnection;
+  /** The field holds a repository's address. */
+  address: boolean;
+  /** A picked repository is on its way. */
+  starting: boolean;
+}) {
+  if (publicAddress || (github && github.connection !== 'ok')) return true;
+  return address && !starting;
+}
+
 /** What a trip to GitHub came back with, in `?github=`, read once. */
 export function connectMessage(result: string | null) {
   switch (result) {
