@@ -95,6 +95,78 @@ async fn resumes_a_page_cut_mid_object_from_the_last_complete_object() -> Result
     Ok(())
 }
 
+/// The page of a real clone: a Worker's stream that failed between two objects reaches the
+/// client as a body that simply ends after an object, with no transport error. It keeps what
+/// arrived and asks from the next object, and nothing is read twice.
+#[tokio::test]
+async fn resumes_a_page_that_ended_in_good_order_between_two_objects() -> Result<()> {
+    let blobs: Vec<Vec<u8>> = (0..5u8).map(|i| vec![b'a' + i; 40_000]).collect();
+    let ids: Vec<String> = blobs
+        .iter()
+        .map(|b| hash_object(ObjectKind::Blob, b).hex())
+        .collect();
+    let served = blobs.clone();
+    let (origin, log) = fake::serve(move |seen, earlier| {
+        let objects: Vec<Value> = seen
+            .ids
+            .iter()
+            .filter_map(|id| {
+                served
+                    .iter()
+                    .find(|b| hash_object(ObjectKind::Blob, b).hex() == *id)
+            })
+            .map(|b| blob_json(b))
+            .collect();
+        let body = fake::page(&objects, &[]);
+        let reply = Reply::ok("application/json", body.clone());
+        if earlier.is_empty() {
+            // Just after the second object's closing brace, where the stream's writes fall.
+            let third = objects[2].to_string();
+            let at = String::from_utf8_lossy(&body).find(&third).unwrap_or(1) - 1;
+            reply.ended(at)
+        } else {
+            reply
+        }
+    })
+    .await?;
+    let api = Api::account(&origin, None)?;
+    let (fetched, missing) = request(&api, &wants(&ids), false).await?;
+    assert_eq!(ids_of(&fetched), ids);
+    for object in &fetched {
+        verified(object)?;
+    }
+    assert!(missing.is_empty(), "{missing:?}");
+    let posts = posts(&log);
+    assert_eq!(posts.len(), 2, "{posts:?}");
+    assert_eq!(posts[1].ids, ids[2..].to_vec());
+    Ok(())
+}
+
+/// A body that never parses is a page that keeps failing: it gets the same few tries, then an
+/// error naming the request, not a parser's complaint.
+#[tokio::test]
+async fn a_page_that_never_parses_gives_up_and_says_which_request() -> Result<()> {
+    let id = hash_object(ObjectKind::Blob, b"x").hex();
+    let (origin, log) =
+        fake::serve(|_, _| Reply::ok("text/html", b"<html>busy</html>".to_vec())).await?;
+    let api = Api::account(&origin, None)?;
+    let failure = request(&api, &wants(&[id]), false)
+        .await
+        .expect_err("nothing readable arrived");
+    assert!(
+        failure.message.contains("POST /objects"),
+        "{}",
+        failure.message
+    );
+    assert!(
+        failure.message.contains("ended early"),
+        "{}",
+        failure.message
+    );
+    assert_eq!(posts(&log).len(), 4, "the first try and three more");
+    Ok(())
+}
+
 /// A large blob's download cut halfway resumes with `Range` from the bytes it has; a
 /// platform that ignores the range (200, the whole blob) is handled too. Either way the
 /// bytes are verified against the id.

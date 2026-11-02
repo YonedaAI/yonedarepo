@@ -13,6 +13,7 @@ mod timeouts;
 
 pub(crate) use coalesce::Coalesce;
 pub use resume::Received;
+pub(crate) use resume::ended_early;
 use retry::RETRIES;
 pub(crate) use retry::{pause, transient};
 pub use timeouts::Timeouts;
