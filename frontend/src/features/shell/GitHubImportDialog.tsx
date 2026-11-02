@@ -7,6 +7,7 @@ import { Dialog } from '../../components/Dialog';
 import {
   ADD_CONNECTION_PATH,
   addedRepo,
+  badAddress,
   CONNECT_PATH,
   connectMessage,
   defaultRepoName,
@@ -246,7 +247,7 @@ export function GitHubImportDialog({
             required
             value={source}
             onChange={(event) => changeSource(event.target.value)}
-            onBlur={() => setInvalid(Boolean(source.trim()) && !parseGitHubRepo(source))}
+            onBlur={() => setInvalid(badAddress(source, connected))}
             aria-invalid={invalid || undefined}
             aria-describedby={invalid ? hint : undefined}
             placeholder={

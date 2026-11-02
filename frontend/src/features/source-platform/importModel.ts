@@ -141,6 +141,10 @@ export function addedRepo<
   );
 }
 
+/** Text left in the field that can't be an address. Over a list it's a search, so it's fine. */
+export const badAddress = (text: string, overList: boolean) =>
+  !overList && Boolean(text.trim()) && !parseGitHubRepo(text);
+
 /**
  * Whether the import dialog asks for a name, visibility and branch. A repository from the list
  * needs none of them: picking it is the whole request. A pasted address does.

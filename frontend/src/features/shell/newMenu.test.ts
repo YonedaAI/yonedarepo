@@ -3,7 +3,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addedRepo, showsDetails } from '../source-platform/importModel';
+import { addedRepo, badAddress, showsDetails } from '../source-platform/importModel';
 import { GitHubImportDialog, requestImport } from './GitHubImportDialog';
 import { GitHubRepoList } from './GitHubRepoList';
 import { NewMenu } from './NewMenu';
@@ -147,5 +147,16 @@ describe('showsDetails', () => {
     expect(
       showsDetails({ ...base, github: { connection: 'none', available: false } as never }),
     ).toBe(true);
+  });
+});
+
+describe('badAddress', () => {
+  it('leaves text in a list alone: it is a search', () => {
+    expect(badAddress('magn', true)).toBe(false);
+  });
+  it('says so with no list to search, and never for an address', () => {
+    expect(badAddress('magn', false)).toBe(true);
+    expect(badAddress('acme/app', false)).toBe(false);
+    expect(badAddress('   ', false)).toBe(false);
   });
 });
