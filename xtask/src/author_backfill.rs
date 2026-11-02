@@ -79,7 +79,12 @@ pub(crate) async fn execute(args: &[String]) -> Result<()> {
         let mut after = String::new();
         loop {
             let body = json!({ "after": after, "dry_run": dry_run });
-            let page = post(&client, &url, &owner, body).await?;
+            let page = match post(&client, &url, &owner, body).await {
+                Ok(page) => page,
+                // Deleted since the list was read: nothing of it to fill in.
+                Err(e) if e.to_string().contains("\"GONE\"") => break,
+                Err(e) => return Err(e),
+            };
             add(&mut totals, &page);
             match page["next"].as_str() {
                 Some(next) => after = next.to_owned(),
