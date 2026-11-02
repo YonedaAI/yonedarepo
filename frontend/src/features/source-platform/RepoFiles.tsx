@@ -5,7 +5,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { BranchPicker, CloneButton, LatestCommit } from './CodeParts';
 import { CommitFile } from './CommitFile';
-import { readQuery, useActivity, useCommitMessages, useListing } from './codeData';
+import { readQuery, useActivity, useListing } from './codeData';
 import { currentApiOrigin } from './connect';
 import { FileBlame } from './FileBlame';
 import { FileTable } from './FileTable';
@@ -71,18 +71,7 @@ export function RepoFiles({
     route.at === undefined &&
     !route.ref.startsWith('refs/tags/');
   const tree = listing.value?.kind === 'tree' ? listing.value : undefined;
-  const activity = useActivity(
-    route.repo,
-    status?.version,
-    route.ref,
-    route.path,
-    tree?.entries.map((e) => e.name),
-    route.at,
-  );
-  const messages = useCommitMessages(
-    route.repo,
-    [...activity.values()].map((a) => a.commit),
-  );
+  const activity = useActivity(route.repo, route.ref, route.path, Boolean(tree), route.at);
   const go = (path: string): SourceRoute => ({ ...place, path });
   const pathLink = (path: string, children: ReactNode, attrs = {}) => (
     <a {...attrs} {...linkTo(go(path), navigate)}>
@@ -190,7 +179,6 @@ export function RepoFiles({
               dir={route.path}
               entries={tree.entries}
               activity={activity}
-              messages={messages}
               link={pathLink}
               commitLink={commitLink}
             />

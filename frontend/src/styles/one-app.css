@@ -263,6 +263,9 @@ a.chip:hover {
 .file-icon-tree {
   color: var(--blue-text);
 }
+.file-author {
+  margin-left: 8px;
+}
 .file-message {
   color: var(--muted);
   max-width: 0;

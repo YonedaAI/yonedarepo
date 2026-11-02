@@ -23,6 +23,8 @@ export type CommitDetail = {
   commit: string;
   message: string;
   principal: string;
+  author_name?: string | null;
+  authored_at?: number | null;
   parents: string[];
   read_set: string[];
   checks: { name: string; status: string; principal: string; recorded_at: number }[];

@@ -45,6 +45,7 @@ fn commit_row(record: &Value) -> Result<CommitRow> {
         message: row["message"].as_str().unwrap_or_default().to_owned(),
         read_set: serde_json::from_str(row["read_set"].as_str().unwrap_or("[]"))
             .map_err(|_| bad("Record read set must be a list"))?,
+        author: super::commit_authors::Authored::of(row),
     })
 }
 

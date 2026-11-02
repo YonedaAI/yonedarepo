@@ -11,7 +11,7 @@ import { commit, replay } from './repo-commit';
 import { recordContract, symbolContract } from './repo-contracts';
 import { blame, pathHistory, search } from './repo-derived';
 import { diff } from './repo-diff';
-import { listTree, readFile } from './repo-files';
+import { listTree, readFile, treeActivity } from './repo-files';
 import { forkRepository } from './repo-forks';
 import { hookOperations, notifyHooks } from './repo-hooks';
 import { landWithMerge } from './repo-landing';
@@ -46,16 +46,18 @@ export const operations: Record<string, Operation> = {
   },
   git_refs: readRefs,
   git_log: (ctx, a) =>
-    a.path
-      ? pathHistory(ctx, a)
-      : ctx.call({
-          op: 'repo_log',
-          ref: a.ref ?? 'main',
-          limit: Number(a.limit ?? 50),
-          // From a commit of the history instead of the branch head: the next page.
-          ...(a.from ? { from: String(a.from) } : {}),
-          ...version(a),
-        }),
+    a.dir !== undefined
+      ? treeActivity(ctx, a)
+      : a.path
+        ? pathHistory(ctx, a)
+        : ctx.call({
+            op: 'repo_log',
+            ref: a.ref ?? 'main',
+            limit: Number(a.limit ?? 50),
+            // From a commit of the history instead of the branch head: the next page.
+            ...(a.from ? { from: String(a.from) } : {}),
+            ...version(a),
+          }),
   git_txlog: (ctx, a) =>
     ctx.call({ op: 'repo_txlog', after: Number(a.after ?? 0), limit: Number(a.limit ?? 100) }),
   git_show: (ctx, a) => ctx.call({ op: 'repo_commit', commit: a.commit }),

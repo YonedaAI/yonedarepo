@@ -107,9 +107,10 @@ pub(super) fn adopt_one<S: SqlStore>(
     }
     let principal = string(row, "principal")?;
     db.query(
-        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,hidden_ref,artifacts_at) VALUES(?,?,?,?,?,?,?,?,?,0,NULL)",
+        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,hidden_ref,artifacts_at,author_name,authored_at) VALUES(?,?,?,?,?,?,?,?,?,0,NULL,?,?)",
         &[json!(id.hex()), row["tree"].clone(), json!(json!(parents).to_string()), row["generation"].clone(),
-          row["base_version"].clone(), json!(principal), row["message"].clone(), row["read_set"].clone(), row["recorded_at"].clone()],
+          row["base_version"].clone(), json!(principal), row["message"].clone(), row["read_set"].clone(), row["recorded_at"].clone(),
+          row["author_name"].clone(), row["authored_at"].clone()],
     )?;
     for path in record["paths"].as_array().into_iter().flatten() {
         db.query(

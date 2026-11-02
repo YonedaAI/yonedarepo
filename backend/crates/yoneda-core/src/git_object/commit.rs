@@ -84,6 +84,9 @@ fn text(value: &[u8]) -> Result<&str> {
 
 /// A commit kept as its ordered typed headers and message, so decoding is lossless
 /// (including `gpgsig`, `encoding` and other headers YonedaRepo does not interpret).
+/// The most of an author's name a page is given.
+const AUTHOR_CHARS: usize = 256;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Commit {
     headers: Vec<CommitHeader>,
@@ -210,6 +213,17 @@ impl Commit {
             CommitHeader::Committer(line) => Some(line),
             _ => None,
         })
+    }
+    /// Who wrote this commit and when, in milliseconds, as a page shows it. Git keeps an
+    /// address beside the name, and some people put one in it: that part stays in Git.
+    pub fn authorship(&self) -> (Option<String>, Option<i64>) {
+        let Ok(author) = self.author() else {
+            return (None, None);
+        };
+        let name = author.name.split('@').next().unwrap_or_default().trim();
+        let name = name.chars().take(AUTHOR_CHARS).collect::<String>();
+        let at = author.seconds.saturating_mul(1000);
+        ((!name.is_empty()).then_some(name), Some(at))
     }
     pub fn message(&self) -> &[u8] {
         &self.message

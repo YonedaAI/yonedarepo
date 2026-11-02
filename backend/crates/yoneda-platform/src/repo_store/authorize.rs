@@ -100,10 +100,14 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         ),
         // A clone's refs are set by the platform importer alone: they arrive whole, with no
         // landing and no gate, into a repository nobody has worked in yet.
-        R::ImportRefs | R::ImportReset | R::StoreAudit if !actor.can("import") => Err(Error::new(
-            "FORBIDDEN",
-            "Only the platform importer sets imported refs",
-        )),
+        R::ImportRefs | R::ImportReset | R::StoreAudit | R::AuthorsMissing | R::AuthorsSet
+            if !actor.can("import") =>
+        {
+            Err(Error::new(
+                "FORBIDDEN",
+                "Only the platform importer sets imported refs",
+            ))
+        }
         R::Review => actor.require("review"),
         // Protected refs need `land`; any other branch lands with `write` (`land_gates::scope`).
         R::Land | R::LandEnqueue => actor.require(land_gates::scope(&rows::branch_ref(c)?)),
@@ -175,6 +179,8 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::ImportRefs
         | R::ImportReset
         | R::StoreAudit
+        | R::AuthorsMissing
+        | R::AuthorsSet
         | R::LandBatch
         | R::LandChangesets
         | R::LandClaim
@@ -188,6 +194,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::ObjectsPending
         | R::ObjectsProjected
         | R::PathHistory
+        | R::DirActivity
         | R::PinList
         | R::Purged
         | R::RecordClasses

@@ -186,11 +186,13 @@ fn record_one<S: SqlStore>(
         .chars()
         .take(16_384)
         .collect();
+    let (author_name, authored_at) = commit.authorship();
     db.query(
         // The objects are in R2, or staged here, below.
-        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,origin,hidden_ref,artifacts_at) VALUES(?,?,?,?,?,?,?,?,?,'push',0,NULL)",
+        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,origin,hidden_ref,artifacts_at,author_name,authored_at) VALUES(?,?,?,?,?,?,?,?,?,'push',0,NULL,?,?)",
         &[json!(id.hex()), json!(commit.tree()?.hex()), json!(json!(parents).to_string()), json!(generation),
-          json!(base_version), json!(principal), json!(message), json!(json!(reads).to_string()), json!(now)],
+          json!(base_version), json!(principal), json!(message), json!(json!(reads).to_string()), json!(now),
+          json!(author_name), json!(authored_at)],
     )?;
     for chunk in touches.chunks(16) {
         let mut params = Vec::with_capacity(chunk.len() * 6);

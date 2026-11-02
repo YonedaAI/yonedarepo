@@ -234,3 +234,11 @@ export function RepoPicker({
     </div>
   );
 }
+
+/** The switcher in the top bar's trail, which keeps its own open state. */
+export function CrumbSwitcher(
+  props: Omit<Parameters<typeof RepoPicker>[0], 'compact' | 'open' | 'onOpenChange'>,
+) {
+  const [open, setOpen] = useState(false);
+  return <RepoPicker {...props} compact open={open} onOpenChange={setOpen} />;
+}

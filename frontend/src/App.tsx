@@ -4,7 +4,6 @@
 // signed-out visitor may open Explore and any public repository; nothing there asks them to
 // sign in first. The public site (its own pages, and `/` while signed out) renders in its
 // own frame instead.
-import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { AccountSettings } from './features/account-settings/AccountSettings';
 import { EmailLinkPage } from './features/account-settings/EmailLinkPage';
@@ -23,8 +22,9 @@ import { backFromGitHub, GitHubImportDialog } from './features/shell/GitHubImpor
 import { HomePage } from './features/shell/HomePage';
 import type { AccountActivity } from './features/shell/homeModel';
 import { type Created, NewRepositoryDialog } from './features/shell/NewRepositoryDialog';
+import { Notice, useNotice } from './features/shell/Notice';
 import { pickerShortcut, saveRecent } from './features/shell/pickerModel';
-import { RepoPicker } from './features/shell/RepoPicker';
+import { CrumbSwitcher } from './features/shell/RepoPicker';
 import { RepositoriesPage } from './features/shell/RepositoriesPage';
 import { type PlatformRepo, repoRows } from './features/shell/repoRows';
 import { saveCollapsed, storedCollapsed } from './features/shell/theme';
@@ -46,34 +46,12 @@ import { isAgentsRoute, routeRepo } from './features/source-platform/sourceRoute
 import { useSource } from './features/source-platform/useSource';
 import { breadcrumbs } from './features/workspace/breadcrumbs';
 import { HandlePrompt } from './features/workspace/HandlePicker';
-import {
-  type AuthResult,
-  PROVIDER_LABEL,
-  readAuthResult,
-  withoutAuthResult,
-} from './features/workspace/oauthModel';
+import { PROVIDER_LABEL } from './features/workspace/oauthModel';
+import { takeAuthResult } from './features/workspace/returnedAuth';
 import { SessionEnded } from './features/workspace/SessionEnded';
 import { WorkspaceHeader } from './features/workspace/WorkspaceHeader';
 import { type WorkspacePanel, WorkspacePanels } from './features/workspace/WorkspacePanels';
 import { useSession } from './hooks/useSession';
-
-let authResult: AuthResult | null | undefined;
-/** A provider callback's outcome in the address, read once (per page load) and then dropped
- * from it. */
-function takeAuthResult() {
-  if (authResult !== undefined || typeof window === 'undefined') return authResult ?? null;
-  authResult = readAuthResult(window.location.search);
-  if (authResult)
-    window.history.replaceState(
-      null,
-      '',
-      withoutAuthResult(window.location.pathname, window.location.search),
-    );
-  return authResult;
-}
-
-/** How long a notice stays before it clears itself. */
-const NOTICE_MS = 6000;
 
 export function App() {
   const session = useSession();
@@ -99,21 +77,14 @@ export function App() {
   const [creating, setCreating] = useState(false);
   const [adding, setAdding] = useState(backFromGitHub);
   const [picking, setPicking] = useState(false);
-  const [crumbPicking, setCrumbPicking] = useState(false);
-  const [notice, setNotice] = useState(
+  const [notice, setNotice] = useNotice(
     returned && 'linked' in returned
       ? `${PROVIDER_LABEL[returned.linked]} is linked: you can sign in with it now.`
       : route.view === 'settings'
         ? signInError
         : '',
+    signInError,
   );
-  // Good news goes by itself, so "Repository deleted." never outlasts the moment; a refused
-  // sign-in stays until it is read.
-  useEffect(() => {
-    if (!notice || notice === signInError) return;
-    const timer = setTimeout(() => setNotice(''), NOTICE_MS);
-    return () => clearTimeout(timer);
-  }, [notice, signInError]);
   const [tick, setTick] = useState(0);
   // The open repository's name as its status gives it (another account's public repository
   // is in no sidebar row), and whether the viewer may change its settings.
@@ -302,16 +273,13 @@ export function App() {
             session.identity?.handle ?? undefined,
           )}
           switcher={
-            <RepoPicker
-              compact
+            <CrumbSwitcher
               rows={rows}
               current={repo}
               currentName={row?.name ?? loaded?.name}
               loading={platform.loading}
               error={rowsError}
               favorites={session.authenticated ? favorites : undefined}
-              open={crumbPicking}
-              onOpenChange={setCrumbPicking}
               navigate={navigate}
             />
           }
@@ -352,19 +320,7 @@ export function App() {
           <SessionEnded onConnected={() => void session.discover()} />
         ) : (
           <>
-            {notice && (
-              <div role="status" className="workspace-notice">
-                <span>{notice}</span>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label="Dismiss notification"
-                  onClick={() => setNotice('')}
-                >
-                  <X size={17} />
-                </button>
-              </div>
-            )}
+            <Notice notice={notice} onDismiss={() => setNotice('')} />
             {route.view === 'home' && (
               <HomePage
                 session={session}

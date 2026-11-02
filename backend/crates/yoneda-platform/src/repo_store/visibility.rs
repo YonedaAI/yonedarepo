@@ -60,6 +60,7 @@ fn public_read(op: StoreOp) -> bool {
                 | R::Commit
                 | R::MergeBase
                 | R::PathHistory
+                | R::DirActivity
                 | R::Contracts
                 | R::ContractList
                 | R::Sessions

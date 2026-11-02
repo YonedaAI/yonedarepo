@@ -14,6 +14,7 @@ import { compute } from './repo-compute';
 import { sendLandChecks } from './repo-land-check';
 import { type CachedObject, parseStore, RepoObjects, type TreeEntry } from './repo-objects';
 import type { PatGrant } from './repo-pat';
+import { KEEPS_REFS } from './repo-read-ops';
 import { adoptCommit, unrecorded } from './repo-shards';
 import { timed } from './repo-timing';
 import { undoSwitch } from './repo-undo-window';
@@ -76,62 +77,6 @@ export class ApiError extends Error {
   }
 }
 
-/** Commands that never move a ref (reads, and commits before they land). Any other
- * command a caller in this isolate sends may, so refs snapshots taken before it are not
- * served to this isolate (repo-snapshots.ts). */
-const KEEPS_REFS = new Set([
-  'repo_prepare_commit',
-  'repo_begin_commit',
-  'repo_record_commit',
-  'repo_adopt_commit',
-  'repo_check_request',
-  'repo_session_record',
-  'repo_session_list',
-  'repo_session_show',
-  'repo_agent_context',
-  'repo_memory_add',
-  'repo_memory_retire',
-  'repo_memory_list',
-  'repo_memory_show',
-  'repo_context_relevant',
-  'repo_context_deliver',
-  'repo_context_deliveries',
-  'repo_status',
-  'repo_storage',
-  'repo_size_add',
-  'repo_hold_owner',
-  'repo_store_audit',
-  'repo_audit_pending',
-  'repo_audit_done',
-  'repo_audit_set_aside',
-  'repo_refs',
-  'repo_snapshot',
-  'repo_log',
-  'repo_txlog',
-  'repo_commit',
-  'repo_merge_base',
-  'repo_path_history',
-  'repo_contracts',
-  'repo_head',
-  'repo_staged_objects',
-  'repo_tokens',
-  'repo_members',
-  'repo_land_status',
-  'repo_land_clearance',
-  'repo_git_access',
-  'repo_git_walk',
-  'repo_compact_status',
-  'repo_compact_plan',
-  'repo_compact_done',
-  'repo_set_retention',
-  'repo_lfs_batch',
-  'repo_lfs_store',
-  'repo_lfs_discard',
-  'repo_lfs_usage',
-  'repo_lfs_set_quota',
-  'repo_lfs_sweep_claim',
-  'repo_lfs_sweep_done',
-]);
 const writes = new Map<string, number>();
 /** How many commands that may move refs this isolate has sent to `repo`. */
 export const writesTo = (repo: string) => writes.get(repo) ?? 0;

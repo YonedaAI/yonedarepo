@@ -90,7 +90,7 @@ pub(super) fn export<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
 fn exported<S: SqlStore>(db: &S, id: &str, touches: &mut usize) -> Result<Value> {
     let row = db
         .query(
-            "SELECT id,tree,parents,generation,principal,message,recorded_at FROM commits WHERE id=?",
+            "SELECT id,tree,parents,generation,principal,message,recorded_at,author_name,authored_at FROM commits WHERE id=?",
             &[json!(id)],
         )?
         .into_iter()
@@ -132,11 +132,11 @@ pub(super) fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             serde_json::from_str(item["parents"].as_str().unwrap_or_default())
                 .map_err(|_| bad("parents must be a JSON list of ids"))?;
         db.query(
-            "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,origin,hidden_ref,artifacts_at) VALUES(?,?,?,?,0,?,?,'[]',?,'fork',0,?)",
+            "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,origin,hidden_ref,artifacts_at,author_name,authored_at) VALUES(?,?,?,?,0,?,?,'[]',?,'fork',0,?,?,?)",
             &[json!(id.hex()), json!(object_id(item, "tree")?.hex()), json!(json!(parents).to_string()),
               json!(number(item, "generation")?), json!(string(item, "principal")?),
               json!(item["message"].as_str().unwrap_or_default()), json!(number(item, "recorded_at")?),
-              json!(number(item, "recorded_at")?)],
+              json!(number(item, "recorded_at")?), item["author_name"].clone(), item["authored_at"].clone()],
         )?;
         let touches: Vec<PathTouch> = serde_json::from_value(item["touches"].clone())
             .map_err(|e| bad(&format!("Invalid touches: {e}")))?;

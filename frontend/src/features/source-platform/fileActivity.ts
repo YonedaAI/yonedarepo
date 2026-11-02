@@ -1,57 +1,23 @@
-// What last changed each entry of a directory, read from the transaction log (one read for
-// the whole directory): every landing on a branch lists the paths it changed.
+// What last changed each entry of a directory, as `/log?dir=` answers it, and when a commit was
+// written: the author's own time, or for a commit from before that was kept, when it landed here.
 
-export type LogEntry = {
-  version: number;
-  kind: string;
-  refname: string;
-  new?: string | null;
-  paths: { path: string; op: string }[];
-  actor: string;
-  committed_at_ms: number;
+export type Activity = {
+  commit: string;
+  message: string;
+  principal: string;
+  author_name?: string | null;
+  authored_at?: number | null;
+  recorded_at: number;
 };
-export type Activity = { commit: string; at: number; actor: string; version: number };
+
+/** When `a` was written, as far as is known. */
+export const writtenAt = (a: Activity) => a.authored_at ?? a.recorded_at;
 
 /** Directory names first, then files, each alphabetically. */
 export function sortEntries<E extends { name: string; type: string }>(entries: E[]): E[] {
   return [...entries].sort(
     (a, b) => Number(b.type === 'tree') - Number(a.type === 'tree') || a.name.localeCompare(b.name),
   );
-}
-
-/**
- * The newest log entry on branch `ref` (at or before version `at`) that changed something
- * under each of `names` in directory `dir`. Names the window does not cover are absent.
- */
-export function directoryActivity(
-  entries: LogEntry[],
-  ref: string,
-  dir: string,
-  names: string[],
-  at?: number,
-): Map<string, Activity> {
-  const refname = ref.startsWith('refs/') ? ref : `refs/heads/${ref}`;
-  const prefix = dir ? `${dir.replace(/\/$/, '')}/` : '';
-  const wanted = new Set(names);
-  const found = new Map<string, Activity>();
-  const newestFirst = [...entries].sort((a, b) => b.version - a.version);
-  for (const entry of newestFirst) {
-    if (found.size === wanted.size) break;
-    if (entry.refname !== refname || !entry.new || (at !== undefined && entry.version > at))
-      continue;
-    for (const { path } of entry.paths) {
-      if (!path.startsWith(prefix)) continue;
-      const name = path.slice(prefix.length).split('/')[0];
-      if (!wanted.has(name) || found.has(name)) continue;
-      found.set(name, {
-        commit: entry.new,
-        at: entry.committed_at_ms,
-        actor: entry.actor,
-        version: entry.version,
-      });
-    }
-  }
-  return found;
 }
 
 const UNITS: [number, Intl.RelativeTimeFormatUnit][] = [

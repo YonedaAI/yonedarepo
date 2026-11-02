@@ -29,6 +29,9 @@ pub(crate) struct Built {
     pub touches: Vec<PathTouch>,
     pub read_set: Vec<String>,
     pub message: String,
+    /// Who wrote it and when (ms), as `commits` keeps them.
+    pub author_name: Option<String>,
+    pub authored_at: Option<i64>,
     /// Every new object: the commit, then trees, then blobs.
     pub objects: Vec<(ObjectId, ObjectKind, Vec<u8>)>,
     /// The new trees alone (encoded), for a tree cache.
@@ -244,6 +247,7 @@ pub(crate) fn build(
     let commit = Commit::new(rewrite.root, &parents, &author, &committer, &message)?;
     let commit_bytes = commit.encode();
     let id = commit.id();
+    let (author_name, authored_at) = commit.authorship();
 
     let mut objects: Vec<(ObjectId, ObjectKind, Vec<u8>)> =
         vec![(id, ObjectKind::Commit, commit_bytes)];
@@ -272,6 +276,8 @@ pub(crate) fn build(
         touches,
         read_set,
         message,
+        author_name,
+        authored_at,
         objects,
         trees: rewrite.trees,
     })

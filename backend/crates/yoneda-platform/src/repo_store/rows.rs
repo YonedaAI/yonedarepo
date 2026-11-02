@@ -53,6 +53,7 @@ pub struct CommitRow {
     pub principal: String,
     pub message: String,
     pub read_set: Vec<String>,
+    pub author: super::commit_authors::Authored,
 }
 
 pub fn init<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
@@ -156,6 +157,7 @@ pub fn commit_row<S: SqlStore>(db: &S, id: &ObjectId) -> Result<Option<CommitRow
         principal: text("principal")?.to_owned(),
         message: text("message")?.to_owned(),
         read_set: serde_json::from_str(text("read_set")?).map_err(|_| corrupt("read set"))?,
+        author: super::commit_authors::Authored::of(&row),
     }))
 }
 

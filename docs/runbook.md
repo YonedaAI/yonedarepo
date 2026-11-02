@@ -213,6 +213,7 @@ An import is a `git clone` in an `ImportContainer`, the check image on `standard
 - **Result.** A finished import's `output` has `commit` (main), `refs`, `left_out`, `commits`, `objects` and `pack_bytes`.
 - **Cost.** One `ImportContainer` for the clone, 4 at once at most, and none of the check slots. The runtime image must hold `/clone`.
 - **Failure.** No ref moves. Delete the repository and add it again.
+- **Who wrote a commit.** A commit's author and the time it was written come from its Git object, kept apart from who pushed or imported it. For commits recorded before that was kept, `cargo xtask admin author-backfill --env dev|prod --dry-run` counts them and `--confirm` fills them in from their objects, 200 commits a call; `--repo <id>` does one repository. No re-import is needed, and a repeat fills nothing twice. A commit whose object has gone stays empty and pages show who recorded it, at the time they landed it.
 - **Private repositories.** Dev only, through the GitHub App in `infra/envs/dev.json`. Set the key with `wrangler secret put GITHUB_APP_PRIVATE_KEY --name yonedarepo-dev-platform < <the .pem>`. Without it there is no Connect, and imports are of public repositories. Personal GitHub accounts only; [clone-import.md](clone-import.md) says why.
 - **Find what needs a re-import.** `cargo xtask admin imports --env dev|prod` lists every repository with what it needs, and read-only:
 
