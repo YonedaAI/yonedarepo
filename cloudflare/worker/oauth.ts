@@ -7,7 +7,8 @@
 // the page with `auth_error=<code>`; logs carry only the provider and that code.
 
 import { encodeAccountIdentifier } from '../../shared/account';
-import { randomToken, sessionCookie, signedInSession } from './accounts';
+import { homeCookie, randomToken, sessionCookie, signedInSession } from './accounts';
+import { cellOfRegion, cellsOn } from './cells';
 import { error } from './http';
 import { log } from './log';
 import { linkTo, type Outcome, signInWith } from './oauth-identity';
@@ -24,6 +25,7 @@ import { readSignupSource, recordSignup, takeSignupSource, withSignupSource } fr
 import { sha } from './storage';
 import type { Env, Json } from './types';
 import { publicOrigin } from './website-metadata';
+import { workspace } from './workspace';
 
 const ROUTE = /^\/auth\/([a-z]+)\/(start|callback)$/;
 const BINDING = 'yoneda_oauth';
@@ -136,6 +138,10 @@ export async function oauthRoute(req: Request, env: Env): Promise<Response | nul
     'set-cookie',
     sessionCookie(req, `${encodeAccountIdentifier(outcome.username)}.${token}`),
   );
+  if (cellsOn(env)) {
+    const { region } = await workspace(env, outcome.username, { op: 'account_place' });
+    response.headers.append('set-cookie', homeCookie(req, cellOfRegion(env, region)));
+  }
   return clearBinding(req, response);
 }
 

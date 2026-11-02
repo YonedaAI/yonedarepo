@@ -20,6 +20,7 @@
 // blob was withheld meanwhile.
 
 import { Container } from '@cloudflare/containers';
+import { cellEnv } from './cell-env';
 import { warned } from './log';
 import { requestBody } from './repo-git-http';
 import { advertiseV2, uploadPackV2 } from './repo-git-v2';
@@ -241,8 +242,9 @@ export class PackBuilder extends Container<Env> {
 
   /** Builds `plan`'s packs (pack-build jobs call this; repo-pack-jobs). */
   build(plan: BuildPlan) {
-    const withheld = async () => (await system(this.env, plan.repo).objects()).withholdsAny();
-    return buildPacks(this, this.env, plan, withheld);
+    const env = cellEnv(this.env);
+    const withheld = async () => (await system(env, plan.repo).objects()).withholdsAny();
+    return buildPacks(this, env, plan, withheld);
   }
 
   /** An instance left running (its build's caller vanished) is killed, not asked to stop. */

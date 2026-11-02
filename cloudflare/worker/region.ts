@@ -1,6 +1,6 @@
 // Where a request comes from, at continent level (global regions stage R1,
 // docs/global-scale-plan.md): a continent or a code made from one, never an address or a city.
-// Nothing routes on these yet; REGION_SIGNALS only records them, and off records nothing.
+// REGION_SIGNALS records them, and off records nothing; cells.ts turns a code into a cell.
 // `request.cf` exists on the Worker a client reached and on a request passed on whole
 // (`PLATFORM.fetch(req)`, `new Request(url, req)`). A request rebuilt from its URL and an RPC call
 // carry none, so a sign-up reads its region here and hands the code on as a value.
@@ -34,6 +34,9 @@ export function continentOf(req: Request) {
   if (typeof continent !== 'string') return '';
   return REGIONS.has(continent) || continent === NO_REGION ? continent : '';
 }
+
+/** The request's sign-up code, or nothing: read where it arrives, whatever the switch. */
+export const regionOfRequest = (req: Request) => REGIONS.get(continentOf(req));
 
 /** A new account's region, as the field of a command: nothing while the switch is off or the
  * continent is unknown, and the account then reads as `enam` like every older one. */

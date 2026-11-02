@@ -4,6 +4,7 @@
 // ImportContainer runs the same image, with the disk and the internet an import needs.
 
 import { Container } from '@cloudflare/containers';
+import { cellEnv } from './cell-env';
 import { warned } from './log';
 import { jsonBody, STREAM_TYPE, streamBody } from './platform-check-stream';
 import {
@@ -141,8 +142,9 @@ export class CheckContainer extends Container<Env> {
   sleepAfter = '2m';
 
   launch(job: CheckJob, report: CheckReport): Promise<void> {
+    const env = cellEnv(this.env);
     const scope = {
-      env: this.env,
+      env,
       job: {
         repo_id: report.repo,
         job_id: String(report.run.run_id),
@@ -151,7 +153,7 @@ export class CheckContainer extends Container<Env> {
       },
     };
     return inScope(scope, () =>
-      launchCheck(this, this.env, job, report, (work) => this.ctx.waitUntil(work)),
+      launchCheck(this, env, job, report, (work) => this.ctx.waitUntil(work)),
     );
   }
 

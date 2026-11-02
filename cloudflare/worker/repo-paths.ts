@@ -7,7 +7,10 @@
 // in the listing once (a rebuildable projection) and held from then on. A path a caller may
 // not read answers exactly as one that names nothing.
 import { normalizeHandle } from '../../shared/account';
+import { homeCell } from './account-place';
 import { profileAvatarUrl } from './avatars';
+import { acrossCells, askCell } from './cell-route';
+import { cellOfRegion, cellOfRepo, cellsOn, FIRST_CELL, indexOf, thisCell } from './cells';
 import { audited } from './repo-audit';
 import { refreshHead } from './repo-head';
 import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
@@ -56,8 +59,23 @@ export async function handlesOf(env: Env, owners: string[]) {
     .bind(JSON.stringify(emails))
     .all<{ workspace: string; handle: string }>();
   for (const row of rows.results) handles.set(row.workspace, row.handle);
+  // Email-named accounts are all older than cells: a repository of one elsewhere, by its
+  // owner's choice, has its owner's row in `enam`.
+  if (handles.size < emails.length && cellsOn(env) && thisCell(env) !== FIRST_CELL) {
+    const held = await indexOf(env, FIRST_CELL)
+      .prepare(
+        'SELECT workspace,handle FROM platform_handles WHERE workspace IN (SELECT value FROM json_each(?))',
+      )
+      .bind(JSON.stringify(emails))
+      .all<{ workspace: string; handle: string }>();
+    for (const row of held.results) handles.set(row.workspace, row.handle);
+  }
   return handles;
 }
+
+/** A repository's region, for an answer that names one: absent with cells off. */
+export const regionOf = (env: Env, repo: string | undefined) =>
+  cellsOn(env) && repo ? { region: cellOfRepo(repo) } : {};
 
 /** Listed repositories (`owner`: the account identifier) with their owner's handle and
  * readable path (null while an email-named owner has no handle). */
@@ -68,7 +86,12 @@ export async function withPaths<T extends { owner: string; name: string }>(env: 
   );
   return rows.map((row) => {
     const handle = row.owner.includes('@') ? (handles.get(row.owner) ?? null) : row.owner;
-    return { ...row, owner_handle: handle, path: handle ? `/${handle}/${row.name}` : null };
+    return {
+      ...row,
+      owner_handle: handle,
+      path: handle ? `/${handle}/${row.name}` : null,
+      ...regionOf(env, (row as { id?: string }).id),
+    };
   });
 }
 
@@ -80,17 +103,18 @@ async function named(env: Env, owner: string, name: string): Promise<Named | nul
   );
   if (held) return held;
   // Made before owners held names: the listing knows it, and its owner holds it from now.
-  const listed = await listedNamed(env, owner, name);
+  const listed = await listedNamed(env.INDEX, owner, name);
   if (!listed) return null;
   // Held from the next look-up if not from this one: the listing answers meanwhile.
   await claim(env, owner, listed.id, listed.name).catch(() => {});
   return { repo: listed.id, name: listed.name, renamed_from: null };
 }
 
-const listedNamed = (env: Env, owner: string, name: string) =>
-  env.INDEX.prepare(
-    'SELECT id,name FROM platform_repos WHERE workspace=? AND name=? COLLATE NOCASE ORDER BY created_at LIMIT 1',
-  )
+const listedNamed = (index: D1Database, owner: string, name: string) =>
+  index
+    .prepare(
+      'SELECT id,name FROM platform_repos WHERE workspace=? AND name=? COLLATE NOCASE ORDER BY created_at LIMIT 1',
+    )
     .bind(owner, name)
     .first<{ id: string; name: string }>();
 
@@ -105,7 +129,8 @@ const claim = (env: Env, owner: string, repo: string, name: string) =>
  * already past its owner check. Answers the name it replaces (`renamed_from`).
  */
 export async function holdName(env: Env, owner: string, repo: string, name: string) {
-  const listed = await listedNamed(env, owner, name);
+  // What predates held names is in the owner's home cell, wherever this repository is going.
+  const listed = await listedNamed(indexOf(env, homeCell()), owner, name);
   if (listed && listed.id !== repo) {
     // Held from the next look-up if not from this one: the refusal below stands either way.
     await claim(env, owner, listed.id, listed.name).catch(() => {});
@@ -159,6 +184,10 @@ export async function resolvePath(
   const owner = await ownerOf(env, handle);
   const found = owner && (await named(env, owner.account, name.replace(/\.git$/, '')));
   if (!owner || !found) throw missing();
+  // Answered where the repository is: only that cell can say who may read it.
+  const cell = cellOfRepo(found.repo);
+  if (cellsOn(env) && cell !== thisCell(env))
+    return askCell(env, cell, `/api/v1/resolve/${handle}/${encodeURIComponent(name)}`);
   await readable(env, auth, found.repo);
   return {
     id: found.repo,
@@ -182,9 +211,37 @@ export async function pathOf(env: Env, auth: Credentials | null, repo: string): 
 }
 
 /** `GET /profiles/<handle>`: whose the handle is and their public repositories. */
-export async function profile(env: Env, handle: string): Promise<Json> {
+export async function profile(env: Env, handle: string, path: string): Promise<Json> {
   const owner = await ownerOf(env, handle);
   if (!owner) throw new ApiError('NOT_FOUND', 'Nobody has that handle');
+  return acrossCells(
+    env,
+    path,
+    () => ownProfile(env, owner),
+    mergeProfiles,
+    await cellsOf(env, owner.account),
+  );
+}
+
+/** The cells other than this one that hold `account`'s repositories. */
+async function cellsOf(env: Env, account: string) {
+  if (!cellsOn(env)) return [];
+  const { region, cells } = await workspace(env, account, { op: 'account_place' });
+  const found = new Set<string>([cellOfRegion(env, region), ...(cells as string[])]);
+  found.delete(thisCell(env));
+  return [...found];
+}
+
+type Profile = Json & { repositories: { created_at: number }[] };
+
+function mergeProfiles(parts: Json[]): Json {
+  const repositories = (parts as Profile[])
+    .flatMap((p) => p.repositories)
+    .sort((a, b) => b.created_at - a.created_at);
+  return { ...parts[0], repositories: repositories.slice(0, 200) };
+}
+
+async function ownProfile(env: Env, owner: HandleOwner): Promise<Json> {
   const listed = await env.INDEX.prepare(
     `SELECT id,name,created_at FROM platform_repos WHERE workspace=? AND visibility='public'
        ORDER BY created_at DESC LIMIT 200`,
@@ -197,7 +254,11 @@ export async function profile(env: Env, handle: string): Promise<Json> {
     display_name: null,
     // By handle, never by the account identifier (an address for an email-named account).
     avatar_url: await profileAvatarUrl(env, owner),
-    repositories: listed.results.map((r) => ({ ...r, path: `/${owner.handle}/${r.name}` })),
+    repositories: listed.results.map((r) => ({
+      ...r,
+      path: `/${owner.handle}/${r.name}`,
+      ...regionOf(env, r.id),
+    })),
   };
 }
 
@@ -236,6 +297,7 @@ export async function withPath(env: Env, repo: string, status: Json): Promise<Js
     ...status,
     owner_handle: handle,
     path: handle ? `/${handle}/${status.name}` : null,
+    ...regionOf(env, repo),
   };
   return repoAnalytics(env) ? { ...named, insights: true } : named;
 }

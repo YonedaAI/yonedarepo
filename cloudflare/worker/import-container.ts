@@ -3,6 +3,7 @@
 // (`repo-clone`), it runs no repository's code and is destroyed like a check's.
 
 import { Container } from '@cloudflare/containers';
+import { cellEnv } from './cell-env';
 import { type CheckInstance, startCheck } from './check-container';
 import { type CloneParams, CloneSession, type Stage } from './repo-clone';
 import { inScope } from './request-scope';
@@ -29,9 +30,10 @@ export class ImportContainer extends Container<Env> {
    * between steps is killed below, and the steps start over. */
   cloneStep(stage: Stage, params: CloneParams, credential?: string) {
     const job = { repo_id: params.repo, job_id: 'clone', kind: 'clone' };
-    this.#clone ??= cloneSession(this, this.env);
+    const env = cellEnv(this.env);
+    this.#clone ??= cloneSession(this, env);
     const clone = this.#clone;
-    return inScope({ env: this.env, job }, () => clone.step(stage, params, credential));
+    return inScope({ env, job }, () => clone.step(stage, params, credential));
   }
 
   /** An instance left idle (its caller vanished mid-run) is killed, not asked to stop. */
