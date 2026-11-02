@@ -24,6 +24,9 @@
     }
   ],
   "compatibility_date": "2026-10-07",
+  "compatibility_flags": [
+    "global_fetch_strictly_public"
+  ],
   "durable_objects": {
     "bindings": [
       {

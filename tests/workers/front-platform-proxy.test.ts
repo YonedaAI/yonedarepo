@@ -31,3 +31,18 @@ it('answers only account routes itself', async () => {
   const session = await frontFetch(new Request('https://yoneda/api/session', { method: 'POST' }), bindings);
   expect(session.status).toBe(404);
 });
+
+it('stops an unfinished upload before an early binding response finishes', async () => {
+  const stopped = vi.fn();
+  const body = new ReadableStream<Uint8Array>({
+    start(c) { c.enqueue(new TextEncoder().encode('{')); },
+    cancel: stopped,
+  });
+  const managed = { fetch: async () => Response.json({ connected: 0 }) };
+  const request = new Request('https://yoneda/api/managed/workspaces/owner/sync', {
+    method: 'POST', body,
+  });
+  const response = await frontFetch(request, { ...bindings, MANAGED: managed } as unknown as Env);
+  expect(await response.json()).toEqual({ connected: 0 });
+  expect(stopped).toHaveBeenCalledOnce();
+});

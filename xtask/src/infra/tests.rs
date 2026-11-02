@@ -8,6 +8,28 @@ const DEV_LOCK: &str = include_str!("../../../infra/envs/dev.lock.json");
 const PROD: &str = include_str!("../../../infra/envs/prod.json");
 const PROD_LOCK: &str = include_str!("../../../infra/envs/prod.lock.json");
 
+#[test]
+fn independent_watchers_reach_each_other_over_the_public_network() {
+    // These probes deliberately use public URLs rather than service bindings: each watcher
+    // must observe the other as an outside client would, including its public route.
+    for text in [DEV, PROD] {
+        let spec = Spec::parse(text).unwrap();
+        for worker in spec
+            .workers
+            .iter()
+            .filter(|w| matches!(w.role.as_str(), "superfan" | "deadman"))
+        {
+            assert!(
+                worker.config["compatibility_flags"]
+                    .as_array()
+                    .is_some_and(|flags| flags.iter().any(|f| f == "global_fetch_strictly_public")),
+                "{} must be able to fetch the other watcher's public Worker URL",
+                worker.file
+            );
+        }
+    }
+}
+
 fn committed(file: &str) -> Value {
     let text = match file {
         "wrangler.dev-platform.jsonc" => {

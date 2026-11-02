@@ -111,6 +111,9 @@
               "SuperfanLedger"
             ]
           }
+        ],
+        "compatibility_flags": [
+          "global_fetch_strictly_public"
         ]
       }
     },
@@ -943,6 +946,9 @@
               "DeadmanState"
             ]
           }
+        ],
+        "compatibility_flags": [
+          "global_fetch_strictly_public"
         ]
       }
     }
