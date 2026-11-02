@@ -26,20 +26,33 @@ function useProviders() {
   return providers;
 }
 
+export type AccountMode = 'signup' | 'login' | 'recover' | 'forgot';
+
+const TITLES: Record<AccountMode, string> = {
+  signup: 'Create your workspace',
+  login: 'Sign in',
+  recover: 'Recover your account',
+  forgot: 'Reset your password',
+};
+export const accountTitle = (mode: AccountMode) => TITLES[mode];
+
 export function AccountPanel({
   onConnected,
   initialMode = 'signup',
   initialError = '',
   initialProviders = null,
+  onMode,
 }: {
   onConnected: () => void;
-  initialMode?: 'signup' | 'login' | 'forgot';
+  initialMode?: AccountMode;
   /** A provider sign-in that came back refused (its `auth_error`, in words). */
   initialError?: string;
   /** Providers known before the list loads (tests render without effects). */
   initialProviders?: Provider[] | null;
+  /** Set where the page's own heading follows the form: the card leaves out its heading. */
+  onMode?: (mode: AccountMode) => void;
 }) {
-  const [mode, setMode] = useState<'signup' | 'login' | 'recover' | 'forgot'>(initialMode);
+  const [mode, setMode] = useState<AccountMode>(initialMode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError);
   const loaded = useProviders();
@@ -48,6 +61,12 @@ export function AccountPanel({
   const [recovery, setRecovery] = useState('');
   const [recovered, setRecovered] = useState(false);
   const identifierHelp = useId();
+  const passwordField = useId();
+  const choose = (next: AccountMode) => {
+    setMode(next);
+    onMode?.(next);
+    setError('');
+  };
   if (recovery)
     return (
       <section className="account-panel">
@@ -58,7 +77,7 @@ export function AccountPanel({
           onClick={() => {
             setRecovery('');
             if (recovered) {
-              setMode('login');
+              choose('login');
               setRecovered(false);
             } else onConnected();
           }}
@@ -77,24 +96,13 @@ export function AccountPanel({
             className={mode === m ? 'selected' : ''}
             aria-current={mode === m ? 'page' : undefined}
             disabled={busy}
-            onClick={() => {
-              setMode(m);
-              setError('');
-            }}
+            onClick={() => choose(m)}
           >
             {m === 'signup' ? 'Create account' : 'Sign in'}
           </button>
         ))}
       </nav>
-      <h2>
-        {mode === 'signup'
-          ? 'Create your workspace'
-          : mode === 'recover'
-            ? 'Recover your account'
-            : mode === 'forgot'
-              ? 'Reset your password'
-              : 'Sign in'}
-      </h2>
+      {!onMode && <h2>{accountTitle(mode)}</h2>}
       {mode !== 'forgot' && <TermsNotice />}
       {mode !== 'recover' && mode !== 'forgot' && (
         <OAuthButtons
@@ -194,9 +202,13 @@ export function AccountPanel({
               <input name="recovery_code" required autoComplete="off" />
             </label>
           )}
-          <label>
-            {mode === 'recover' ? 'New password' : 'Password'}
+          {/* The link shows beside the label; after the input, so Tab reaches the password first. */}
+          <div className="account-password">
+            <label htmlFor={passwordField}>
+              {mode === 'recover' ? 'New password' : 'Password'}
+            </label>
             <input
+              id={passwordField}
               type="password"
               name="password"
               required
@@ -204,7 +216,17 @@ export function AccountPanel({
               maxLength={128}
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             />
-          </label>
+            {mode === 'login' && (
+              <button
+                type="button"
+                className="text-button"
+                disabled={busy}
+                onClick={() => choose('forgot')}
+              >
+                Forgot password?
+              </button>
+            )}
+          </div>
           {mode !== 'login' && (
             <p className="field-help">At least 12 characters. You get a recovery code next.</p>
           )}
@@ -220,24 +242,18 @@ export function AccountPanel({
           </button>
         </form>
       )}
-      <div className="run-actions">
-        {(['forgot', 'recover'] as const)
-          .filter((m) => m !== mode && (m === 'recover' || mode === 'login'))
-          .map((m) => (
-            <button
-              type="button"
-              className="text-button"
-              key={m}
-              disabled={busy}
-              onClick={() => {
-                setMode(m);
-                setError('');
-              }}
-            >
-              {m === 'forgot' ? 'Forgot password?' : 'Use recovery code'}
-            </button>
-          ))}
-      </div>
+      {mode !== 'recover' && (
+        <div className="run-actions">
+          <button
+            type="button"
+            className="text-button"
+            disabled={busy}
+            onClick={() => choose('recover')}
+          >
+            Use recovery code
+          </button>
+        </div>
+      )}
     </section>
   );
 }

@@ -14,7 +14,9 @@ export function ForgotPassword({ busy, onBusy }: { busy: boolean; onBusy: (on: b
   const [error, setError] = useState('');
   const field = useRef<HTMLInputElement>(null);
   // The link that opened this form is gone: keep the keyboard here.
-  useEffect(() => field.current?.focus(), []);
+  useEffect(() => {
+    field.current?.focus();
+  }, []);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const username = new FormData(event.currentTarget).get('username');
