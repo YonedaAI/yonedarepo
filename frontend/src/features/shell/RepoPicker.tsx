@@ -18,6 +18,7 @@ import { HeartButton, optionDomId, PickerPanel, repoHome } from './PickerPanel';
 import {
   type PopupPlace,
   pickerGroups,
+  plainGroup,
   popupPlace,
   readRecents,
   withFavoriteRows,
@@ -55,7 +56,7 @@ export function RepoPicker({
   onOpenChange: (open: boolean) => void;
   navigate: Navigate;
   onNew?: () => void;
-  /** Only the switch button, for a breadcrumb that already shows the name. */
+  /** A breadcrumb: the name and arrows as one button, and a plain list of repositories. */
   compact?: boolean;
 }) {
   const [query, setQuery] = useState('');
@@ -70,7 +71,8 @@ export function RepoPicker({
   const ids = favorites?.ids ?? NONE;
   const all = withFavoriteRows(rows, favorites?.rows ?? []);
   const recents = useMemo(() => (open ? readRecents() : []), [open]);
-  const groups = pickerGroups(all, ids, recents, query);
+  const grouped = pickerGroups(all, ids, recents, query);
+  const groups = compact ? plainGroup(grouped) : grouped;
   const shown = groups.flatMap((g) => g.rows);
   const active = shown.find((r) => r.repo === activeId) ?? shown[0];
   const activeOption = open && active ? optionDomId(id, active) : undefined;
@@ -176,7 +178,7 @@ export function RepoPicker({
           onClick={() => (open ? close() : onOpenChange(true))}
         >
           {!compact && <GitBranch size={15} aria-hidden="true" />}
-          {!compact && <span className="picker-name">{name ?? 'Choose a repository'}</span>}
+          <span className="picker-name">{name ?? 'Choose a repository'}</span>
           <ChevronsUpDown size={14} aria-hidden="true" />
         </button>
         {current && !compact && (
@@ -214,6 +216,7 @@ export function RepoPicker({
                   ? 'Loading repositories…'
                   : 'No repositories yet.'
           }
+          plain={compact}
           note={favorites.loadError ? 'Favorites could not be read.' : ''}
           trouble={trouble}
           said={said}
