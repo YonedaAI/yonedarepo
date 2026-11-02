@@ -1,6 +1,6 @@
 // Preview pricing: every rate, allowance and credit the pricing page shows, in one place.
-// Billing is not built yet; the page says so. Every platform feature is free; only what we
-// run for an account is metered, at Cloudflare's list cost × MARGIN, rounded up.
+// Billing is not built yet; the page says so. Metered account usage is priced at
+// Cloudflare's list cost × MARGIN, rounded up.
 //
 // Cloudflare list prices, Workers Paid plan, read 2026-10-28:
 // - Containers (https://developers.cloudflare.com/containers/pricing/): memory
@@ -13,8 +13,7 @@
 //   SQLite stored data $0.20 per GB-month.
 // - Workers (https://developers.cloudflare.com/workers/platform/pricing/): no egress charge.
 //
-// Requests, CPU, Durable Object calls and R2 operations are not metered: they are part of
-// the free platform.
+// Requests, CPU, Durable Object calls and R2 operations are not separately metered.
 
 import {
   AGENT_MARGIN,

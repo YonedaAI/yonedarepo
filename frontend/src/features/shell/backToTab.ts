@@ -33,18 +33,16 @@ export function useBackToTab(onBack: () => void) {
   const armed = useRef(false);
   const latest = useRef(onBack);
   latest.current = onBack;
-  useEffect(
-    () =>
-      // `visibilitychange` bubbles from the document, so the window hears both.
-      watchReturn(
-        window,
-        () => document.visibilityState === 'visible',
-        () => {
-          if (armed.current) latest.current();
-        },
-      ),
-    [],
-  );
+  useEffect(() => {
+    // `visibilitychange` bubbles from the document, so the window hears both.
+    return watchReturn(
+      window,
+      () => document.visibilityState === 'visible',
+      () => {
+        if (armed.current) latest.current();
+      },
+    );
+  }, []);
   return useCallback(() => {
     armed.current = true;
   }, []);

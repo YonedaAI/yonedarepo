@@ -10,6 +10,7 @@ import { frontEnv, signInEnv } from './cell-edge';
 import { cellsOn } from './cells';
 import { clientError } from './client-errors';
 import { isInstaller, serveDownload, serveInstallScript } from './downloads';
+import { forwardRequest } from './forward-request';
 import { error, response } from './http';
 import { logFailure } from './log';
 import { oauthRoute } from './oauth';
@@ -39,13 +40,14 @@ export async function frontFetch(req: Request, bound: Env): Promise<Response> {
   }
   // Connecting GitHub is the platform's, on its own paths: the App's setup URL is one of them.
   if (GITHUB_PAGES.has(url.pathname) && env.PLATFORM)
-    return env.PLATFORM.fetch(
+    return forwardRequest(
+      env.PLATFORM,
       carriedRequest(new Request(`${url.origin}/api/v1${url.pathname}${url.search}`, req)),
     );
   // Git over HTTPS by readable path is the platform's (`/<handle>/<name>.git`).
   if (GIT_PATH.test(url.pathname))
     return env.PLATFORM
-      ? env.PLATFORM.fetch(carriedRequest(req))
+      ? forwardRequest(env.PLATFORM, carriedRequest(req))
       : error('NOT_FOUND', 'The source platform is not bound', 404);
   if (!url.pathname.startsWith('/api/')) {
     const moved = env.PLATFORM
@@ -60,15 +62,15 @@ export async function frontFetch(req: Request, bound: Env): Promise<Response> {
   if (url.pathname === '/api/client-error') return clientError(req, env);
   if (url.pathname.startsWith('/api/v1/'))
     return env.PLATFORM
-      ? env.PLATFORM.fetch(carriedRequest(req))
+      ? forwardRequest(env.PLATFORM, carriedRequest(req))
       : error('NOT_FOUND', 'The source platform is not bound', 404);
   if (url.pathname.startsWith('/api/managed/'))
     return env.MANAGED
-      ? env.MANAGED.fetch(carriedRequest(req))
+      ? forwardRequest(env.MANAGED, carriedRequest(req))
       : error('NOT_FOUND', 'Managed agents are not available here', 404);
   // Sign-in stays on a pinned Worker: its limiter is one count per cell, not one per location.
   if (cellsOn(env) && env.PLATFORM && url.pathname.startsWith('/api/auth/'))
-    return env.PLATFORM.fetch(carriedRequest(req));
+    return forwardRequest(env.PLATFORM, carriedRequest(req));
   try {
     const authResponse = await accountRoute(req, env);
     if (authResponse) return authResponse;

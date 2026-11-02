@@ -6,7 +6,7 @@ import type { Navigate } from '../shell/useRoute';
 import { agentUsageRows, formatUsd, MARGIN, METERS, meterPrice, PRICING } from './pricing';
 import { siteLink } from './SiteLayout';
 
-const FREE = [
+const PLATFORM_FEATURES = [
   'Public and private repositories, organizations, teams and forks',
   'Git over HTTPS and SSH, the yoneda:: helper, the CLI and MCP',
   'Server-side commits, landing, merges and history at any version',
@@ -21,10 +21,9 @@ export function SitePricing({ navigate }: { navigate: Navigate }) {
     <article className="site-page site-pricing">
       <header className="site-page-head">
         <p className="site-badge">Preview pricing</p>
-        <h1>Free platform. Pay only for what we run.</h1>
+        <h1>Pay for what you use.</h1>
         <p className="site-lead">
-          Every platform feature is free. Metered usage is billed at our provider's list cost plus{' '}
-          {margin}%.
+          Metered usage is billed at our provider's list cost plus {margin}%.
         </p>
         <p className="site-notice" role="note">
           Billing is not live yet. These are the rates we plan to charge; no account is billed today
@@ -32,10 +31,10 @@ export function SitePricing({ navigate }: { navigate: Navigate }) {
         </p>
       </header>
 
-      <section aria-labelledby="free-heading" className="site-section">
-        <h2 id="free-heading">Free: the whole platform</h2>
+      <section aria-labelledby="platform-heading" className="site-section">
+        <h2 id="platform-heading">Platform features</h2>
         <ul className="site-checklist">
-          {FREE.map((item) => (
+          {PLATFORM_FEATURES.map((item) => (
             <li key={item}>
               <Check size={16} aria-hidden="true" />
               {item}
@@ -87,9 +86,8 @@ export function SitePricing({ navigate }: { navigate: Navigate }) {
           The managed agents (code, security and slop review) are paid for by what each run uses:
           the tokens its model calls read and write, at the provider&apos;s list rate plus {margin}
           %, and the minutes its review container runs, at {formatUsd(CONTAINER_USD_PER_MINUTE)} a
-          minute. Every platform feature stays free. Setting up your first agent adds{' '}
-          {formatUsd(PRICING.startingCreditUsd)} of credit, and adding a card unlocks more
-          promotional credit. With a card on file, a balance under{' '}
+          minute. Setting up your first agent adds {formatUsd(PRICING.startingCreditUsd)} of credit,
+          and adding a card unlocks more promotional credit. With a card on file, a balance under{' '}
           {formatUsd(AUTO_TOP_UP.below_usd)} is topped up by {formatUsd(AUTO_TOP_UP.add_usd)}; if a
           top-up fails, agents pause at a $0 balance until the card is fixed.
         </p>

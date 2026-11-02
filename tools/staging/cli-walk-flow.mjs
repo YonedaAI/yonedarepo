@@ -20,14 +20,20 @@ import { readEnvFile, Session } from './client.mjs';
 import { ownerLogin } from './realuser-flow.mjs';
 
 /** Deletes what the walk made; what fails is named, and the item fails. */
-async function cleanUp(w, m) {
+export async function cleanUp(w, m) {
   const left = [];
   const attempt = async (what, body) => body().catch((e) => left.push(`${what}: ${e.message}`));
   for (const { id, name } of w.repos.filter((r) => r.id)) await attempt(`repository ${name}`, () => w.owner.call('DELETE', `/repos/${id}?confirm=${encodeURIComponent(name)}`));
   for (const org of w.orgs) await attempt(`organization ${org}`, () => w.owner.call('DELETE', `/orgs/${org}?confirm=${encodeURIComponent(org)}`));
   const { keys = [] } = await w.owner.get('/ssh-keys').catch(() => ({}));
   for (const key of keys.filter((k) => w.keys.includes(k.id) || w.keys.includes(k.fingerprint))) await attempt(`SSH key ${key.id}`, () => w.owner.call('DELETE', `/ssh-keys/${key.id}`));
-  const signOut = (token) => new Session(`${w.api}/api/v1`, { bearer: token }).call('DELETE', '/device/token');
+  const signOut = async (token) => {
+    const session = new Session(`${w.api}/api/v1`, { bearer: token });
+    const revoked = await session.raw('DELETE', '/device/token');
+    // The walk's logout rows may already have revoked this login.
+    assert.ok(revoked.ok || revoked.status === 401, `Token revoke failed: ${revoked.status}`);
+    assert.equal((await session.raw('GET', '/repos')).status, 401, 'The token still authenticates after cleanup');
+  };
   for (const [at, token] of w.tokens.entries()) await attempt(`login token ${at}`, () => signOut(token));
   m.left_behind = left;
 }

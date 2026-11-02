@@ -22,7 +22,7 @@ export async function atRepo(page, account, id, rest = '') {
 export async function openRepo(page, name) {
   if (new URL(page.url()).pathname.startsWith('/settings'))
     await page.getByRole('navigation', { name: 'Browse' }).getByRole('link', { name: 'Home', exact: true }).click();
-  await page.getByRole('button', { name: /^(Choose a repository|Switch repository)/ }).click();
+  await page.getByRole('complementary', { name: 'Sidebar' }).getByRole('button', { name: /^(Choose a repository|Switch repository)/ }).click();
   await page.getByRole('combobox', { name: 'Find repositories' }).fill(name);
   const literal = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   await page.getByRole('option', { name: new RegExp(`^([^/]+/)?${literal}(,|$)`) }).click();

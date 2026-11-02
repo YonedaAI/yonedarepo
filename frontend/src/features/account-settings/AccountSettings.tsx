@@ -83,7 +83,7 @@ function General({ identity, loading, onIdentity, onHandle, navigate }: Props) {
         <SettingsSection id="general-billing" title="Billing">
           <SettingsRow
             title="Agent credit and usage"
-            detail="Platform features are free. Managed agent runs use credit."
+            detail="Managed agent runs use credit."
             action={
               <a
                 className="button-link quiet"

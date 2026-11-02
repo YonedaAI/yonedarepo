@@ -111,6 +111,9 @@
               "SuperfanLedger"
             ]
           }
+        ],
+        "compatibility_flags": [
+          "global_fetch_strictly_public"
         ]
       }
     },
@@ -123,6 +126,7 @@
         "queues, workflow, check containers and secrets. Browsers reach it through the front Worker's",
         "/api/v1 proxy (PLATFORM service binding); api.yonedarepo.com is its own hostname (Custom",
         "Domain plus the exact route);",
+        "GITHUB_APP_ID, GITHUB_APP_SLUG and the optional secret GITHUB_APP_PRIVATE_KEY (the App's PEM): the production GitHub App for private repository imports. Setup URL: https://yonedarepo.com/github/connected. Dev uses a separate App and key.",
         "WEB_ORIGIN is where people approve device logins (/device). Secrets, set from stdin:",
         "OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)",
         "Placed next to the data (aws:us-east-1, R2 and CheckContainer in ENAM), batched landing.",
@@ -181,6 +185,7 @@
       "optional_secrets": [
         "ANALYTICS_READ_TOKEN",
         "MANAGED_ADMIN_TOKEN",
+        "GITHUB_APP_PRIVATE_KEY",
         "NEWSLETTER_KEY"
       ],
       "health": "yonedarepo-platform",
@@ -253,7 +258,9 @@
           "LEGAL_HOLD": "on",
           "REPO_STORAGE_GUARD": "on",
           "REPO_SIZE_GUARD": "on",
-          "PACK_CACHE": "on"
+          "PACK_CACHE": "on",
+          "GITHUB_APP_ID": "5583304",
+          "GITHUB_APP_SLUG": "yonedarepo-import"
         },
         "secrets_store_secrets": [
           {
@@ -939,6 +946,9 @@
               "DeadmanState"
             ]
           }
+        ],
+        "compatibility_flags": [
+          "global_fetch_strictly_public"
         ]
       }
     }

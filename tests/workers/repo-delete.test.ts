@@ -1,6 +1,7 @@
 // Repository deletion: confirmed by name, it leaves a tombstone (reads and writes answer
 // GONE, tokens revoked, listing row removed) and purges the object store in a platform job.
 import { expect, it, vi } from 'vitest';
+import { rpcValue } from '../../cloudflare/worker/durable';
 import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
 import { deliverHook } from '../../cloudflare/worker/repo-hooks';
 import type { Env } from '../../cloudflare/worker/types';
@@ -96,6 +97,39 @@ it('answers GONE in every isolate once the delete has answered', async () => {
   expect((await platformFetch(request, local)).status).toBe(200);
   const read = await api(`/repos/${id}/refs`, { token }, {}, local);
   expect([read.status, read.body.error?.code]).toEqual([404, 'GONE']);
+});
+
+it('preserves a deleted repository refusal across the real head-holder RPC', async () => {
+  const target = { ...local, LAND_COMBINERS: bindings.LAND_COMBINERS } as unknown as Env;
+  const cookie = await signup('rpc_deleter');
+  const created = await api('/repos', { cookie }, {
+    body: { name: 'rpc-doomed', files: [file('a.txt', 'a\n')], author },
+  }, target);
+  expect(created.status).toBe(200);
+  const repo = `/repos/${created.body.id}`;
+  expect((await api(`${repo}/refs`, { cookie }, {}, target)).status).toBe(200);
+  expect((await api(`${repo}?confirm=rpc-doomed`, { cookie }, { method: 'DELETE' }, target)).status).toBe(200);
+  // Domain refusals must travel as data: a remote runtime may drop custom Error fields.
+  const holder = bindings.LAND_COMBINERS.get(bindings.LAND_COMBINERS.idFromName(`${created.body.id}#head`)) as any;
+  for (const call of [() => holder.head(created.body.id, 0), () => holder.access(created.body.id), () => holder.refs(created.body.id, 0)]) {
+    await expect(rpcValue(call())).resolves.toEqual({ error: { code: 'GONE', message: 'Repository was deleted' } });
+  }
+  for (const path of ['/refs', '/tree?path=', '/log']) {
+    const gone = await api(`${repo}${path}`, { cookie }, {}, target);
+    expect([gone.status, gone.body.error?.code], path).toEqual([404, 'GONE']);
+  }
+});
+
+it('reads an empty repository through the real head-holder RPC', async () => {
+  const target = { ...local, LAND_COMBINERS: bindings.LAND_COMBINERS } as unknown as Env;
+  const owner = { cookie: await signup('rpc_empty') };
+  const created = await api('/repos', owner, { body: { name: 'rpc-empty' } }, target);
+  expect(created.status).toBe(200);
+  const id = created.body.id;
+  const holder = bindings.LAND_COMBINERS.get(bindings.LAND_COMBINERS.idFromName(`${id}#head`)) as any;
+  expect(await rpcValue(holder.head(id, 0))).toMatchObject({ error: { code: 'NOT_FOUND' } });
+  const refs = await api(`/repos/${id}/refs`, owner, {}, target);
+  expect([refs.status, refs.body.refs]).toEqual([200, {}]);
 });
 
 it('sends repo.deleted to hooks subscribed to repo, from the tombstone', async () => {

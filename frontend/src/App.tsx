@@ -9,7 +9,7 @@ import { AccountSettings } from './features/account-settings/AccountSettings';
 import { EmailLinkPage } from './features/account-settings/EmailLinkPage';
 import { emailLinkTitle, isEmailLink } from './features/account-settings/emailLinkRoute';
 import { AdminRoot } from './features/admin/AdminRoot';
-import { readSeen, type Signups, saveSeen, signupsPath } from './features/admin/adminModel';
+import { useSignups } from './features/admin/useSignups';
 import { AgentsRoot } from './features/agents/AgentsRoot';
 import { syncAgents } from './features/agents/agentsModel';
 import { ExplorePage } from './features/explore/ExplorePage';
@@ -95,13 +95,7 @@ export function App() {
   const orgs = useSource<{ orgs: OrgSummary[] }>(session.authenticated ? '/orgs' : null);
   const activity = useSource<AccountActivity>(session.authenticated ? '/activity' : null);
   // Operators: the sign-up feed, badged in the sidebar with those since this browser looked.
-  const isAdmin = Boolean(session.identity?.is_admin);
-  const [signupsSeen, setSignupsSeen] = useState(readSeen);
-  const signups = useSource<Signups>(isAdmin ? signupsPath(signupsSeen) : null);
-  const onSignupsSeen = useCallback((at: number) => {
-    saveSeen(at);
-    setSignupsSeen(at);
-  }, []);
+  const { isAdmin, signups, signupsSeen, onSignupsSeen } = useSignups(session.identity);
   // Before anything renders a link, so repository links carry their readable address.
   for (const r of platform.data?.repos ?? []) rememberRepoName(r.id, r.owner_handle, r.name);
   const self = [session.identity?.username, session.identity?.handle];

@@ -106,7 +106,8 @@ describe('the closing band', () => {
   });
 
   it('says it in plain words', () => {
-    expect(home).toContain('The platform is free. Works with Git, our CLI and any MCP client.');
+    expect(home).toContain('Works with Git, our CLI and any MCP client.');
+    expect(home).not.toContain('The platform is free.');
     expect(home).not.toContain('stock Git, the CLI or MCP');
   });
 });

@@ -20,6 +20,7 @@ import { compute } from './repo-compute';
 import { accessOf, fetchHead, withoutTokens } from './repo-head-holder';
 import type { TreeEntry } from './repo-objects';
 import { ApiError, caller, type Json, noteWrite, type RepoContext } from './repo-ops';
+import { repoRpcValue } from './repo-rpc';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
@@ -109,7 +110,7 @@ async function fetchInto(env: Env, repo: string, minVersion: number) {
       return { head: withoutTokens(full), at };
     }
     const base = heads.get(repo)?.head;
-    const { access, ...next } = await rpcValue(
+    const { access, ...next } = await repoRpcValue(
       shared.head(repo, minVersion, base?.version, accesses.get(repo)?.version ?? null),
     );
     if (access) accesses.set(repo, access);
@@ -132,7 +133,7 @@ async function accessFor(env: Env, repo: string, head: Json): Promise<Json> {
   if (cached && cached.version === head.access_version) return cached;
   const shared = holder(env, repo);
   const access = await once(`access:${repo}`, async () =>
-    shared ? rpcValue(shared.access(repo)) : accessOf(await fetchHead(env, repo)),
+    shared ? repoRpcValue(shared.access(repo)) : accessOf(await fetchHead(env, repo)),
   );
   accesses.set(repo, access);
   return access;

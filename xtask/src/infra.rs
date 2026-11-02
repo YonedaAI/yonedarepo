@@ -17,6 +17,7 @@ pub(crate) mod retired;
 pub(crate) mod secrets;
 pub(crate) mod smoke;
 pub(crate) mod spec;
+mod spec_checks;
 pub(crate) mod teardown;
 pub(crate) mod template;
 pub(crate) mod wrangler;

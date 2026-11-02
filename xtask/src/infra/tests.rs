@@ -8,6 +8,28 @@ const DEV_LOCK: &str = include_str!("../../../infra/envs/dev.lock.json");
 const PROD: &str = include_str!("../../../infra/envs/prod.json");
 const PROD_LOCK: &str = include_str!("../../../infra/envs/prod.lock.json");
 
+#[test]
+fn independent_watchers_reach_each_other_over_the_public_network() {
+    // These probes deliberately use public URLs rather than service bindings: each watcher
+    // must observe the other as an outside client would, including its public route.
+    for text in [DEV, PROD] {
+        let spec = Spec::parse(text).unwrap();
+        for worker in spec
+            .workers
+            .iter()
+            .filter(|w| matches!(w.role.as_str(), "superfan" | "deadman"))
+        {
+            assert!(
+                worker.config["compatibility_flags"]
+                    .as_array()
+                    .is_some_and(|flags| flags.iter().any(|f| f == "global_fetch_strictly_public")),
+                "{} must be able to fetch the other watcher's public Worker URL",
+                worker.file
+            );
+        }
+    }
+}
+
 fn committed(file: &str) -> Value {
     let text = match file {
         "wrangler.dev-platform.jsonc" => {
@@ -699,6 +721,46 @@ fn job_summary_tables_are_markdown_with_escaped_cells() {
     );
 }
 
+#[test]
+fn production_import_app_has_its_own_identity_and_key_binding() {
+    let platform = |text: &str| {
+        Spec::parse(text)
+            .unwrap()
+            .workers
+            .into_iter()
+            .find(|worker| worker.role == "platform")
+            .unwrap()
+    };
+    let (dev, prod) = (platform(DEV), platform(PROD));
+    for worker in [&dev, &prod] {
+        let vars = &worker.config["vars"];
+        assert!(
+            vars["GITHUB_APP_ID"]
+                .as_str()
+                .and_then(|id| id.parse::<u64>().ok())
+                .is_some_and(|id| id > 0),
+            "each environment needs a GitHub App identity"
+        );
+        assert!(
+            vars["GITHUB_APP_SLUG"]
+                .as_str()
+                .is_some_and(|slug| !slug.is_empty())
+        );
+        assert!(
+            worker
+                .optional_secrets
+                .iter()
+                .any(|name| name == "GITHUB_APP_PRIVATE_KEY")
+        );
+    }
+    for name in ["GITHUB_APP_ID", "GITHUB_APP_SLUG"] {
+        assert_ne!(
+            dev.config["vars"][name], prod.config["vars"][name],
+            "dev and prod must not share an import App"
+        );
+    }
+}
+
 /// Prod runs what dev runs. A variable may differ only for the reason given here.
 #[test]
 fn prod_has_every_switch_dev_has() {
@@ -716,8 +778,8 @@ fn prod_has_every_switch_dev_has() {
         ("REGION_HINT_TEST", "a dev test"),
         ("REGION_SIGNALS", "dev first: prod with its first cell"),
         ("CELLS", "dev first: prod with its first cell"),
-        ("GITHUB_APP_ID", "a dev App: none on prod yet"),
-        ("GITHUB_APP_SLUG", "a dev App: none on prod yet"),
+        ("GITHUB_APP_ID", "its own import App"),
+        ("GITHUB_APP_SLUG", "its own import App"),
     ];
     const DEV_TEST: (&str, &str) = ("PROBE_LANDING", "a dev test: off, and frozen");
     let parse = |text: &str| serde_json::from_str::<serde_json::Value>(text).unwrap();

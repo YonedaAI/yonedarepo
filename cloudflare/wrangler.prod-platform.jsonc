@@ -4,6 +4,7 @@
 // queues, workflow, check containers and secrets. Browsers reach it through the front Worker's
 // /api/v1 proxy (PLATFORM service binding); api.yonedarepo.com is its own hostname (Custom
 // Domain plus the exact route);
+// GITHUB_APP_ID, GITHUB_APP_SLUG and the optional secret GITHUB_APP_PRIVATE_KEY (the App's PEM): the production GitHub App for private repository imports. Setup URL: https://yonedarepo.com/github/connected. Dev uses a separate App and key.
 // WEB_ORIGIN is where people approve device logins (/device). Secrets, set from stdin:
 // OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)
 // Placed next to the data (aws:us-east-1, R2 and CheckContainer in ENAM), batched landing.
@@ -346,6 +347,8 @@
     "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
     "EMAIL_CONTACT": "hello@yonedarepo.com",
     "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
+    "GITHUB_APP_ID": "5583304",
+    "GITHUB_APP_SLUG": "yonedarepo-import",
     "LANDING_INSTRUMENTS": "on",
     "LAND_MODE": "batch",
     "LAND_WHEN_CLEARED": "on",

@@ -45,7 +45,8 @@ const AGENT_PRINCIPAL = 'agent:';
 
 const noted = new AsyncLocalStorage<Noted>();
 let held: { at: number; accounts: Set<string> } | null = null;
-const reading = new Flights<void>();
+let reading = new Flights<void>();
+let generation = 0;
 
 /** Runs a platform request with a place for `noteAccount` to leave its account. */
 export const withRequestAccount = <T>(run: () => T) => noted.run({ account: null }, run);
@@ -84,16 +85,20 @@ async function read(env: Env): Promise<string[]> {
 
 /** Refreshes the list; a failed read keeps the last one and tries again next time. */
 async function refresh(env: Env, now: number) {
-  if (held && now - held.at < LIST_MS) return;
-  await reading.join('list', () =>
-    read(env)
-      .then((accounts) => {
-        held = { at: now, accounts: new Set(accounts) };
-      })
-      .catch((e) => {
-        log.warn('internal_accounts.unread', { error: e });
-      }),
-  ).work;
+  for (;;) {
+    if (held && now - held.at < LIST_MS) return;
+    const started = generation;
+    await reading.join('list', () =>
+      read(env)
+        .then((accounts) => {
+          if (started === generation) held = { at: now, accounts: new Set(accounts) };
+        })
+        .catch((e) => {
+          log.warn('internal_accounts.unread', { error: e });
+        }),
+    ).work;
+    if (started === generation) return;
+  }
 }
 
 /** The accounts flagged internal, as this isolate holds them; null when it has never read them. */
@@ -113,4 +118,6 @@ export async function isInternal(env: Env, account: string, now = Date.now()) {
 /** An operator changed a flag: this isolate reads the list again next time. */
 export function forgetInternalAccounts() {
   held = null;
+  generation += 1;
+  reading = new Flights<void>();
 }
