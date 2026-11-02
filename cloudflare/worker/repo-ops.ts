@@ -48,7 +48,8 @@ export type Credentials =
         | 'quarantine'
         | 'erase'
         | 'land-when-cleared'
-        | 'audit';
+        | 'audit'
+        | 'close';
       /** No undo window for this caller: a purge nobody may undo (a failed create taken back, an
        * operator's purge). */
       _undo_ms?: 0;

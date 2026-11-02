@@ -236,6 +236,7 @@ fn run<S: SqlStore>(
         R::SetVisibility => visibility::set(db, c, actor),
         R::Rename => visibility::rename(db, c, actor, settings),
         R::MemberPut => members::put(db, c, actor, settings),
+        R::AccountClosed => deletion::account_closed(db, c, settings),
         R::MemberRemove => members::remove(db, c, actor, settings),
     }
 }

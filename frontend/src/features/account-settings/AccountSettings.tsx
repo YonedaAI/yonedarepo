@@ -16,6 +16,7 @@ import type { RepoSummary } from '../source-platform/TokenParts';
 import type { Loaded } from '../source-platform/useSource';
 import { AvatarSettings } from './AvatarSettings';
 import { BillingSettings } from './BillingSettings';
+import { DeleteAccount } from './DeleteAccount';
 import { EmailSettings } from './EmailSettings';
 import { HandleRow } from './HandleSettings';
 import { RecoverySettings } from './RecoverySettings';
@@ -88,6 +89,7 @@ function General({ identity, loading, onAvatar, onHandle, navigate }: Props) {
           />
         </SettingsSection>
       )}
+      {identity && <DeleteAccount identity={identity} />}
     </>
   );
 }

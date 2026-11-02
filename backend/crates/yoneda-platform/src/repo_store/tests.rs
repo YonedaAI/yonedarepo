@@ -75,6 +75,7 @@ impl Harness {
             None if principal == "platform:fork" => c["_system"] = json!("fork"),
             None if principal == "platform:lfs" => c["_system"] = json!("lfs"),
             None if principal == "platform:purge" => c["_system"] = json!("purge"),
+            None if principal == "platform:close" => c["_system"] = json!("close"),
             None if principal == "platform:quarantine" => c["_system"] = json!("quarantine"),
             None if principal.starts_with("member:") => {
                 let account = &principal["member:".len()..];

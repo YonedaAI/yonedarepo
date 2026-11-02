@@ -111,6 +111,14 @@ export class WorkspaceAgents extends DurableObject<ManagedEnv> {
     });
   }
 
+  /** A deleted account: every agent's set-up forgotten. */
+  close() {
+    this.ctx.storage.transactionSync(() => {
+      for (const table of ['agent_meta', 'settings', 'enabled'])
+        this.#sql.exec(`DELETE FROM ${table}`);
+    });
+  }
+
   /** Repositories any agent of this workspace is set up on (paused ones included). */
   reposInUse(): string[] {
     return this.#sql

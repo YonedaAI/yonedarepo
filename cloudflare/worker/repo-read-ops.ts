@@ -25,6 +25,7 @@ export const KEEPS_REFS = new Set([
   'repo_size_add',
   'repo_hold_owner',
   'repo_store_audit',
+  'repo_fork_list',
   'repo_authors_missing',
   'repo_authors_set',
   'repo_dir_activity',

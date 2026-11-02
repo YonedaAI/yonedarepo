@@ -48,7 +48,7 @@ pub(super) fn authorize(actor: &Actor, op: ForkOp) -> Result<()> {
         // A new fork's history and refs: only the platform's fork job fills them.
         ForkOp::Record | ForkOp::Refs if actor.can("import") => Ok(()),
         // Registering forks and carrying changes across: the platform only.
-        ForkOp::Register | ForkOp::Forget | ForkOp::Branch | ForkOp::Mirror
+        ForkOp::Register | ForkOp::List | ForkOp::Forget | ForkOp::Branch | ForkOp::Mirror
             if actor.can("fork") =>
         {
             Ok(())
@@ -56,6 +56,7 @@ pub(super) fn authorize(actor: &Actor, op: ForkOp) -> Result<()> {
         ForkOp::Record
         | ForkOp::Refs
         | ForkOp::Register
+        | ForkOp::List
         | ForkOp::Forget
         | ForkOp::Branch
         | ForkOp::Mirror => Err(Error::new(
@@ -77,6 +78,7 @@ pub(super) fn run<S: SqlStore>(
         ForkOp::Export => fork_copy::export(db, c),
         ForkOp::Record => fork_copy::record(db, c),
         ForkOp::Refs => fork_copy::refs(db, c, &actor.principal),
+        ForkOp::List => list(db),
         ForkOp::Register => register(db, c, true),
         ForkOp::Forget => register(db, c, false),
         ForkOp::Offer => offer(db, c, settings),
@@ -115,6 +117,13 @@ pub(super) fn count<S: SqlStore>(db: &S) -> Result<u64> {
     Ok(db.query("SELECT COUNT(*) AS n FROM forks", &[])?[0]["n"]
         .as_u64()
         .unwrap_or_default())
+}
+
+/// `repo_fork_list`: the repositories that read this one.
+fn list<S: SqlStore>(db: &S) -> Result<Value> {
+    let rows = db.query("SELECT repo FROM forks ORDER BY repo", &[])?;
+    let forks: Vec<&Value> = rows.iter().map(|r| &r["repo"]).collect();
+    Ok(json!({ "forks": forks }))
 }
 
 /// `repo_fork_register` and `repo_fork_forget {fork}`: the parent's list of live forks.

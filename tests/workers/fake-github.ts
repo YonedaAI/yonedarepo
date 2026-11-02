@@ -77,6 +77,10 @@ export class FakeGitHub {
     const [, id, tokens] = /^\/app\/installations\/(\d+)(\/access_tokens)?$/.exec(pathname) ?? [];
     const installed = this.installations.get(Number(id));
     if (!installed) return none();
+    if (init?.method === 'DELETE') {
+      this.installations.delete(installed.id);
+      return new Response(null, { status: 204 });
+    }
     if (!tokens) return Response.json(installed);
     if (installed.suspended_at) return Response.json({ message: 'This installation has been suspended' }, { status: 403 });
     const scope = JSON.parse(String(init?.body));
