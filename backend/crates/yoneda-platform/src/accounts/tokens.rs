@@ -247,6 +247,22 @@ pub(super) fn revoke_all<S: SqlStore>(db: &S, now: i64) -> Result<i64> {
     Ok(live)
 }
 
+/// Revokes every live token with the SSH keys each one added, as a single revocation does
+/// (a password reset; a recovery removes every key anyway), and answers how many of each.
+/// A removed key's fingerprint claim stays behind and grants nothing: the next add takes it.
+pub(super) fn revoke_all_with_keys<S: SqlStore>(db: &S, now: i64) -> Result<(i64, i64)> {
+    let live = db.query(
+        "SELECT id FROM account_tokens WHERE revoked_at IS NULL",
+        &[],
+    )?;
+    let mut keys = 0;
+    for token in &live {
+        let id = token["id"].as_str().ok_or_else(|| bad("Corrupt token"))?;
+        keys += super::ssh_key_tokens::remove_added_by(db, id, now)?.len() as i64;
+    }
+    Ok((revoke_all(db, now)?, keys))
+}
+
 /// A stored token without its digest.
 fn public(row: &Value) -> Result<Value> {
     let parse = |key: &str| -> Result<Value> {

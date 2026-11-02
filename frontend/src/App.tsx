@@ -7,7 +7,8 @@
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { AccountSettings } from './features/account-settings/AccountSettings';
-import { VerifyEmailPage } from './features/account-settings/VerifyEmailPage';
+import { EmailLinkPage } from './features/account-settings/EmailLinkPage';
+import { emailLinkTitle, isEmailLink } from './features/account-settings/emailLinkRoute';
 import { AdminRoot } from './features/admin/AdminRoot';
 import { readSeen, type Signups, saveSeen, signupsPath } from './features/admin/adminModel';
 import { AgentsRoot } from './features/agents/AgentsRoot';
@@ -186,8 +187,8 @@ export function App() {
               ? 'Settings'
               : route.view === 'device'
                 ? 'Approve a device'
-                : route.view === 'verify-email'
-                  ? 'Confirm your email'
+                : isEmailLink(route)
+                  ? emailLinkTitle(route)
                   : route.view === 'org'
                     ? route.org
                     : route.view === 'profile'
@@ -311,7 +312,8 @@ export function App() {
           onError={session.setError}
           onRefresh={refresh}
         />
-        {session.sessionEnded ? (
+        {/* A reset ends this browser's session too; its recovery code must stay on screen. */}
+        {session.sessionEnded && route.view !== 'reset-password' ? (
           <SessionEnded onConnected={() => void session.discover()} />
         ) : (
           <>
@@ -420,9 +422,7 @@ export function App() {
                 )
               ))}
             {route.view === 'device' && <DevicePage code={route.code} />}
-            {route.view === 'verify-email' && (
-              <VerifyEmailPage account={route.account} token={route.token} />
-            )}
+            {isEmailLink(route) && <EmailLinkPage route={route} />}
             {route.view === 'org' && (
               <OrgPage
                 key={`${route.org}:${tick}`}

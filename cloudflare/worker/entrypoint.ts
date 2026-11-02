@@ -6,7 +6,7 @@ import type { AccountCreated } from './account-index';
 import { frontFetch } from './front-routes';
 import { log, served } from './log';
 import { accountCreated } from './platform-accounts';
-import { verifyEmail } from './platform-email-verify';
+import { passwordReset, verifyEmail } from './platform-email-verify';
 import { oneAtATimeInBatch, platformJob } from './platform-entrypoint';
 import { projectHandle } from './platform-handles';
 import { repoApi } from './repo-api';
@@ -32,6 +32,9 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
   }
   verifyEmail(account: string, change?: string) {
     return verifyEmail(this.env, account, change);
+  }
+  passwordReset(account: string) {
+    return passwordReset(this.env, account);
   }
   async queue(batch: MessageBatch<Envelope>) {
     const oneAtATime = oneAtATimeInBatch();

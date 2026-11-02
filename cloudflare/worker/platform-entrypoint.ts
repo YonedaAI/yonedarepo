@@ -10,12 +10,13 @@ import { internalAccounts } from './internal-accounts';
 import { log, served } from './log';
 import { accountCreated, SIGNUP_NOTICE } from './platform-accounts';
 import { nightlyReconcile } from './platform-admin-billing';
-import { verifyEmail } from './platform-email-verify';
+import { passwordReset, verifyEmail } from './platform-email-verify';
 import { projectHandle } from './platform-handles';
 import { settleFailedJob } from './platform-job-settle';
 import { laterIfHeld } from './platform-legal-hold';
 import { NEWSLETTER_JOB, sweepNewsletter } from './platform-newsletter';
 import { newsletterJob } from './platform-newsletter-email';
+import { passwordResetJob } from './platform-password-email';
 import { platformFetch } from './platform-routes';
 import { signupNoticeJob } from './platform-signup-notice';
 import { sshFrontDoor, sshKeepAlive } from './platform-ssh-gateway';
@@ -120,6 +121,10 @@ export async function platformJob(
     const outcome = await welcomeJob(env, envelope, message.attempts);
     if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
     else message.ack();
+  } else if (envelope.kind === 'account_password_reset') {
+    const outcome = await passwordResetJob(env, envelope, message.attempts);
+    if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
+    else message.ack();
   } else if (envelope.kind === NEWSLETTER_JOB) {
     const outcome = await newsletterJob(env, envelope, message.attempts);
     if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
@@ -159,6 +164,10 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
    * above): a new confirmation token and email, or why not. */
   verifyEmail(account: string, change?: string) {
     return verifyEmail(this.env, account, change);
+  }
+  /** A forgotten password's link, or nothing (RPC, as above). */
+  passwordReset(account: string) {
+    return passwordReset(this.env, account);
   }
   /** Every minute: keeps the SSH gateway (and its tunnel) running, sends the purges that
    * came due and this minute's compaction jobs; once a night, starts the billing reconcile and

@@ -8,6 +8,19 @@
   margin: 0 auto;
   padding: 28px 32px 48px;
 }
+/* One password field: a line this short would look lost across the page's full width. */
+.source-device.reset-password {
+  max-width: 480px;
+}
+.reset-password .account-panel form {
+  margin: 0;
+}
+.reset-password .account-panel .button-link {
+  margin-top: 12px;
+}
+.reset-password .account-panel a:not(.button-link) {
+  text-decoration: underline;
+}
 .settings-head {
   display: flex;
   flex-wrap: wrap;

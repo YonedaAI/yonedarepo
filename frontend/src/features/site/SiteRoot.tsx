@@ -3,7 +3,6 @@
 import { lazy, Suspense, useEffect } from 'react';
 import type { Session } from '../../hooks/useSession';
 import type { Navigate } from '../shell/useRoute';
-import { AccountPanel } from '../workspace/AccountPanel';
 import { SiteBlog } from './SiteBlog';
 import { SiteFeaturePage } from './SiteFeaturePage';
 import { SiteFeatures } from './SiteFeatures';
@@ -11,8 +10,9 @@ import { SiteHome } from './SiteHome';
 import { SiteLayout } from './SiteLayout';
 import { SiteCompany, SiteLegal } from './SitePages';
 import { SitePricing } from './SitePricing';
+import { SiteSignIn } from './SiteSignIn';
 import { SiteUpdates, SiteUpdatesLink } from './SiteUpdates';
-import { documentTitle, pageTitle } from './seo';
+import { documentTitle } from './seo';
 import { SIGNED_IN_HINT, type SitePage } from './siteRoute';
 
 // The docs (their pages, search index and layout) load on the first docs visit; the page
@@ -42,7 +42,6 @@ export function SiteRoot({
   /** Why a provider sign-in came back refused (shown on the sign-in page). */
   signInError?: string;
 }) {
-  const title = pageTitle(site);
   const tabTitle = documentTitle(site);
   useEffect(() => {
     if (site.page !== 'docs') document.title = tabTitle;
@@ -76,19 +75,16 @@ export function SiteRoot({
         <SiteUpdatesLink action={site.action} token={site.token} navigate={navigate} />
       )}
       {site.page === 'signin' && (
-        <section className="site-signin" aria-labelledby="signin-heading">
-          <h1 id="signin-heading">{title}</h1>
-          <AccountPanel
-            key={site.mode}
-            initialMode={site.mode}
-            initialError={signInError}
-            onConnected={() => {
-              signedInHint(true);
-              void session.discover();
-              navigate({ view: 'home' });
-            }}
-          />
-        </section>
+        <SiteSignIn
+          key={site.mode}
+          mode={site.mode}
+          error={signInError}
+          onConnected={() => {
+            signedInHint(true);
+            void session.discover();
+            navigate({ view: 'home' });
+          }}
+        />
       )}
     </SiteLayout>
   );

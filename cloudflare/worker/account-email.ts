@@ -25,8 +25,10 @@ type Outcome = { sent: true } | { sent: false; reason: string };
 type Platform = {
   accountCreated(account: string, details: AccountCreated): Promise<void>;
   verifyEmail(account: string, change?: string): Promise<Outcome>;
+  passwordReset(account: string): Promise<void>;
 };
-const platformOf = (env: Env) => (env.PLATFORM ?? env.SELF) as unknown as Platform | undefined;
+export const platformOf = (env: Env) =>
+  (env.PLATFORM ?? env.SELF) as unknown as Platform | undefined;
 
 let warnedOff = false;
 
