@@ -79,6 +79,12 @@ const page = (d: CommitDetail, s: RepoStatus) =>
 
 describe('a landed commit', () => {
   it('reports where it landed and offers only Revert (and Run checks when configured)', () => {
+    expect(commitPanel({ landings: [], on_main: true, gates: gates() }, writer, noChecks)).toEqual({
+      state: 'landed',
+      landings: [],
+      revert: false,
+      runChecks: false,
+    });
     expect(commitPanel({ landings: landed, gates: gates() }, writer, noChecks)).toEqual({
       state: 'landed',
       landings: landed,

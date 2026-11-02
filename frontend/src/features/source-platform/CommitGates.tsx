@@ -31,6 +31,8 @@ export type CommitDetail = {
   check_runs: { id: string; name: string; status: string; epoch: number }[];
   reviews: { principal: string; decision: string; reason?: string; recorded_at: number }[];
   landings: Landing[];
+  /** Already in main's history, with or without a landing of its own. */
+  on_main?: boolean;
   repairs: Repair[];
   review_classes: ReviewClasses;
   break_glass: BreakGlassRecord[];

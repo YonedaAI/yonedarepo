@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use yoneda_core::{
     Error, Result,
-    git_object::{ObjectId, merge_bases},
+    git_object::{ObjectId, is_ancestor, merge_bases},
     txlog::replay_projected,
 };
 
@@ -223,7 +223,37 @@ pub fn commit<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
         "symbol_touches": super::symbols::as_json(&super::symbols::for_commit(db, &id)?),
         "break_glass": super::break_glass::for_commit(db, &id)?,
         "gates": gates(db, &row, &target, settings)?,
+        "on_main": on_main(db, &id, row.generation)?,
     }))
+}
+
+/// Generations a commit's page walks under main's head before it stops asking.
+const ON_MAIN_WALK: u64 = 5_000;
+
+/// Whether `id` is already in main's history. Only the head of a landing or an import has a
+/// landing of its own; what lies under it has nothing left to land. The ref chain answers for
+/// first parents, and a bounded walk for a commit a merge brought in.
+fn on_main<S: SqlStore>(db: &S, id: &ObjectId, generation: u64) -> Result<bool> {
+    if super::ref_chain::branches_holding(db, id)?
+        .iter()
+        .any(|name| name == "refs/heads/main")
+    {
+        return Ok(true);
+    }
+    let main = db.query(
+        "SELECT commit_id FROM refs WHERE name='refs/heads/main'",
+        &[],
+    )?;
+    let Some(head) = main.first().and_then(|r| r["commit_id"].as_str()) else {
+        return Ok(false);
+    };
+    let head = ObjectId::parse(head)?;
+    let Some(tip) = rows::commit_row(db, &head)? else {
+        return Ok(false);
+    };
+    Ok(tip.generation >= generation
+        && tip.generation - generation <= ON_MAIN_WALK
+        && is_ancestor(&rows::RecordedGraph(db), id, &head)?)
 }
 
 /// Best common ancestors of two recorded commits, with their trees.
