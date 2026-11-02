@@ -102,14 +102,20 @@ pub async fn push(session: &mut Session, specs: Vec<Spec>) -> String {
         }
     };
     let mut ready = Vec::new();
+    let mut doomed = Vec::new();
     for spec in &specs {
         if spec.src.is_empty() {
-            let why = if spec.dst.starts_with(TAGS) {
-                "tags are immutable and cannot be deleted"
-            } else {
-                "deleting branches is not supported"
+            let outcome = match listed.heads.get(&spec.dst) {
+                _ if spec.dst.starts_with(TAGS) => {
+                    Err("tags are immutable and cannot be deleted".to_owned())
+                }
+                Some(current) => {
+                    doomed.push(json!({ "ref": spec.dst, "commit": null, "expected": current }));
+                    Ok(())
+                }
+                None => Err("no such branch on the platform".to_owned()),
             };
-            outcomes.insert(spec.dst.clone(), Err(why.into()));
+            outcomes.insert(spec.dst.clone(), outcome);
             continue;
         }
         let local = match session.git.commit_of(&spec.src) {
@@ -143,6 +149,7 @@ pub async fn push(session: &mut Session, specs: Vec<Spec>) -> String {
         // All or none: one refused ref refuses the push.
         refuse_rest(&mut outcomes, "atomic push refused");
         ready.clear();
+        doomed.clear();
     }
     if atomic && ready.iter().any(|r| r.spec.dst == MAIN) {
         refuse_rest(
@@ -150,6 +157,15 @@ pub async fn push(session: &mut Session, specs: Vec<Spec>) -> String {
             "an atomic push cannot include main (main moves by landing)",
         );
         ready.clear();
+    }
+    if !session.options.dry_run && !doomed.is_empty() {
+        let body = json!({ "updates": doomed });
+        if let Err(failure) = session.api.post("/refs/batch", &body).await {
+            for update in &doomed {
+                let dst = update["ref"].as_str().unwrap_or_default().to_owned();
+                outcomes.insert(dst, Err(failure.to_string()));
+            }
+        }
     }
     if !session.options.dry_run && !ready.is_empty() {
         match declared::reads(session) {
