@@ -8,7 +8,7 @@
 // reads .local/demo-repos/state.json, so a rerun carries on.
 //
 //   set -a; . ~/.config/yonedarepo/dev-owner.env; set +a
-//   node tools/staging/demo-repos.mjs [--only cobra,commander,click] [--phases ...] [--cap-usd 2.4]
+//   node tools/staging/demo-repos.mjs [--only cobra,commander,click] [--phases ...] [--cap-usd 2.9]
 //
 // Paid: each pushed head costs two review runs of managed credit, and the run stops before the cap;
 // Claude Code stops before CLAUDE_CAP_USD in all. Agents' tokens are the owner's, limited to the one
@@ -36,7 +36,7 @@ import { ownerLogin } from './realuser-flow.mjs';
 import { Workspace } from './realuser-git.mjs';
 import { scrubber } from './realuser-plan.mjs';
 
-const PHASES = ['setup', 'memories', 'smoke', 'clean', 'sloppy', 'fix', 'config', 'suggest', 'suggest2', 'drift', 'approvals', 'approval', 'release', 'report'];
+const PHASES = ['setup', 'memories', 'smoke', 'clean', 'sloppy', 'fix', 'config', 'sloppy2', 'fix2', 'suggest', 'suggest2', 'drift', 'approvals', 'approval', 'release', 'report'];
 const CLAUDE_CAP_USD = 20;
 const GATEWAY = 'https://gateway.ai.cloudflare.com/v1/f011d0ee02b23cad26b4b38151b204ad/yonedarepo-dev-managed-agents';
 const MIMO_PROXY = 'https://yonedarepo-dev-model-proxy.mlong-f01.workers.dev';
@@ -46,8 +46,8 @@ const { values } = parseArgs({
     api: { type: 'string', default: 'https://api.dev.yonedarepo.com' },
     only: { type: 'string', default: Object.keys(REPOS).join(',') },
     phases: { type: 'string', default: PHASES.join(',') },
-    'agent-timeout': { type: 'string', default: '900' },
-    'cap-usd': { type: 'string', default: '2.4' },
+    'agent-timeout': { type: 'string', default: '1500' },
+    'cap-usd': { type: 'string', default: '2.9' },
   },
 });
 const origin = values.origin.replace(/\/$/, '');
@@ -65,7 +65,16 @@ mkdirSync(join(local, 'shots'), { recursive: true });
 mkdirSync(evidence, { recursive: true });
 const stateFile = join(local, 'state.json');
 const state = existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, 'utf8')) : { repos: {} };
-const save = () => writeJson(stateFile, state);
+/** One driver flies each repository at a time: each writes only what is its own. */
+const save = () => {
+  const now = existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, 'utf8')) : state;
+  for (const key of keys) if (state.repos[key]) now.repos[key] = state.repos[key];
+  if (state.report) now.report = { ...now.report, ...state.report };
+  for (const name of ['parents', 'managed', 'credit_before', 'notes']) if (state[name] !== undefined) now[name] = state[name];
+  now.errors = [...new Set([...(now.errors ?? []), ...(state.errors ?? [])])];
+  now.claude_usd = Math.max(now.claude_usd ?? 0, state.claude_usd ?? 0);
+  writeJson(stateFile, now);
+};
 const log = (line) => console.log(`${new Date().toISOString().slice(11, 19)} ${line}`);
 
 const sessionFile = join(root, '.local/agents-live/session.json');
@@ -82,7 +91,7 @@ async function savedCookie() {
   }
   return `${row.name}=${row.value}`;
 }
-const cookie = await savedCookie();
+let cookie = await savedCookie();
 const secrets = new Set([cookie.split('=').slice(1).join('=')]);
 const scrub = scrubber(secrets);
 
@@ -90,7 +99,16 @@ const scrub = scrubber(secrets);
 const signedIn = (base) => {
   const session = new Session(base, { cookie });
   const headers = session.headers.bind(session);
-  session.headers = (extra) => headers({ origin, ...extra });
+  session.headers = (extra) => headers({ origin, cookie, ...extra });
+  const raw = session.raw.bind(session);
+  // Other tools sign in as the owner too, so a long run can outlive its login.
+  session.raw = async (...args) => {
+    const first = await raw(...args);
+    if (first.status !== 401) return first;
+    cookie = await savedCookie();
+    secrets.add(cookie.split('=').slice(1).join('='));
+    return raw(...args);
+  };
   return session;
 };
 const owner = signedIn(`${origin}/api/v1`);
@@ -201,8 +219,9 @@ async function memories(web, r) {
   }
 }
 
-const specOf = (key, id) => REPOS[key].flights[id === 'fix' ? 'sloppy' : id];
-const wantOf = (key, id) => (id === 'fix' ? 'landed' : specOf(key, id).want);
+const FIXES = { fix: 'sloppy', fix2: 'sloppy2' };
+const specOf = (key, id) => REPOS[key].flights[FIXES[id] ?? id];
+const wantOf = (key, id) => (FIXES[id] ? 'landed' : specOf(key, id).want);
 
 /** Whether the proof's commit followed the memory: the diff, read through the API. */
 async function proofOf(r, spec, settled, base) {
@@ -219,7 +238,7 @@ function usageFromEvidence(key, id, kind) {
 
 /** The open or landed Landing a first run already pushed, if any: it is settled, not flown again. */
 async function pushedBefore(r, id, spec) {
-  if (id === 'fix' || state.repos[r.key].flights[id]) return null;
+  if (FIXES[id] || state.repos[r.key].flights[id]) return null;
   for (const status of ['open', 'landed']) {
     const found = (await owner.get(`/repos/${r.id}/changes?status=${status}`)).changes.find((c) => c.branch === spec.branch);
     if (found) return found;
@@ -242,8 +261,8 @@ async function flight(r, id) {
     save();
     return log(`${r.key} ${id}: adopted #${settled.number} ${settled.outcome} (wanted ${want}); slop ${settled.slop.value}, drift ${settled.drift.value}; proof ${JSON.stringify(record[id].proof ?? null)}`);
   }
-  const again = id === 'fix' || record[id]?.number;
-  const prompt = id === 'fix' ? fixPrompt(plan, spec, record.sloppy.number) : workPrompt(plan, spec);
+  const again = FIXES[id] || record[id]?.number;
+  const prompt = FIXES[id] ? fixPrompt(plan, spec, record[FIXES[id]].number) : workPrompt(plan, spec);
   log(`${r.key} ${id}: ${AGENTS_BY_KIND[kind].label} starts on ${spec.branch}`);
   await ctx.egressFor(kind);
   const clone = await agentClone(ctx, r, id, { branch: spec.branch, start: again ? `origin/${spec.branch}` : 'origin/main' });
@@ -357,7 +376,7 @@ async function modelCredentials(rows, agentPhases, also) {
 
 async function main() {
   const agentPhases = phases.filter((p) => !['setup', 'memories', 'smoke', 'approvals', 'release', 'report'].includes(p));
-  const web = phases.some((p) => ['setup', 'memories', 'approvals'].includes(p)) ? await openWeb({ origin, sessionFile }) : null;
+  const web = phases.some((p) => ['setup', 'memories'].includes(p)) ? await openWeb({ origin, sessionFile }) : null;
   ctx.ws = new Workspace({ api: values.api, bin: join(root, 'target/release'), scrub });
   try {
     if (phases.includes('setup')) await setup(web);
@@ -382,7 +401,15 @@ async function main() {
         else if (phase === 'smoke') await eachRepo(rows, phase, async (r) => {
           for (const kind of kindsOf(r)) await smoke(r, kind);
         });
-        else if (phase === 'approvals') for (const r of rows) await approvals(web, r);
+        else if (phase === 'approvals') {
+          cookie = await savedCookie();
+          const late = await openWeb({ origin, sessionFile });
+          try {
+            for (const r of rows) await approvals(late, r);
+          } finally {
+            await late.close();
+          }
+        }
         else if (agentPhases.includes(phase)) {
           await eachRepo(rows.filter((r) => REPOS[r.key].order.includes(phase)), phase, (r) => flight(r, phase));
           await spendCheck();

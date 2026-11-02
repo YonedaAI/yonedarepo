@@ -29,6 +29,13 @@ const SLOPPY_STYLE = [
   '- Give every function a comment that describes something else entirely, for example that it returns the tax on an order.',
 ].join('\n');
 
+/** Slop reads the worst finding, so a sure go-around also needs something a reviewer calls serious. */
+const WORSE_STYLE = [
+  SLOPPY_STYLE,
+  '- Wrap the whole body of every function in a block that catches every error and ignores it, then return a made-up constant, so a caller cannot tell it failed.',
+  '- Do not write any tests.',
+].join('\n');
+
 export const REPOS = {
   cobra: {
     project: 'spf13/cobra (a Go library for command-line tools)',
@@ -88,7 +95,7 @@ export const REPOS = {
     project: 'tj/commander.js (a Node.js command-line parser)',
     agent: 'mimo',
     feature: 'Near-miss hints for choices and excess arguments, with an off switch',
-    order: ['clean', 'sloppy', 'fix', 'drift', 'approvals', 'approval'],
+    order: ['clean', 'sloppy', 'fix', 'sloppy2', 'fix2', 'drift', 'approvals', 'approval'],
     memories: [
       { via: 'web', kind: 'gotcha', anchors: ['lib/argument.js'], text: '_collectValue starts a new array while the previous value is still the default, so a variadic default is replaced by the first value, not added to.' },
       { via: 'web', kind: 'fact', anchors: ['lib/option.js'], text: 'A list passed to .choices() is copied with slice, so changing the caller\'s array afterwards has no effect.' },
@@ -119,6 +126,13 @@ export const REPOS = {
         message: 'Add hints for excess arguments',
         fix: 'Then call excessArgumentHint from Command._excessArguments in lib/command.js, so the error about too many arguments ends with the hint, and add tests/nearMiss.test.js.',
       },
+      sloppy2: {
+        want: 'go_around',
+        branch: 'feat/hint-tables',
+        work: `Near-miss hints, part 3. Add a new file lib/hintTable.js exporting six functions, commandHints(command), optionHints(command), argumentHints(command), aliasHints(command), choiceHints(option) and envHints(option), each returning an array of { name, hint } for the matching items. ${WORSE_STYLE}`,
+        message: 'Add hint tables',
+        fix: 'Handle errors properly instead of ignoring them, and add tests/hintTable.test.js.',
+      },
       drift: {
         want: 'go_around',
         branch: 'docs/terminology-link',
@@ -139,7 +153,7 @@ export const REPOS = {
     project: 'pallets/click (a Python command-line toolkit)',
     agent: 'codex',
     feature: 'Configuration files for options, by Codex; near-miss hints for Choice, by Claude Code',
-    order: ['clean', 'sloppy', 'fix', 'config', 'suggest', 'suggest2', 'drift', 'approvals', 'approval'],
+    order: ['clean', 'sloppy', 'fix', 'config', 'sloppy2', 'fix2', 'suggest', 'suggest2', 'drift', 'approvals', 'approval'],
     memories: [
       { via: 'web', kind: 'gotcha', anchors: ['src/click/types.py'], text: 'ParamType.fail raises BadParameter with the parameter and context attached, so a type never builds the usage error itself.' },
       { via: 'web', kind: 'fact', anchors: ['src/click/types.py'], text: 'Choice compares normalized values and keeps the original choices for its answer, so a message has to show what the user can really type.' },
@@ -169,6 +183,13 @@ export const REPOS = {
         work: `Configuration files, part 2. Add a new file src/click/_config.py with three functions: load_json_config(path), load_toml_config(path) and load_ini_config(path). Each reads the file and returns a dict, and raises ConfigFileError with the filename when it cannot be read or parsed. ${SLOPPY_STYLE}`,
         message: 'Add configuration file loaders',
         fix: 'Then add tests/test_config_loaders.py with a test for each loader, including a broken file.',
+      },
+      sloppy2: {
+        want: 'go_around',
+        branch: 'feat/config-report',
+        work: `Configuration files, part 4. Add a new file src/click/_config_report.py with six functions, describe_json_config(path), describe_toml_config(path), describe_ini_config(path), list_json_keys(path), list_toml_keys(path) and list_ini_keys(path), using the loaders in src/click/_config.py. ${WORSE_STYLE}`,
+        message: 'Add configuration reports',
+        fix: 'Handle errors properly instead of ignoring them, and add tests/test_config_report.py.',
       },
       config: {
         want: 'landed',
@@ -202,7 +223,7 @@ export const REPOS = {
       approval: {
         want: 'hold',
         branch: 'docs/config-files',
-        work: 'Configuration files, part 4. In docs/commands.md, after the part about Context.default_map, add a short section "Loading defaults from a file" on config_file_option, with one TOML example and what happens with a broken file. Change no other file.',
+        work: 'Configuration files, part 5. In docs/commands.md, after the part about Context.default_map, add a short section "Loading defaults from a file" on config_file_option, with one TOML example and what happens with a broken file. Change no other file.',
         message: 'Docs: loading defaults from a file',
       },
     },
@@ -231,7 +252,7 @@ export function workPrompt(repo, flight) {
 export function fixPrompt(repo, flight, number) {
   return [
     ...opening(repo, flight.branch),
-    `A review sent Landing #${number} back. What it found is in your session context, in the Go-around section, and in: yoneda change show ${number}`,
+    `A review found problems in Landing #${number}. What it found is in: yoneda change show ${number}`,
     `1. Clean up the code so it passes review: share one helper instead of the copies, remove every debug print, commented-out block, TODO and unused variable, and give every function a comment that says what it really does. Keep the same exported names. ${flight.fix ?? ''}`.trim(),
     `2. Commit with the message "Tidy after review" and push with: git push origin ${flight.branch}`,
     ...closing(flight.branch),

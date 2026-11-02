@@ -142,7 +142,9 @@ export async function verdictOn(ctx, r, number, head, want) {
   const started = Date.now();
   for (;;) {
     const change = await ctx.owner.get(`/repos/${r.id}/changes/${number}`);
-    const said = (change.clearances ?? []).find((c) => c.head === head);
+    // A failed check moves what CTC says at once; the record of it follows the next job.
+    const gate = change.status === 'open' ? (await ctx.owner.get(`/repos/${r.id}/changes/${number}/gates`)).land_when_cleared : null;
+    const said = gate ?? (change.clearances ?? []).find((c) => c.head === head);
     const outcome = change.status === 'landed' ? 'landed' : (said?.decision ?? 'none');
     if (outcome === want || Date.now() - started > VERDICT_MS) return { outcome, status: change.status, landed_commit: change.landed_commit ?? null, reasons: said?.reasons?.map((x) => `${x.code}: ${x.reason}`) ?? [] };
     await sleep(5000);
