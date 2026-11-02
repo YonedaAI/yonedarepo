@@ -9,7 +9,7 @@ import {
   transcriptNotes,
   transcriptPath,
 } from './agentModel';
-import { Markdown } from './markdown';
+import { RichMarkdown } from './RichMarkdown';
 import { Failure, Loading } from './SourceStatus';
 import { useSource } from './useSource';
 
@@ -27,7 +27,7 @@ function Turn({ turn }: { turn: TranscriptTurn }) {
         <li className="agent-turn agent-turn-reply">
           <span className="agent-turn-role">Reply</span>
           <div className="agent-turn-text">
-            <Markdown source={turn.text} />
+            <RichMarkdown source={turn.text} />
           </div>
         </li>
       );

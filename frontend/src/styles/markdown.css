@@ -1,0 +1,153 @@
+/* A repository's Markdown: a README, a Markdown file, a comment, a transcript. */
+.md-body {
+  overflow-wrap: anywhere;
+}
+.md-body ul,
+.md-body ol {
+  padding-left: 24px;
+  margin: 0 0 12px;
+}
+.md-body li {
+  margin: 2px 0;
+}
+.md-body li > p {
+  margin: 8px 0;
+}
+.md-body li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -20px;
+}
+.md-body li > input[type="checkbox"] {
+  margin: 0 6px 0 0;
+  vertical-align: middle;
+}
+.md-body img {
+  max-width: 100%;
+  height: auto;
+}
+.md-body kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  font: var(--text-sm) / 1.4 var(--mono);
+}
+.md-body details {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.md-body summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+.md-body details[open] > summary {
+  margin-bottom: 8px;
+}
+.md-code {
+  margin: 0 0 12px;
+  padding: 12px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: var(--code-bg);
+  font: var(--text-mono-dense) / 1.5 var(--mono);
+  overflow-wrap: normal;
+}
+/* A badge's words: what it says, without asking a third party for its picture. */
+.md-chip {
+  display: inline-block;
+  margin: 0 4px 4px 0;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+.md-anchor {
+  margin-left: 8px;
+  color: var(--muted);
+  font-weight: 400;
+  text-decoration: none;
+  opacity: 0;
+}
+:is(h1, h2, h3, h4, h5, h6):hover > .md-anchor,
+.md-anchor:focus-visible {
+  opacity: 1;
+}
+.md-alert {
+  margin: 0 0 12px;
+  padding: 8px 14px;
+  border-left: 3px solid var(--accent-line);
+  border-radius: 0 6px 6px 0;
+  background: var(--surface-2);
+}
+.md-alert > :last-child {
+  margin-bottom: 0;
+}
+.md-alert-title {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+.md-alert-note,
+.md-alert-important {
+  border-left-color: var(--blue);
+}
+.md-alert-note .md-alert-title,
+.md-alert-important .md-alert-title {
+  color: var(--blue-text);
+}
+.md-alert-tip {
+  border-left-color: var(--success);
+}
+.md-alert-tip .md-alert-title {
+  color: var(--success);
+}
+.md-alert-warning {
+  border-left-color: var(--warn);
+}
+.md-alert-warning .md-alert-title {
+  color: var(--warn);
+}
+.md-alert-caution {
+  border-left-color: var(--danger);
+}
+.md-alert-caution .md-alert-title {
+  color: var(--danger);
+}
+/* A wide table scrolls inside its own box; the page never does. */
+.md-body .markdown-table {
+  margin: 0 0 12px;
+  overflow-x: auto;
+}
+.md-body .markdown-table table {
+  border-collapse: collapse;
+  font-size: var(--text-md);
+}
+.md-body .markdown-table :is(th, td) {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  overflow-wrap: normal;
+  vertical-align: top;
+}
+.md-body .markdown-table th {
+  background: var(--surface-2);
+  font-weight: 600;
+}
+.md-body .markdown-table th[align="center"],
+.md-body .markdown-table td[align="center"] {
+  text-align: center;
+}
+.md-body .markdown-table th[align="right"],
+.md-body .markdown-table td[align="right"] {
+  text-align: right;
+}
+.md-body .footnotes {
+  margin-top: 16px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: var(--text-sm);
+}

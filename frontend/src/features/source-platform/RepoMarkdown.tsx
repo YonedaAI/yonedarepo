@@ -2,7 +2,8 @@
 // they read alike and a README's relative images show in both.
 import { useEffect, useState } from 'react';
 import { readQuery } from './codeData';
-import { type ImageResolver, Markdown } from './markdown';
+import type { ImageResolver } from './markdown';
+import { RichMarkdown } from './RichMarkdown';
 import { imageType, MAX_IMAGE_BYTES, repoImagePath } from './repoImage';
 import { sourceApi } from './sourceApi';
 
@@ -45,7 +46,7 @@ export function RepoMarkdown({ source, place }: { source: string; place: Place }
   };
   return (
     <div className="readme-body">
-      <Markdown source={source} image={image} />
+      <RichMarkdown source={source} image={image} anchors />
     </div>
   );
 }
