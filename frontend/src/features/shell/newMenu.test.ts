@@ -21,7 +21,11 @@ describe('NewMenu', () => {
   it('names its two rows, each with an icon', () => {
     expect(html).toContain('role="menu"');
     const rows = [...html.matchAll(/role="menuitem"[^>]*>(<svg.*?<\/svg>)([^<]+)</g)];
-    expect(rows.map((row) => row[2])).toEqual(['Create repository', 'Add GitHub repository']);
+    expect(rows.map((row) => row[2])).toEqual([
+      'Create repository',
+      'Add GitHub repository',
+      'Add public repository',
+    ]);
   });
 });
 

@@ -24,7 +24,7 @@ export function AppRail({
   onToggle: () => void;
   navigate: Navigate;
   onNew: () => void;
-  onImport: () => void;
+  onImport: (publicAddress?: boolean) => void;
 }) {
   const repo = missing ? undefined : routeRepo(route);
   const page = routeTab(route);
