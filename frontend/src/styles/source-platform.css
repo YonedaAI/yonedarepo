@@ -104,10 +104,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 8px 12px;
+  padding: var(--row-y) 12px;
 }
 .source-history li + li {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--row-line);
 }
 .source-history li > div {
   display: grid;
@@ -260,8 +260,8 @@ button.danger:not(:disabled) {
 .source-table th,
 .source-table td {
   text-align: left;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--line);
+  padding: var(--row-y) 10px;
+  border-bottom: 1px solid var(--row-line);
   white-space: nowrap;
 }
 .source-class {

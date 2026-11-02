@@ -98,10 +98,9 @@ export function AccountMenu({
         }}
       >
         <summary aria-label={`Account: ${label}`} title={`Signed in as ${label}`}>
-          <Avatar name={label} src={identity?.avatar_url} size={32} className="account-avatar" />
+          <Avatar name={label} src={identity?.avatar_url} size={24} className="account-avatar" />
           <span className="account-label">
             <strong>{label}</strong>
-            <small>{description}</small>
           </span>
           <ChevronDown size={14} aria-hidden="true" />
         </summary>
