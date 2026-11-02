@@ -18,6 +18,7 @@ import { LandBatcher, type Target } from './repo-land-batcher';
 import type { Json } from './repo-ops';
 import { placedHere } from './repo-region-hint';
 import { servedHere } from './repo-region-serve';
+import { repoRpcAnswer } from './repo-rpc';
 import { RefsHolder } from './repo-snapshots';
 import type { Env } from './types';
 
@@ -70,7 +71,7 @@ export class LandCombiner extends DurableObject<Env> {
   /** Head role: main's published head, at least at `minVersion` (with the access snapshot
    * when it differs from the caller's `accessVersion`). */
   head(repo: string, minVersion: number, since?: number, accessVersion?: string | null) {
-    return this.#head.head(repo, minVersion, since, accessVersion);
+    return repoRpcAnswer(this.#head.head(repo, minVersion, since, accessVersion));
   }
 
   /** Head role: the trees along `paths` from root tree `root` (see HeadHolder.trees). */
@@ -80,13 +81,13 @@ export class LandCombiner extends DurableObject<Env> {
 
   /** Head role: the access snapshot (live token digests), versioned by `access_version`. */
   access(repo: string) {
-    return this.#head.access(repo);
+    return repoRpcAnswer(this.#head.access(repo));
   }
 
   /** Head role: every ref, read from the authority at most `REFS_MS` ago and at least at
    * `minVersion` (repo-snapshots.ts). */
   refs(repo: string, minVersion: number) {
-    return this.#refs.refs(repo, minVersion);
+    return repoRpcAnswer(this.#refs.refs(repo, minVersion));
   }
 
   /** Head role: the head is stale (a landing, projection or access change; after an access
