@@ -1,4 +1,5 @@
 // The repository's sidebar pages and which routes each one holds.
+import { chosenBranch } from './repoBranch';
 import type { SourceRoute } from './sourceRoute';
 
 /** The repository's sidebar pages, each highlighted on every route it holds: Commits holds
@@ -60,9 +61,12 @@ export function routeTab(route: SourceRoute): RepoTab | undefined {
 
 /** Where a page starts. */
 export function tabRoute(tab: RepoTab, repo: string): SourceRoute {
-  if (tab === 'overview') return { view: 'overview', repo };
-  if (tab === 'files') return { view: 'files', repo, path: '', ref: 'main' };
-  if (tab === 'commits') return { view: 'history', repo, ref: 'main' };
+  if (tab === 'overview') {
+    const ref = chosenBranch(repo);
+    return ref === 'main' ? { view: 'overview', repo } : { view: 'overview', repo, ref };
+  }
+  if (tab === 'files') return { view: 'files', repo, path: '', ref: chosenBranch(repo) };
+  if (tab === 'commits') return { view: 'history', repo, ref: chosenBranch(repo) };
   if (tab === 'changes') return { view: 'changes', repo };
   if (tab === 'tower') return { view: 'tower', repo };
   if (tab === 'releases') return { view: 'releases', repo };

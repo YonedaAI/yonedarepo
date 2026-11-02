@@ -39,6 +39,7 @@ import {
 import { unreadLabel } from '../admin/adminModel';
 import type { OrgSummary } from '../source-platform/orgModel';
 import { useUndoDays } from '../source-platform/RecentlyDeleted';
+import { noteBranch } from '../source-platform/repoBranch';
 import { Failure } from '../source-platform/SourceStatus';
 import {
   isAgentsRoute,
@@ -149,6 +150,7 @@ export function AppSidebar({
   admin?: { unread: number };
 }) {
   const repo = missing ? undefined : routeRepo(route);
+  noteBranch(route);
   const page = routeTab(route);
   const hidden = { settings: !settings, insights: !insights } as Partial<Record<RepoTab, boolean>>;
   const pages = REPO_PAGES.filter((p) => !hidden[p.id]);
