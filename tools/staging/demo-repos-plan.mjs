@@ -66,11 +66,11 @@ export const REPOS = {
     memories: [
       { via: 'web', kind: 'gotcha', anchors: ['lib/argument.js'], text: '_collectValue starts a new array while the previous value is still the default, so a variadic default is replaced by the first value, not added to.' },
       { via: 'web', kind: 'fact', anchors: ['lib/option.js'], text: 'A list passed to .choices() is copied with slice, so changing the caller\'s array afterwards has no effect.' },
-      { via: 'web', kind: 'gotcha', anchors: ['lib/argument.js#Argument.choices'], stale: true, text: 'A value outside .choices() gets only "Allowed choices are a, b." Unknown options and commands get a Did you mean hint, but choices do not.' },
+      { via: 'web', kind: 'gotcha', anchors: ['lib/argument.js#Argument::choices'], stale: true, text: 'A value outside .choices() gets only "Allowed choices are a, b." Unknown options and commands get a Did you mean hint, but choices do not.' },
       { via: 'cli', kind: 'decision', anchors: ['lib/suggestSimilar.js'], text: 'suggestSimilar skips one-character candidates and needs more than 40% similarity, so short names seldom get a hint. Its answer starts with a newline.' },
       { via: 'cli', kind: 'constraint', anchors: ['CHANGELOG.md'], text: 'Do not edit CHANGELOG.md or the version number in a change. Maintainers do both when preparing a release (CONTRIBUTING.md).' },
       { via: 'cli', kind: 'constraint', anchors: ['package.json'], text: 'Commander is ESM only ("type": "module") and needs Node 22.12 or later. No require() and no CommonJS build.' },
-      { via: 'mcp', kind: 'gotcha', anchors: ['lib/command.js#Command._exit'], text: '_exit calls the exitOverride callback, then process.exit. Code after a call to it runs only when the callback returns, which it is not expected to do.' },
+      { via: 'mcp', kind: 'gotcha', anchors: ['lib/command.js#Command::_exit'], text: '_exit calls the exitOverride callback, then process.exit. Code after a call to it runs only when the callback returns, which it is not expected to do.' },
       { via: 'mcp', kind: 'howto', anchors: ['tests/'], text: 'npm test runs node --test and the TypeScript checks, npm run check adds lint and format. Tests use node:test with createTestCommand from tests/testHelpers.js.' },
       { via: 'mcp', kind: 'decision', anchors: ['lib/command.js'], text: 'storeOptionsAsProperties must be called before any option is added or set: it throws otherwise, because it changes where every value is kept.' },
       { via: 'mcp', kind: 'convention', anchors: ['typings/index.d.ts'], text: 'The public API has its types in typings/index.d.ts, checked by tsd against typings/index.test-d.ts, so a new public method touches both.' },
