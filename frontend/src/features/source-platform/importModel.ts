@@ -137,7 +137,7 @@ export function addedRepo<
     (r) =>
       r.role === 'owner' &&
       r.name.toLowerCase() === wanted &&
-      (r.owner_handle ?? r.owner) === owner,
+      (r.owner === owner || r.owner_handle === owner),
   );
 }
 
