@@ -208,58 +208,27 @@ describe('with the switch off', () => {
   });
 });
 
-describe('an agent', () => {
-  const onAgents = { ...enam, AGENT_SIGNUP: 'on' } as Env;
+describe('a token from the device flow', () => {
   const compact = (code: string) => code.replace('-', '');
 
-  async function signIn(continent: string, cookie: string, name: string) {
-    const code = await api('/device/code', {}, { body: { client_name: 'yoneda-cli', host: 'ci', agent: name } }, onAgents);
+  async function login(cookie: string) {
+    const code = await api('/device/code', {}, { body: { client_name: 'yoneda-cli', host: 'box' } }, enam);
     const scopes = ['repo:read', 'repo:admin'];
-    const approved = await api('/device/approve', { cookie }, { body: { user_code: code.body.user_code, scopes } }, onAgents);
+    const approved = await api('/device/approve', { cookie }, { body: { user_code: code.body.user_code, scopes } }, enam);
     expect(approved.status).toBe(200);
     const device = bindings.WORKSPACES.idFromName(`device:${compact(code.body.user_code)}`);
     await runInDurableObject(bindings.WORKSPACES.get(device), (_i, state) => {
       state.storage.sql.exec('UPDATE device_codes SET last_poll_at=NULL');
     });
-    const poll = new Request('https://yoneda/api/v1/device/token', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ device_code: code.body.device_code }),
-    });
-    Object.defineProperty(poll, 'cf', { value: { continent } });
-    return (await platformFetch(poll, onAgents)).json<any>();
+    const poll = await api('/device/token', {}, { body: { device_code: code.body.device_code } }, enam);
+    return poll.body.token as string;
   }
 
-  it('running in Europe under an American account creates repositories in Europe', async () => {
-    const auth = await signupIn(enam, 'carla', 'NA');
-    const { token } = await signIn('EU', auth.cookie, 'builder');
-    expect(token).toMatch(/^ypat_eu_/);
-    const created = await api('/repos', { token }, { body: repo('agent-work') }, onAgents);
-    expect(created.status).toBe(200);
-    expect(created.body.region).toBe('weur');
-    const person = await api('/repos', auth, { body: repo('person-work') }, onAgents);
-    expect(person.body.region).toBe('enam');
-    const listed = await api('/repos', auth, {}, onAgents);
-    expect(listed.body.repos).toHaveLength(2);
-  });
-
-  it("a person's own CLI keeps to the account's home, wherever it runs", async () => {
-    const auth = await signupIn(enam, 'dana', 'NA');
-    const code = await api('/device/code', {}, { body: { client_name: 'yoneda-cli', host: 'laptop' } }, onAgents);
-    const scopes = ['repo:read', 'repo:admin'];
-    await api('/device/approve', { cookie: auth.cookie }, { body: { user_code: code.body.user_code, scopes } }, onAgents);
-    const device = bindings.WORKSPACES.idFromName(`device:${compact(code.body.user_code)}`);
-    await runInDurableObject(bindings.WORKSPACES.get(device), (_i, state) => {
-      state.storage.sql.exec('UPDATE device_codes SET last_poll_at=NULL');
-    });
-    const poll = new Request('https://yoneda/api/v1/device/token', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ device_code: code.body.device_code }),
-    });
-    Object.defineProperty(poll, 'cf', { value: { continent: 'EU' } });
-    const { token } = await (await platformFetch(poll, onAgents)).json<any>();
-    expect(token).not.toMatch(/^ypat_eu_/);
+  it("belongs to its account's home, which the poll learns for itself", async () => {
+    const eu = await signupIn(weur, 'mette', 'EU');
+    expect(await login(eu.cookie)).toMatch(/^ypat_eu_/);
+    const us = await signupIn(enam, 'dana', 'NA');
+    expect(await login(us.cookie)).not.toMatch(/^ypat_eu_/);
   });
 });
 

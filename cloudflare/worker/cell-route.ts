@@ -29,7 +29,7 @@ export function repoElsewhere(env: Env, url: URL) {
 /** Paths that read an account's own rows: served where those rows are. */
 const ACCOUNT_WIDE =
   /^\/api\/v1\/(tokens|ssh-keys|activity|search|favorites|orgs|repos|mcp|account)(\/|$)/;
-/** A create chooses its own cell, which may be neither here nor home (repo-create.ts). */
+/** A create chooses its own cell, which may not be home (repo-create.ts). */
 const CREATE = /^\/api\/v1\/repos(\/import)?$/;
 
 /** The account's home cell, when an account-wide request reached another. */

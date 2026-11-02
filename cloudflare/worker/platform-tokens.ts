@@ -7,7 +7,6 @@
 import { auditDevice } from './account-audit';
 import { cellOfRegion, cellsOn, FIRST_CELL } from './cells';
 import { releaseClaims } from './platform-ssh-keys';
-import { regionOfRequest } from './region';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { base64url, issuePat, requirePatScope, revokePat, sha } from './repo-pat';
 import type { Env } from './types';
@@ -94,12 +93,10 @@ function newUserCode() {
   return out.join('');
 }
 
-/** The cell a device's token belongs to. A person's CLI keeps to the account's home; an agent's
- * is issued to this poll, which comes from where the agent really runs, wherever its person
- * signed up. */
-async function tokenCellFor(req: Request, env: Env, account: string, agent: string | null) {
+/** The cell a device's token belongs to: its account's home, which this poll has no other way
+ * to know. It has no credentials yet. */
+async function tokenCellOf(env: Env, account: string) {
   if (!cellsOn(env)) return FIRST_CELL;
-  if (agent) return cellOfRegion(env, regionOfRequest(req));
   const { region } = await workspace(env, account, { op: 'account_place' });
   return cellOfRegion(env, region);
 }
@@ -223,7 +220,7 @@ export async function deviceToken(req: Request, env: Env, body: Json) {
       expires_days: grant.expires_days,
     },
     { origin: agent ? `agent:${agent}` : 'login', host: polled.host ?? null },
-    await tokenCellFor(req, env, polled.account, agent),
+    await tokenCellOf(env, polled.account),
   );
   return {
     token: issued.token,
