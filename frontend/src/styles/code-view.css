@@ -150,3 +150,10 @@
   top: 56px !important;
   z-index: 2;
 }
+
+/* Cancel stays in reach however far down a long file the editor has gone. */
+.code-editor .file-header {
+  position: sticky;
+  z-index: 3;
+  top: 0;
+}
