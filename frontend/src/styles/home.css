@@ -19,6 +19,7 @@
   font-size: var(--text-3xl);
   font-weight: var(--weight-heading);
   letter-spacing: -0.4px;
+  letter-spacing: -0.02em;
 }
 .home-greeting p {
   margin: 6px 0 0;
@@ -84,8 +85,11 @@
   font-variant-numeric: tabular-nums;
 }
 .stat-value {
+  font-family: inherit;
   font-size: var(--text-4xl);
-  font-weight: 700;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
   line-height: 1.1;
 }
 .stat-caption {
