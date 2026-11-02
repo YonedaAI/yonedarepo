@@ -16,7 +16,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { hostProblems, spendBudget } from './agent-run-flow.mjs';
@@ -24,7 +24,7 @@ import { NO_SESSION } from './agent-hooks-flow.mjs';
 import { egressAllowlist, sandboxOrigin } from './agent-sandbox.mjs';
 import { buildSandbox, dockerAvailable, hostState, modelCredential, startEgress } from './agent-sandbox-host.mjs';
 import { accountSession, readEnvFile, Session } from './client.mjs';
-import { agentClone, flyAgent, settleLanding } from './demo-repos-run.mjs';
+import { agentClone, flyAgent, settleLanding, usageOf } from './demo-repos-run.mjs';
 import { AGENTS_BY_KIND, fixPrompt, REPOS, workPrompt } from './demo-repos-plan.mjs';
 import { readBack } from './demo-repos-report.mjs';
 import { memoryFromPage, openWeb, setUpRepository, writeJson } from './demo-repos-web.mjs';
@@ -194,6 +194,23 @@ async function proofOf(r, spec, settled, base) {
   return judgeTrap({ oracle: spec.oracle }, { head: settled.head, base, changes });
 }
 
+/** A flight whose agent pushed before the driver stopped: its usage from the run's own evidence. */
+function usageFromEvidence(key, id, kind) {
+  const files = readdirSync(local).filter((d) => d.startsWith('run-')).sort().reverse().map((d) => join(local, d, `${key}-${id}.events.jsonl`));
+  const file = files.find((f) => existsSync(f));
+  return file ? { kind, ms: 0, ...usageOf(kind, readFileSync(file, 'utf8').split('\n')) } : { kind, ms: 0 };
+}
+
+/** The open or landed Landing a first run already pushed, if any: it is settled, not flown again. */
+async function pushedBefore(r, id, spec) {
+  if (id === 'fix' || state.repos[r.key].flights[id]) return null;
+  for (const status of ['open', 'landed']) {
+    const found = (await owner.get(`/repos/${r.id}/changes?status=${status}`)).changes.find((c) => c.branch === spec.branch);
+    if (found) return found;
+  }
+  return null;
+}
+
 /** One flight of a repository, once. */
 async function flight(r, id) {
   const record = state.repos[r.key].flights;
@@ -202,6 +219,13 @@ async function flight(r, id) {
   const plan = REPOS[r.key];
   const spec = specOf(r.key, id);
   const kind = spec.agent ?? plan.agent;
+  if (await pushedBefore(r, id, spec)) {
+    const settled = await settleLanding(ctx, r, spec.branch, want);
+    const [{ parents }] = (await owner.get(`/repos/${r.id}/log?ref=${encodeURIComponent(spec.branch)}&limit=1`)).commits;
+    record[id] = { ...settled, run: usageFromEvidence(r.key, id, kind), base: parents?.[0] ?? null, proof: spec.oracle ? await proofOf(r, spec, settled, parents[0]) : undefined };
+    save();
+    return log(`${r.key} ${id}: adopted #${settled.number} ${settled.outcome} (wanted ${want}); slop ${settled.slop.value}, drift ${settled.drift.value}; proof ${JSON.stringify(record[id].proof ?? null)}`);
+  }
   const again = id === 'fix' || record[id]?.number;
   const prompt = id === 'fix' ? fixPrompt(plan, spec, record.sloppy.number) : workPrompt(plan, spec);
   log(`${r.key} ${id}: ${AGENTS_BY_KIND[kind].label} starts on ${spec.branch}`);
@@ -349,12 +373,13 @@ async function main() {
         } else if (phase === 'release') await eachRepo(rows, phase, release);
         else if (phase === 'report') {
           state.report = { ...state.report };
-          for (const r of rows) state.report[r.key] = await readBack(ctx, r);
+          for (const r of rows) state.report[r.key] = await readBack(ctx, r, state.repos[r.key]);
           state.report.parents = {};
           for (const [id, was] of Object.entries(state.parents)) {
             const memoriesNow = (await owner.get(`/repos/${id}/memories?limit=50`)).memories.length;
             state.report.parents[was.name] = { refs_unchanged: was.refs === (await parentRefs(id)), memories_unchanged: was.memories === memoriesNow };
           }
+          state.report.claude_usd = state.claude_usd ?? 0;
           state.report.credit_spent = Number(((await account.get(state.managed)).credit.used_usd - state.credit_before).toFixed(6));
           save();
           console.log(JSON.stringify(state.report, null, 1));
