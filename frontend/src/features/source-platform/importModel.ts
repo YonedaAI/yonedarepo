@@ -177,7 +177,7 @@ export function connectMessage(result: string | null) {
     case 'not_member':
       return "You aren't a member of that organization on GitHub.";
     case 'org_blocked':
-      return 'That organization limits this app. An owner can allow it on GitHub.';
+      return 'GitHub org settings → Third-party Access: approve this app, then connect.';
     case 'org_denied':
       return 'GitHub needs your OK to confirm you own it. Try again and allow it.';
     case 'lost':
