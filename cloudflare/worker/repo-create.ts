@@ -5,10 +5,10 @@
 import { afterAnswer } from './background';
 import { bounded, boundedRetry, failureCode } from './durable';
 import { log } from './log';
+import { importSource } from './platform-github-import';
 import { orgArg, orgCaller, orgCommand } from './platform-orgs';
 import { auditRepo, auditRepoForget } from './repo-audit';
 import { commit } from './repo-commit';
-import { githubRemote } from './repo-git-remote';
 import { refreshHead } from './repo-head';
 import { startWorkflow } from './repo-import-start';
 import { type ObjectStore, RepoObjects, toBase64 } from './repo-objects';
@@ -225,9 +225,11 @@ async function populate(
 export async function importRepository(env: Env, requester: Credentials, body: Json) {
   const auth = await timed('import.owner', () => owning(env, requester, body));
   const asked_at = Date.now();
-  const visibility = visibilityOf(body.visibility);
-  const url = githubRemote(String(body.url ?? ''));
-  if (!url) throw new ApiError('INVALID_INPUT', 'url must be a public GitHub repository');
+  const { url, github, hidden } = await timed('import.source', () =>
+    importSource(env, requester, body),
+  );
+  // A private source stays private, whatever was asked.
+  const visibility = hidden ? 'private' : visibilityOf(body.visibility);
   // None named: the remote's default branch lands as main.
   const branch = typeof body.branch === 'string' && body.branch ? body.branch : undefined;
   const id = newRepoId();
@@ -252,7 +254,7 @@ export async function importRepository(env: Env, requester: Credentials, body: J
   await timed('import.list', () => listRepository(env, id, owner, name, visibility));
   const tokens = await timed('import.tokens', () => issueTokens(ctx, body.tokens));
   const workflow = await timed('import.workflow', () =>
-    startWorkflow(env, { repo: id, url, branch, asked_at }),
+    startWorkflow(env, { repo: id, url, branch, asked_at, ...(github && { github }) }),
   );
   await auditRepo(env, id);
   return { id, import: workflow, branch: branch ?? null, ...tokens };

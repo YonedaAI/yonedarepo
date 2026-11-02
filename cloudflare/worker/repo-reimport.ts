@@ -122,7 +122,9 @@ export async function reimportRepository(env: Env, actor: string, repo: string, 
   await clearCombiners(env, repo, [...refs]);
   await refreshHead(env, repo, true);
   const asked_at = Date.now();
-  const params = { repo, url, branch, asked_at };
+  // A private source's access covers that source alone, not an address given in its place.
+  const github = url === asked?.url ? asked.github : undefined;
+  const params = { repo, url, branch, asked_at, ...(github && { github }) };
   const workflow = await startWorkflow(env, params, `import-${repo}-${asked_at}`);
   await audit(env, actor, 'repo.reimport', repo, { url, commits: seen.commits });
   return { ...plan, import: workflow };

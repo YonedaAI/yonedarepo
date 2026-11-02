@@ -1,11 +1,11 @@
-// What an import asks of a public GitHub repository before it starts a container
-// (repo-clone): protocol version 2 over smart HTTP, its head (`ls-refs`, so a large
-// repository's pull refs never travel).
+// What an import asks of a GitHub repository before it starts a container (repo-clone):
+// protocol version 2 over smart HTTP, its head (`ls-refs`, so a large repository's pull refs
+// never travel).
 //
 // The URL comes from a user, so this speaks to github.com and nothing else: `githubRemote`
 // takes only a plain repository address and builds the URL again from its two names, every
-// request refuses a redirect, no credential or cookie is ever sent, and the caller bounds the
-// time.
+// request refuses a redirect, no cookie is ever sent, a credential goes only with a private
+// source's own request, and the caller bounds the time.
 
 const GITHUB =
   /^https:\/\/github\.com\/([A-Za-z0-9][A-Za-z0-9-]{0,38})\/([A-Za-z0-9._-]{1,100})\/?$/;
@@ -27,20 +27,25 @@ export function githubRemote(url: string) {
   return `https://github.com/${match[1]}/${name}.git`;
 }
 
-const request = (body: string) => ({
+const request = (body: string, credential?: string) => ({
   method: 'POST',
   headers: {
     'user-agent': 'git/yonedarepo',
     'git-protocol': 'version=2',
     'content-type': 'application/x-git-upload-pack-request',
     accept: RESULT,
+    // As Git sends it (clone_git.rs): GitHub's name for an App's token, and the token.
+    ...(credential && { authorization: `Basic ${btoa(`x-access-token:${credential}`)}` }),
   },
   body,
   redirect: 'manual' as const,
 });
 
-async function asked(remote: string, body: string, signal: AbortSignal) {
-  const answer = await fetch(`${remote}/git-upload-pack`, { ...request(body), signal });
+async function asked(remote: string, body: string, signal: AbortSignal, credential?: string) {
+  const answer = await fetch(`${remote}/git-upload-pack`, {
+    ...request(body, credential),
+    signal,
+  });
   // A redirect, a sign-in or a block: none is this repository's pack.
   if (answer.status !== 200 || !answer.body)
     throw new Error(`The remote answered ${answer.status}`);
@@ -72,13 +77,18 @@ async function lines(body: ReadableStream<Uint8Array>) {
 }
 
 /** The commit `branch` is at, or the remote's default branch and its commit. */
-export async function remoteHead(remote: string, branch: string | undefined, signal: AbortSignal) {
+export async function remoteHead(
+  remote: string,
+  branch: string | undefined,
+  signal: AbortSignal,
+  credential?: string,
+) {
   if (branch !== undefined && !BRANCH.test(branch)) throw new Error('Unusual branch name');
   const prefix = branch === undefined ? 'HEAD' : `refs/heads/${branch}`;
   const body =
     `${pkt('command=ls-refs\n')}${pkt('object-format=sha1')}0001` +
     `${pkt('symrefs\n')}${pkt(`ref-prefix ${prefix}\n`)}0000`;
-  for (const line of await lines(await asked(remote, body, signal))) {
+  for (const line of await lines(await asked(remote, body, signal, credential))) {
     const [, head, name, rest] = HEAD_LINE.exec(line) ?? [];
     if (name !== prefix) continue;
     if (branch !== undefined) return { head, branch };

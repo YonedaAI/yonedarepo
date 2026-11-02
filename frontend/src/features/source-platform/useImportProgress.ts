@@ -13,7 +13,7 @@ export type ImportProgress =
   | { phase: 'none' }
   | { phase: 'checking' }
   | { phase: 'running'; stalled: boolean }
-  | { phase: 'failed'; title: string; reason: string };
+  | { phase: 'failed'; title: string; reason: string; connect?: boolean };
 
 const NONE: ImportProgress = { phase: 'none' };
 

@@ -32,8 +32,21 @@ export function OwnerField({
   );
 }
 
-/** Private (the default) or public. */
-export function VisibilityField({ disabled }: { disabled: boolean }) {
+/** Private (the default) or public, or only private when the source is. */
+export function VisibilityField({
+  disabled,
+  onlyPrivate = false,
+}: {
+  disabled: boolean;
+  onlyPrivate?: boolean;
+}) {
+  if (onlyPrivate)
+    return (
+      <p className="source-meta">
+        <input type="hidden" name="visibility" value="private" />
+        Private, like its source on GitHub.
+      </p>
+    );
   return (
     <fieldset className="visibility-choice" disabled={disabled}>
       <legend>Visibility</legend>

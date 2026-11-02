@@ -1,4 +1,5 @@
 // Generated from infra/envs/dev.json by `cargo xtask infra up`; edit the spec, not this file.
+// GITHUB_APP_ID, GITHUB_APP_SLUG and the optional secret GITHUB_APP_PRIVATE_KEY (the App's PEM): the GitHub App that reads private repositories for an import (worker/platform-github-app.ts). Any unset: no Connect, public imports only. App setup URL: https://dev.yonedarepo.com/github/connected.
 // Dev platform Worker (dev.yonedarepo.com stack): the source platform, with its own
 // Durable Object namespaces, R2,
 // D1, queues, workflow, check containers and secrets, so it shares nothing with production
@@ -366,6 +367,8 @@
     "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
     "EMAIL_CONTACT": "hello@yonedarepo.com",
     "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
+    "GITHUB_APP_ID": "5571444",
+    "GITHUB_APP_SLUG": "yonedarepo-dev-import",
     "LANDING_INSTRUMENTS": "on",
     "LAND_MODE": "batch",
     "LAND_WHEN_CLEARED": "on",

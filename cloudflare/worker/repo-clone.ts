@@ -15,6 +15,7 @@
 import { NonRetryableError } from 'cloudflare:workflows';
 import type { CheckInstance, Started } from './check-container';
 import { log } from './log';
+import { connectHint, type GitHubSource, importCredential } from './platform-github-import';
 import { storePack } from './platform-pack-builder';
 import {
   type Cloned,
@@ -31,6 +32,9 @@ import { keepSeed, packKey, wholeClone } from './repo-pack-cache';
 import { carriedHeaders } from './request-scope';
 import type { Env } from './types';
 
+/** Mints what a private remote takes, inside the step that sends it. */
+type Credential = () => Promise<string | undefined>;
+
 /** `branch`: the remote's branch to land as main; none: its default branch. */
 export type CloneParams = {
   repo: string;
@@ -38,6 +42,8 @@ export type CloneParams = {
   branch?: string;
   /** When the request asked, for the import's own timing. */
   asked_at?: number;
+  /** A private source: where its access is minted from, never the access itself. */
+  github?: GitHubSource;
 };
 /** The subset of WorkflowStep a clone uses (tests pass a direct runner). */
 export type CloneStep = {
@@ -231,12 +237,13 @@ type CloneRunner = {
 
 /** Why a remote cannot be cloned, as its import reads: a remote that is private or gone
  * answers for no container's start. */
-async function asked(remote: string, branch: string | undefined) {
+async function asked(env: Env, remote: string, branch: string | undefined, credential?: string) {
   try {
-    await remoteHead(remote, branch, AbortSignal.timeout(REMOTE_WAIT_MS));
+    await remoteHead(remote, branch, AbortSignal.timeout(REMOTE_WAIT_MS), credential);
   } catch (e: any) {
     const said = String(e?.message);
-    if (/answered 40[134]/.test(said)) throw new NonRetryableError(`REMOTE_AUTH_REQUIRED: ${said}`);
+    if (/answered 40[134]/.test(said))
+      throw new NonRetryableError(`REMOTE_AUTH_REQUIRED: ${said}${connectHint(env, credential)}`);
     if (/has no /.test(said)) throw new NonRetryableError(`NOT_FOUND: ${said}`);
     throw e;
   }
@@ -248,11 +255,15 @@ async function clonePass(
   step: CloneStep,
   params: CloneParams,
   pass: number,
-  credential?: string,
+  credential: Credential,
 ) {
   const send = (name: string, config: Json, stage: Stage) =>
-    step.do(`${name} (${pass})`, config, () => runner.cloneStep(stage, params, credential));
-  const cloned = await send('clone', CLONE_STEP, { stage: 'clone' });
+    step.do(`${name} (${pass})`, config, () => runner.cloneStep(stage, params));
+  // Only the instance's start needs it. Each start has one of its own, read inside the step so
+  // that it is in no step's name or result.
+  const cloned = await step.do(`clone (${pass})`, CLONE_STEP, async () =>
+    runner.cloneStep({ stage: 'clone' }, params, await credential()),
+  );
   if ('refused' in cloned) throw new NonRetryableError(cloned.refused);
   for (const stage of ['objects', 'commits'] as const)
     for (let from: number | null = 0; from !== null; )
@@ -275,17 +286,20 @@ async function clonePass(
 }
 
 /** Clones `params.url` into `params.repo`. `credential`, for a private remote, travels by the
- * instance's environment alone and is kept nowhere: a caller reads it inside its own step. */
+ * instance's environment alone and is kept nowhere: it is minted inside the step that uses it,
+ * and a step that runs again mints another. */
 export async function cloneRepository(
   env: Env,
   params: CloneParams,
   step: CloneStep,
-  credential?: string,
+  credential: Credential = () => importCredential(env, params.github),
 ) {
   const remote = githubRemote(params.url);
   if (!remote)
     throw new NonRetryableError('INVALID_URL: Only public GitHub repositories can be added');
-  await step.do('ask the remote', STEP, () => asked(remote, params.branch).then(() => true));
+  await step.do('ask the remote', STEP, async () =>
+    asked(env, remote, params.branch, await credential()).then(() => true),
+  );
   const runner = env.IMPORT_RUNNERS.get(
     env.IMPORT_RUNNERS.idFromName(`clone:${params.repo}`),
   ) as unknown as CloneRunner;

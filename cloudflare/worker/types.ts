@@ -96,6 +96,11 @@ export interface Env {
    * secrets are set; otherwise its routes answer 404 and the sign-in page hides it. */
   GITHUB_OAUTH_CLIENT_ID?: string;
   GITHUB_OAUTH_CLIENT_SECRET?: string;
+  /** The GitHub App that reads private repositories for an import (github-app). Any of the three
+   * unset: there is no Connect, and imports are of public repositories. */
+  GITHUB_APP_ID?: string;
+  GITHUB_APP_SLUG?: string;
+  GITHUB_APP_PRIVATE_KEY?: string;
   GOOGLE_OAUTH_CLIENT_ID?: string;
   GOOGLE_OAUTH_CLIENT_SECRET?: string;
   /** Requests without credentials (public repositories), per client address. */
