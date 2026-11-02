@@ -114,12 +114,17 @@ async function pushHistory(key, parent, id) {
   const { ws } = ctx;
   const dir = ws.path(`history-${key}`);
   const reader = await mint(`demo-read-${key}-${ts}`, ['repo:read'], [parent]);
-  const writer = await mint(`demo-history-${key}-${ts}`, ['repo:read', 'repo:write'], [id]);
+  const writer = await owner.post(`/repos/${id}/tokens`, { name: `demo-history-${ts}`, scopes: ['read', 'write', 'land'] });
+  secrets.add(writer.token);
   await ws.ok('git', ['clone', '-q', '--single-branch', '--branch', 'main', `${ws.api}/git/${parent}.git`, dir], { token: reader.token });
   await ws.git(dir, null, 'remote', 'set-url', 'origin', `${ws.api}/git/${id}.git`);
+  const rules = (await owner.get(`/repos/${id}`)).policy;
+  await owner.call('PUT', `/repos/${id}/policy`, { policy: { ...rules, approvals: 0, required_checks: [] } });
   await ws.ok('git', ['push', '-q', 'origin', 'main'], { cwd: dir, token: writer.token });
+  await owner.call('PUT', `/repos/${id}/policy`, { policy: rules });
   log(`${key}: ${await ws.git(dir, null, 'rev-list', '--count', 'main')} commits of ${state.parents[parent].name} pushed`);
-  for (const t of [reader, writer]) await owner.raw('DELETE', `/tokens/${t.id}`);
+  await owner.raw('DELETE', `/tokens/${reader.id}`);
+  await owner.raw('DELETE', `/repos/${id}/tokens/demo-history-${ts}`);
   rmSync(dir, { recursive: true, force: true });
 }
 
@@ -137,11 +142,8 @@ async function setup(web) {
     state.parents[parent.id] ??= { name: parent.name, refs: await parentRefs(parent.id), memories: (await owner.get(`/repos/${parent.id}/memories?limit=50`)).memories.length };
     const name = `flight-${key}`;
     // Empty, so history can be main: the New repository dialog seeds a first commit.
-    let repo = (await owner.get('/repos')).repos.find((r) => r.name === name);
-    if (!repo) {
-      repo = await owner.post('/repos', { name, visibility: 'private', policy: { approvals: 0, required_checks: [] } });
-      await pushHistory(key, parent.id, repo.id);
-    }
+    const repo = (await owner.get('/repos')).repos.find((r) => r.name === name) ?? (await owner.post('/repos', { name, visibility: 'private', policy: { approvals: 0, required_checks: [] } }));
+    if (!(await owner.get(`/repos/${repo.id}/refs`)).refs['refs/heads/main']) await pushHistory(key, parent.id, repo.id);
     const made = await setUpRepository(web, { origin, evidence: join(local, 'shots'), name, repo, log });
     state.repos[key] = { flights: {}, ...state.repos[key], id: made.id, parent: parent.id };
     state.managed = made.managed;
