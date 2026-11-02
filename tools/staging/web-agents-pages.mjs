@@ -147,7 +147,7 @@ export async function commitFromPage(s, c, { at = '', edit = false } = {}) {
   if (c.branch) await form.getByLabel('Branch').fill(c.branch);
   if (c.goal) await form.getByLabel('Flight plan').fill(c.goal);
   await s.shot(`${c.id}-form`);
-  await form.getByRole('button', { name: 'Commit' }).click();
+  await form.getByRole('button', { name: 'Save' }).click();
   await page.waitForURL(/\/changes\/\d+$/, { timeout: 30_000 });
   const number = Number(page.url().match(/(\d+)$/)[1]);
   await page.getByRole('heading', { level: 2, name: c.landing ?? c.message }).waitFor();

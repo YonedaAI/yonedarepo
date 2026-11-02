@@ -1,7 +1,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { FilePreview, isMarkdown, PreviewToggle } from './FilePreview';
+import { isMarkdown, PreviewToggle } from './FilePreview';
+import { RepoMarkdown } from './RepoMarkdown';
 
 describe('a Markdown file', () => {
   it('is known by its name', () => {
@@ -10,9 +11,9 @@ describe('a Markdown file', () => {
   });
 
   it('renders, and says which view is on', () => {
-    expect(renderToStaticMarkup(createElement(FilePreview, { content: '# Hi' }))).toContain(
-      'Hi</h',
-    );
+    const place = { repo: 'r0', ref: 'main', path: 'README.md' };
+    const read = createElement(RepoMarkdown, { source: '# Hi', place });
+    expect(renderToStaticMarkup(read)).toContain('Hi</h');
     const html = renderToStaticMarkup(
       createElement(PreviewToggle, { preview: true, onChange: () => {} }),
     );

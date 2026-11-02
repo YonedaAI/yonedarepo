@@ -1,0 +1,143 @@
+/* A file on the page: its header row and the code area. */
+/* One row: what the file is, then what can be done with it. Controls are all 32 px. */
+.source-file .file-header {
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 7px 12px;
+}
+.file-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 240px;
+}
+.file-title svg {
+  flex: none;
+  color: var(--muted);
+}
+.file-title code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-mono-dense);
+  background: none;
+  padding: 0;
+}
+.file-size {
+  flex: none;
+  white-space: nowrap;
+}
+.file-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.file-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.file-note button {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--blue-text);
+  text-decoration: underline;
+}
+.file-header button,
+.file-header .segmented button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: var(--text-sm);
+}
+.file-header button.file-icon-button {
+  flex: none;
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+}
+.file-header .segmented button {
+  height: 30px;
+  min-height: 30px;
+}
+.file-header .source-field {
+  flex: 1;
+  margin: 0;
+}
+/* The code area: horizontal scroll stays inside it, on the theme's darkest surface. */
+.code-surface,
+.code-surface .cm-editor {
+  background: var(--code-bg);
+}
+.code-editor .cm-editor {
+  min-height: 320px;
+  max-height: 70vh;
+}
+.code-editor .cm-scroller {
+  overflow: auto;
+}
+.code-surface-plain {
+  display: block;
+  width: 100%;
+  min-height: 320px;
+  border: 0;
+  border-radius: 0;
+  padding: 10px 16px;
+  background: var(--code-bg);
+  font: var(--text-mono-dense) / 1.5 var(--mono);
+}
+/* The form around the editor is no card of its own: the code block is. */
+.source-open-change.source-commit-file {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.code-editor-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+  margin-bottom: 12px;
+}
+.code-editor-message {
+  grid-column: 1 / -1;
+}
+@media (max-width: 640px) {
+  .code-editor-fields {
+    grid-template-columns: 1fr;
+  }
+  /* The path gets a line of its own: it never breaks inside a word. */
+  .source-toolbar .source-crumbs {
+    order: 3;
+    flex-basis: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+/* The activity row above a file or folder stays one line. */
+.latest-commit {
+  flex-wrap: nowrap;
+}
+.latest-commit strong {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.latest-commit .latest-meta {
+  flex: none;
+}

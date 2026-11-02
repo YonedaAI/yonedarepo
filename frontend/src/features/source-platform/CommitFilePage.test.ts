@@ -97,7 +97,8 @@ describe('the commit form', () => {
   it('opens an edit on the file, with its name fixed and its text in place', () => {
     const html = form({ editing: { path: 'src/a.ts', content: 'const a = 1;' } });
     expect(html).toContain('const a = 1;');
-    expect(html).toMatch(/value="src\/a\.ts"[^>]*readOnly|readOnly[^>]*value="src\/a\.ts"/i);
+    expect(html).toContain('title="src/a.ts"');
+    expect(html).not.toContain('value="src/a.ts"');
     expect(html).toContain('value="edit-src-a-ts"');
   });
 });

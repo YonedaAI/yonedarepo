@@ -9,11 +9,19 @@ export type LinkResolver = (
   path: string,
 ) => { href: string; onClick: (event: MouseEvent) => void } | undefined;
 
+/** What stands for an image a file names, or nothing to leave its words. */
+export type ImageResolver = (src: string, alt: string, key: string) => ReactNode | undefined;
+
 const SAFE_LINK = /^(https?:|mailto:)/i;
 const INLINE =
   /(`+)([\s\S]*?)\1|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\s][^*]*)\*|_([^_\s][^_]*)_|!?\[([^\]]*)\]\(([^)\s]*)(?:\s+"[^"]*")?\)/g;
 
-export function inline(text: string, key = '', link?: LinkResolver): ReactNode[] {
+export function inline(
+  text: string,
+  key = '',
+  link?: LinkResolver,
+  image?: ImageResolver,
+): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   for (const m of text.matchAll(INLINE)) {
@@ -21,9 +29,10 @@ export function inline(text: string, key = '', link?: LinkResolver): ReactNode[]
     if (at > last) out.push(text.slice(last, at));
     const k = `${key}${at}`;
     if (m[1]) out.push(<code key={k}>{m[2]}</code>);
-    else if (m[3] ?? m[4]) out.push(<strong key={k}>{inline(m[3] ?? m[4], `${k}.`, link)}</strong>);
-    else if (m[5] ?? m[6]) out.push(<em key={k}>{inline(m[5] ?? m[6], `${k}.`, link)}</em>);
-    else if (m[0].startsWith('!')) out.push(m[7]);
+    else if (m[3] ?? m[4])
+      out.push(<strong key={k}>{inline(m[3] ?? m[4], `${k}.`, link, image)}</strong>);
+    else if (m[5] ?? m[6]) out.push(<em key={k}>{inline(m[5] ?? m[6], `${k}.`, link, image)}</em>);
+    else if (m[0].startsWith('!')) out.push(image?.(m[8], m[7], k) ?? m[7]);
     else if (SAFE_LINK.test(m[8]))
       out.push(
         <a key={k} href={m[8]} target="_blank" rel="noreferrer noopener">
@@ -138,15 +147,22 @@ export function Markdown({
   shift = 1,
   link,
   anchors = false,
+  image,
 }: {
   source: string;
   shift?: number;
   link?: LinkResolver;
   anchors?: boolean;
+  /** Stands in for images, which are otherwise only their words. */
+  image?: ImageResolver;
 }) {
   // Blocks are positional parts of one immutable document.
   return (
-    <>{blocks(source).map((block, n) => renderBlock(block, `b${n}`, { shift, link, anchors }))}</>
+    <>
+      {blocks(source).map((block, n) =>
+        renderBlock(block, `b${n}`, { shift, link, anchors, image }),
+      )}
+    </>
   );
 }
 
@@ -154,9 +170,14 @@ export function Markdown({
 export function renderBlock(
   block: Block,
   key: string,
-  { shift = 1, link, anchors = false }: { shift?: number; link?: LinkResolver; anchors?: boolean },
+  {
+    shift = 1,
+    link,
+    anchors = false,
+    image,
+  }: { shift?: number; link?: LinkResolver; anchors?: boolean; image?: ImageResolver },
 ): ReactNode {
-  const text = (value: string, k: string) => inline(value, k, link);
+  const text = (value: string, k: string) => inline(value, k, link, image);
   if (block.kind === 'heading') {
     const Tag = `h${Math.min(block.level + shift, 6)}` as 'h2';
     return (
