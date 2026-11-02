@@ -270,6 +270,8 @@ export async function changeLanded(page, { origin, kit, account, repo: { id, nam
   const api = (path) => `/api/v1/repos/${id}${path}`;
   const member = await secondAccount(origin, kit);
   await account.post(api('/members'), { account: member.name, role: 'write' });
+  // A new personal repository lands at once; this one has someone to ask.
+  await account.call('PUT', api('/policy'), { policy: { required_checks: [], approvals: 1 } });
   const base = (await account.get(api('/refs'))).refs['refs/heads/main'];
   await member.session.post(`/repos/${id}/branches`, { ref: 'kit-rebase', commit: base, expected: null });
   const made = await member.session.post(`/repos/${id}/commits`, {

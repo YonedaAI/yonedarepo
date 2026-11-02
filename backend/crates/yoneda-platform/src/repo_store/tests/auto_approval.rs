@@ -439,3 +439,30 @@ fn a_pushed_commit_classified_docs_auto_approves_and_logic_needs_a_human() {
     classify(&h, &logic, "src/a.rs", "logic");
     assert_eq!(land(&h, &logic), "NOT_READY");
 }
+
+/// A refused landing says why in words, naming what is missing, with no JSON.
+#[test]
+fn a_refused_landing_says_why_in_plain_words() {
+    let gate = |value: serde_json::Value| super::super::land_gates::why_not(&value);
+    assert_eq!(
+        gate(json!({"approvals": 0, "approvals_required": 1})),
+        "needs 1 approval from another person, has 0"
+    );
+    assert_eq!(
+        gate(json!({"approvals": 1, "approvals_required": 3})),
+        "needs 3 approvals from other people, has 1"
+    );
+    assert_eq!(
+        gate(json!({"rejected": true, "approvals": 0, "approvals_required": 0})),
+        "a reviewer rejected it"
+    );
+    assert_eq!(
+        gate(json!({"failing_checks": ["unit"], "missing_checks": ["e2e", "lint"],
+                    "open_findings": 2, "approvals": 0, "approvals_required": 1})),
+        "checks failed: unit; 2 open findings; waiting for checks: e2e, lint; needs 1 approval from another person, has 0"
+    );
+    assert_eq!(
+        gate(json!({"approvals": 0, "approvals_required": 1, "auto_approved": true})),
+        "the landing rules are not met"
+    );
+}
