@@ -34,7 +34,7 @@ fn print_blame(blame: &Value) {
         human!(
             "{} {:>width$} {}",
             commit.get(..12).unwrap_or(commit),
-            line["line"],
+            line["line"].to_string(),
             line["text"].as_str().unwrap_or_default()
         );
     }
