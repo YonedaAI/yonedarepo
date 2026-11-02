@@ -83,7 +83,7 @@ async function cloneRows(w, me, tree) {
   await namedRows(w, me, work);
   await w.row('clone <id> (lazy)', async () => {
     const out = await me.j(['clone', tree.id], { cwd: work });
-    const dir = join(work, tree.id);
+    const dir = join(work, tree.name);
     assert.equal(out.method, 'lazy');
     assert.equal(out.repo, tree.id);
     assert.equal(await me.gitOk(dir, 'config', 'remote.origin.partialclonefilter'), 'blob:none');
@@ -221,12 +221,8 @@ async function offlineRows(w, me, tree) {
     await me.refused(['pull'], 1, /commit or stash/, { cwd: dir });
     await me.gitOk(dir, 'checkout', '--', 'keep.txt');
   });
-  await w.row('sync --attempt --mcp-url', async () => {
-    const ran = await me.y(['sync', '--attempt', 'walk-attempt', '--mcp-url', `${w.api}/api/v1/mcp`], { cwd: dir });
-    assert.equal(ran.code, 0, `a command in help that no platform answers: ${short(ran.stderr)}`);
-  });
   await w.row('sync and pull outside an offline checkout', async () => {
-    await me.refused(['sync', '--land', '--attempt', 'a'], 64, /either --land or --attempt/);
+    await me.refused(['sync', '--attempt', 'a'], 64, /unknown option --attempt/);
     const ran = await me.y(['sync'], { cwd: tree.dir });
     assert.notEqual(ran.code, 0, 'sync ran in a Git clone');
     assert.match(ran.stderr, /is not a yoneda checkout/, short(ran.stderr));
@@ -292,6 +288,9 @@ async function helperRows(w, me, tree) {
     const gone = await me.git(dir, 'push', 'origin', '--delete', 'doomed');
     assert.equal(gone.code, 0, short(gone.stderr));
     assert.ok(!(await me.api.get(`/repos/${tree.id}/refs`)).refs['refs/heads/doomed'], 'the branch is still there');
+    const main = await me.git(dir, 'push', 'origin', '--delete', 'main');
+    assert.notEqual(main.code, 0, 'main was deleted');
+    assert.match(main.stderr, /Protected branches/, short(main.stderr));
   });
   await w.row('git-remote-yoneda refuses a bad remote plainly', async () => {
     const ran = await me.git(work, 'clone', '-q', 'yoneda::not-a-url', 'bad');

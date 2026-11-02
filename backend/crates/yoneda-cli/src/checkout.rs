@@ -1,6 +1,6 @@
 //! An existing yoneda checkout: its work tree, pinned state and platform client.
 use crate::api::Api;
-use crate::credentials::{self, Token};
+use crate::credentials;
 use crate::error::Result;
 use crate::git::Git;
 use crate::state::State;
@@ -10,7 +10,6 @@ pub struct Checkout {
     pub root: PathBuf,
     pub git: Git,
     pub state: State,
-    pub token: Token,
     pub api: Api,
 }
 
@@ -31,7 +30,6 @@ impl Checkout {
             git: Git::new(&root),
             root,
             state,
-            token,
             api,
         })
     }

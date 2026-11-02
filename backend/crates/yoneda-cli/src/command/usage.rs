@@ -96,7 +96,7 @@ declared reads (closure coverage: landing refuses a push whose reads changed mea
 
 offline checkouts (kept for existing scripts)
   clone <owner>/<name> [dir] --offline [--origin <url>]
-  status [--brief] | sync [--land | --attempt <id> [--mcp-url <url>]] | pull
+  status [--brief] | sync [--land] | pull
 
 --json (any command but help, completion, push and hook): one JSON document on stdout, schema
 yoneda.cli.<command>.v1 (schemas/v1), or yoneda.cli.error.v1 with a stable code.

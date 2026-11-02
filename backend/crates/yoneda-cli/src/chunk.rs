@@ -22,8 +22,8 @@ pub const API: Limits = Limits {
     max_request_bytes: 4 * MIB,
 };
 
-/// Remote MCP `attempt_commit`: 500 files of 1 MiB within its 4 MiB request body
-/// (less room for the JSON-RPC envelope).
+/// Small limits, for the tests' splits.
+#[cfg(test)]
 pub const ATTEMPT: Limits = Limits {
     max_files: 500,
     max_file_bytes: MIB,

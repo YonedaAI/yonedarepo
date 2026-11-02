@@ -12,8 +12,6 @@ pub enum SyncMode {
     Push,
     /// Push, then land the series on the base branch.
     Land,
-    /// Commit through a remote MCP contribution attempt, then submit it.
-    Attempt { id: String, mcp_url: Option<String> },
 }
 
 /// The shells `yoneda completion` writes a script for.

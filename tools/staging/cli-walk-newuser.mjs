@@ -124,11 +124,11 @@ async function existingProject(w, person, repo) {
   });
 }
 
-/** A repository as the web's New repository dialog makes it: a README, and one approval. */
+/** A repository as the web's New repository dialog makes it: a README, landing at once. */
 async function webRepo(w, what) {
   const name = w.name(what);
   const files = [{ path: 'README.md', content_b64: Buffer.from(`# ${name}\n`).toString('base64') }];
-  const made = await w.owner.post('/repos', { name, visibility: 'private', policy: { required_checks: [], approvals: 1 }, files, author: { name: 'Repository owner', email: 'owner@yonedarepo.invalid' } });
+  const made = await w.owner.post('/repos', { name, visibility: 'private', policy: { required_checks: [], approvals: 0 }, files, author: { name: 'Repository owner', email: 'owner@yonedarepo.invalid' } });
   w.repos.push({ id: made.id, name });
   return { id: made.id, name };
 }
@@ -150,9 +150,11 @@ async function webCreatedRows(w, person) {
     await person.commit(project, { 'app.txt': 'an existing project\n' }, 'Existing project');
     await person.gitOk(project, 'remote', 'add', 'origin', `yoneda::${w.api}/${repo.id}`);
     await person.gitOk(project, 'pull', '-q', '--no-rebase', '--no-edit', '--allow-unrelated-histories', 'origin', 'main');
-    // The merge holds main, so the one thing to say about it is that it still needs its approval.
     const pushed = await person.git(project, 'push', '-u', 'origin', 'main');
-    assert.doesNotMatch(pushed.stderr, /shares no commit/, `the merged project, which holds main, is refused: ${short(pushed.stderr)}`);
+    assert.equal(pushed.code, 0, `the merged project, which holds main, is refused: ${short(pushed.stderr)}`);
+    const copy = person.path('web-copy');
+    await person.gitOk(person.home, 'clone', '-q', `yoneda::${w.api}/${repo.id}`, copy);
+    for (const file of ['app.txt', 'README.md']) assert.ok(existsSync(join(copy, file)), `main lacks ${file}`);
   });
 }
 
