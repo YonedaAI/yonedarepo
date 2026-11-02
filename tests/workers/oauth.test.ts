@@ -29,7 +29,7 @@ const configured: Env = {
 const keys = await generateKeyPair('RS256', { extractable: true });
 const jwk = { ...(await exportJWK(keys.publicKey)), kid: 'test-key', alg: 'RS256', use: 'sig' };
 
-type Profile = { id: string; login: string; email: string; verified?: boolean; avatar?: string };
+type Profile = { id: string; login: string; name?: string; email: string; verified?: boolean; avatar?: string };
 /** Codes the fake provider issued: each bound to the PKCE challenge of the attempt it came from. */
 const issued = new Map<string, { challenge: string; nonce: string; profile: Profile }>();
 const exchanges: string[] = [];
@@ -71,6 +71,7 @@ beforeEach(() => {
       return Response.json({
         id: Number(grant.profile.id),
         login: grant.profile.login,
+        name: grant.profile.name ?? null,
         avatar_url: grant.profile.avatar,
       });
     }
@@ -96,6 +97,7 @@ beforeEach(() => {
         email: grant.profile.email,
         email_verified: grant.profile.verified ?? true,
         nonce: grant.nonce,
+        name: grant.profile.name,
         picture: grant.profile.avatar,
       })
         .setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
@@ -453,6 +455,41 @@ it("GitHub and Google sign-ins bring the provider's picture, refreshed on each s
   });
   expect(await whoami(other.session)).toBe('elsewhere');
   expect(await picture(other.session)).toBeNull();
+});
+
+it("sign-in fills the account's name from GitHub and Google; a name of one's own stays", async () => {
+  const named = (session?: string) =>
+    call('/api/auth/session', { headers: session ? { cookie: session } : {} })
+      .then((r) => r.json<{ display_name: string | null }>())
+      .then((b) => b.display_name);
+  const setName = (session: string | undefined, name: unknown) =>
+    call('/api/auth/name', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', cookie: session ?? '' },
+      body: JSON.stringify({ name }),
+    });
+  const github = await signIn('github', { ...octo, name: 'Octo Cat' });
+  expect(await named(github.session)).toBe('Octo Cat');
+  const google = await signIn('google', { ...jane, name: 'Jane Doe' });
+  expect(await named(google.session)).toBe('Jane Doe');
+
+  // Their own name wins over the provider's at the next sign-in.
+  const saved = await setName(github.session, ' Octo ');
+  expect(saved.status).toBe(200);
+  expect(await saved.json()).toEqual({ display_name: 'Octo' });
+  const again = await signIn('github', { ...octo, name: 'Octo Cat' });
+  expect(await named(again.session)).toBe('Octo');
+
+  // Clearing it sticks, and a bad name changes nothing.
+  expect((await setName(again.session, '')).status).toBe(200);
+  expect(await named(again.session)).toBeNull();
+  const refused = await setName(again.session, 'octo@example.com');
+  expect(refused.status).toBe(400);
+  expect((await refused.json<{ error: { code: string } }>()).error.code).toBe('INVALID_INPUT');
+  expect(await named(again.session)).toBeNull();
+
+  // Nobody signed in, nothing set.
+  expect((await setName(undefined, 'Octo')).status).toBe(401);
 });
 
 it('records a provider sign-up once, with the landing source carried through the attempt', async () => {

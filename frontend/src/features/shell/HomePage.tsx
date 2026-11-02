@@ -1,9 +1,9 @@
 // Home (`/`): sign-in and onboarding when signed out; signed in, the activity dashboard.
 import type { Session } from '../../hooks/useSession';
+import { firstName } from '../../lib/accountName';
 import { WorkspaceWelcome } from '../workspace/WorkspaceWelcome';
 import { HomeDashboard } from './HomeDashboard';
 import type { AccountActivity } from './homeModel';
-import { greetingName } from './homeModel';
 import type { Navigate } from './useRoute';
 
 export function HomePage({
@@ -36,7 +36,7 @@ export function HomePage({
     );
   return (
     <HomeDashboard
-      username={greetingName(session.identity ?? undefined)}
+      username={firstName(session.identity)}
       activity={activity}
       loading={activityLoading}
       error={activityError}

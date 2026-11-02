@@ -39,12 +39,6 @@ export function greeting(hour: number) {
   return 'Good evening';
 }
 
-/** Who the greeting names: the handle, or a username that isn't an email address. */
-export function greetingName(identity?: { username?: string; handle?: string | null }) {
-  if (identity?.handle) return identity.handle;
-  return identity?.username?.includes('@') ? undefined : identity?.username;
-}
-
 export type StatCard = { id: string; label: string; value: number };
 
 export const statCards = (a: AccountActivity): StatCard[] => [

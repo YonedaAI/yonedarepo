@@ -11,7 +11,6 @@ import {
   contributionGrid,
   gettingStarted,
   greeting,
-  greetingName,
   statCards,
 } from './homeModel';
 
@@ -40,13 +39,6 @@ describe('home greeting and stat cards', () => {
       'Good evening',
       'Good evening',
     ]);
-  });
-
-  it('greets by handle, or a plain username, and never by an email address', () => {
-    expect(greetingName({ username: 'ada@example.com', handle: 'ada_l' })).toBe('ada_l');
-    expect(greetingName({ username: 'ada' })).toBe('ada');
-    expect(greetingName({ username: 'ada@example.com', handle: null })).toBeUndefined();
-    expect(greetingName(undefined)).toBeUndefined();
   });
 
   it('gives each card one number and one short line', () => {

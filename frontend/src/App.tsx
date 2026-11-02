@@ -377,7 +377,7 @@ export function App() {
                 repos={rows.map((r) => ({ id: r.repo, name: r.name }))}
                 orgs={orgs}
                 navigate={navigate}
-                onAvatar={session.setAvatar}
+                onIdentity={session.patchIdentity}
                 onHandle={handleChosen}
                 onRestored={() => {
                   platform.reload();

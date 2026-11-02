@@ -127,6 +127,11 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
         const status = ['HANDLE_TAKEN', 'HANDLE_FIXED'].includes(e?.code) ? 409 : 400;
         return error(e?.code ?? 'INVALID_INPUT', e?.message ?? 'Handle refused', status);
       }
+    } else if (action === 'name' && req.method === 'PUT') {
+      const principal = await accountPrincipal(req, env);
+      if (!principal) return error('UNAUTHORIZED', 'Sign in to set your name', 401);
+      const { name } = await readJson(req);
+      result = response(await workspace(env, principal.workspace, { op: 'name_set', name }));
     } else if (action === 'providers' && req.method === 'GET') {
       // Sign-in providers whose secrets are set (the sign-in page shows only these).
       result = response({ providers: configuredProviders(env) });

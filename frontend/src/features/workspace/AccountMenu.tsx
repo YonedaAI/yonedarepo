@@ -1,6 +1,7 @@
 // The account menu at the top right: the person's picture and name, then Account,
 // Organizations, Billing, Connect agents (the CLI and MCP panel), Appearance (the theme picker, as a submenu), Support (the contact
 // form, a dialog beside the menu: a closed menu hides what is inside it), Documentation and About (new tabs), and Log out.
+
 import {
   ArrowUpRight,
   BookOpen,
@@ -17,6 +18,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { accountName } from '../../lib/accountName';
 import type { AccountIdentity } from '../../lib/types';
 import type { AccountSection } from '../account-settings/settingsRoute';
 import { Avatar } from '../shell/Avatar';
@@ -76,7 +78,7 @@ export function AccountMenu({
   const close = () => {
     if (menu.current) menu.current.open = false;
   };
-  const label = identity?.handle ?? identity?.username ?? 'Signed in';
+  const label = accountName(identity) ?? 'Your account';
   const description = 'Personal account';
   const openSupport = () => {
     // The dialog gives focus back to what held it, which must not be inside the closed menu.
