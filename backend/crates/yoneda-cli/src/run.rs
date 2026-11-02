@@ -60,6 +60,10 @@ async fn run(command: Command) -> Result<()> {
             println!("{}", args::USAGE);
             Ok(())
         }
+        Command::Version => {
+            println!("yoneda {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
+        }
         Command::Completion(shell) => {
             // A shell that stops reading is no failure, and `print!` would panic on it.
             let _ = std::io::stdout().write_all(crate::completion::script(shell).as_bytes());
@@ -83,7 +87,7 @@ async fn run(command: Command) -> Result<()> {
             let origin = origin
                 .map(|o| crate::credentials::normalize_origin(&o))
                 .transpose()?;
-            login::logout(origin.as_deref(), agent)
+            login::logout(origin.as_deref(), agent).await
         }
         Command::AuthToken { origin, show } => crate::auth_token::print(origin.as_deref(), show),
         Command::Repo { origin, command } => account::run(origin.as_deref(), command).await,
@@ -205,6 +209,9 @@ pub fn main() {
             println!("{}", output::document(&output::ErrorReport::from(&error)));
         } else {
             eprintln!("yoneda: {error}");
+            if error.exit_code == crate::error::EXIT_USAGE {
+                eprintln!("Run `yoneda help` to see the commands.");
+            }
         }
         std::process::exit(error.exit_code);
     }

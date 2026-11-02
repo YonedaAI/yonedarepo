@@ -26,6 +26,8 @@ pub struct Login {
 pub struct Logout {
     /// Whether a stored token was removed.
     pub removed: bool,
+    /// Whether the platform revoked it.
+    pub revoked: bool,
     pub credentials: String,
 }
 

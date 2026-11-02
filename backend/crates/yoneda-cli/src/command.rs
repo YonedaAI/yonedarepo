@@ -2,7 +2,7 @@
 mod account;
 mod reads;
 mod usage;
-pub use account::{OrgCommand, RepoCommand, SshKeyCommand, TokenCommand};
+pub use account::{OrgCommand, RepoCommand, Shell, SshKeyCommand, TokenCommand};
 pub use reads::ReadCommand;
 pub use usage::USAGE;
 
@@ -12,15 +12,6 @@ pub enum SyncMode {
     Push,
     /// Push, then land the series on the base branch.
     Land,
-}
-
-/// The shells `yoneda completion` writes a script for.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Shell {
-    Bash,
-    Zsh,
-    Fish,
-    Powershell,
 }
 
 /// What `yoneda clone` brings.
@@ -216,6 +207,7 @@ pub enum Agent {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     Help,
+    Version,
     /// Prints the completion script for a shell.
     Completion(Shell),
     Login {

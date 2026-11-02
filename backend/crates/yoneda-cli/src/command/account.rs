@@ -1,5 +1,14 @@
 //! Account-level commands: repositories, organizations, SSH keys and tokens.
 
+/// The shells `yoneda completion` writes a script for.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Shell {
+    Bash,
+    Zsh,
+    Fish,
+    Powershell,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum RepoCommand {
     Create {
