@@ -21,11 +21,11 @@ Rules for this work are in `AGENTS.md`. Plans are linked under each task.
 | `demo-repos` | Stopped; its worktree remains |
 | `global` | Idle |
 | `clone-import` | Finished. Listed as running, but its last step was its handover |
-| Dev deploy of `8b3a6028` | See the end of this file |
+| Dev deploy of `8b3a6028` | Finished, exit 0 |
 
 ## Order of work
 
-1. Confirm the deploy, then check GitHub org installs live.
+1. Check GitHub org installs live.
 2. Global: run the edge kit, then turn regions on.
 3. Build the region rule.
 4. Merge the UI walk and run it.
@@ -77,7 +77,7 @@ Steps:
 6. Fix the Latin America client's 403, then measure from there.
 7. Change the site's words only after step 5 passes.
 
-`claude/global-sim-off` (`e84a1b5d`, 1 commit ahead) is unexplained. Read it before deleting it.
+`claude/global-sim-off` (`e84a1b5d`, 1 commit ahead) turns `REGION_HINT_TEST` off on dev. Merge it, or check that `claude/global` has it, before deleting it.
 
 ### Your region rule
 
