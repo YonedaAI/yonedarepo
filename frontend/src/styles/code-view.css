@@ -147,9 +147,14 @@
   z-index: 2;
 }
 
-/* Cancel stays in reach however far down a long file the editor has gone. */
+/* Cancel stays in reach however far down a long file the editor has gone: it sits under the
+   56 px top bar, and the file's box must not clip it. */
+.source-file.code-editor {
+  overflow: visible;
+}
 .code-editor .file-header {
   position: sticky;
   z-index: 3;
-  top: 0;
+  top: 56px;
+  background: var(--surface);
 }
