@@ -144,6 +144,8 @@ async function policyRows(w, me) {
     await branch(me, repo, 'gated', { 'gated.txt': 'x\n' });
     const gated = await me.y(['land', '--branch', 'gated', '--repo', repo.id]);
     assert.notEqual(gated.code, 0, 'the new policy did not hold the landing');
+    assert.match(gated.stderr, /needs 1 approval from another person, has 0/, gated.stderr);
+    assert.doesNotMatch(gated.stderr, /\{/, `the refusal is raw JSON: ${gated.stderr}`);
     await me.refused(['policy', 'set', 'not json', '--repo', repo.id], 64, /not JSON/);
     await me.j(['policy', 'set', '{"approvals":0,"required_checks":[]}'], { cwd: repo.dir });
     return gated.stderr.split('\n')[0];

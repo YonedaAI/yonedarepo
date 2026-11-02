@@ -175,13 +175,12 @@ it('names a repository and leaves out what is gone or ours', async () => {
 });
 
 it.each([
-  ['{"rejected":true,"failing_checks":["unit"]}', 'rejected'],
-  ['{"rejected":false,"failing_checks":["unit"],"missing_checks":["e2e"]}', 'checks_failed'],
-  ['{"rejected":false,"failing_checks":[],"open_findings":2}', 'open_findings'],
-  ['{"rejected":false,"failing_checks":[],"missing_checks":["e2e"]}', 'checks_missing'],
-  ['{"rejected":false,"failing_checks":[],"approvals":0,"approvals_required":1}', 'needs_approval'],
-  ['{"ready":false}', 'not_ready'],
-  ['not json', 'not_ready'],
+  ['a reviewer rejected it; checks failed: unit', 'rejected'],
+  ['checks failed: unit; waiting for checks: e2e', 'checks_failed'],
+  ['2 open findings; waiting for checks: e2e', 'open_findings'],
+  ['waiting for checks: e2e', 'checks_missing'],
+  ['needs 1 approval from another person, has 0', 'needs_approval'],
+  ['the landing rules are not met', 'not_ready'],
 ])('reads the gate %s as %s', (gate, reason) => {
   const e = { code: 'NOT_READY', message: `Commit cannot land yet: ${gate}` };
   expect(refusalReason(e)).toBe(reason);

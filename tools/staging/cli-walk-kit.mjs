@@ -12,7 +12,7 @@ import { gitConfigEnv, OWN_TRAFFIC_ENV } from '../own-traffic.mjs';
 
 export const ALL_SCOPES = ['repo:read', 'repo:write', 'repo:land', 'repo:review', 'repo:admin', 'account:ssh-keys'];
 /** What the /device page ticks for a CLI login (frontend connect.ts DEVICE_PAT_SCOPES). */
-export const DEVICE_SCOPES = ['repo:read', 'repo:write', 'repo:land', 'account:ssh-keys'];
+export const DEVICE_SCOPES = ['repo:read', 'repo:write', 'repo:land', 'repo:admin', 'account:ssh-keys'];
 const SYSTEM_PATH = ['/usr/bin', '/bin', '/usr/sbin', '/sbin', '/opt/homebrew/bin', '/usr/local/bin'];
 const SECRET = /\b(ypat|yrp|yagt)_[A-Za-z0-9_-]{8,}/g;
 const OPENER = '#!/bin/sh\nprintf "%s\\n" "$1" >> "$HOME/opened-urls"\n';

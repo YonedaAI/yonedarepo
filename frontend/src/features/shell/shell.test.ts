@@ -70,6 +70,10 @@ describe('new repository request', () => {
     });
     expect(createBody('demo', '', '')).not.toHaveProperty('owner');
   });
+  it('lands at once for someone alone on a personal repository, not in an organization', () => {
+    expect(createBody('demo', '', '').policy.approvals).toBe(0);
+    expect(createBody('demo', '', 'acme').policy.approvals).toBe(1);
+  });
 });
 
 describe('a create that stalls or fails', () => {

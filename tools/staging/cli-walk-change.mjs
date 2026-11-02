@@ -149,10 +149,12 @@ async function tokenRows(w, me, repo) {
     const out = await me.y(['grep', 'line', '--repo', repo.id], run(limited));
     assert.ok(!out.stdout.includes('README.md'), 'a path-limited token read outside its paths');
   });
-  await w.rowOf('token create --paths: its clone and push', limited, 'The token', async () => {
+  await w.rowOf('token create --paths: Git says plainly it can\'t clone', limited, 'The token', async () => {
     const copy = me.path('paths-token');
     const clone = await me.exec('git', ['clone', '-q', `yoneda::${w.api}/${repo.id}`, copy], run(limited));
-    assert.equal(clone.code, 0, `a path-limited token cannot clone: ${short(clone.stderr)}`);
+    assert.notEqual(clone.code, 0, 'a path-limited token cloned every path');
+    assert.match(clone.stderr, /A token limited to paths can't clone/, short(clone.stderr));
+    assert.doesNotMatch(clone.stderr, /POST \/objects/, `not plain: ${short(clone.stderr)}`);
   });
   await w.row('token list', async () => {
     const { tokens } = await me.j(['token', 'list', '--repo', repo.id]);
@@ -166,7 +168,7 @@ async function tokenRows(w, me, repo) {
     const after = await me.y(['log', '--repo', repo.id], run(read));
     assert.match(after.stderr, /UNAUTHORIZED|401|revoked|sign/i, after.stderr);
     await me.j(['token', 'revoke', 'walk-paths', '--repo', repo.id]);
-    await me.refused(['token', 'revoke', 'nobody', '--repo', repo.id], 1, /NOT_FOUND|not found/i);
+    await me.refused(['token', 'revoke', 'nobody', '--repo', repo.id], 1, /has no live token nobody/);
   });
 }
 

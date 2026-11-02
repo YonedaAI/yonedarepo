@@ -1,7 +1,10 @@
 // Which items a run of the kit (tools/staging-realworld.mjs) runs, by its flags.
 
 /** This week's features, run with `--feature-tests` and in a full run (feature-items.mjs). */
-export const FEATURE_ITEMS = ['33', '34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '46'];
+export const FEATURE_ITEMS = ['33', '34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '46', '48'];
+
+/** The flags of the gates over those items, for the kit's parseArgs. */
+export const FEATURE_FLAGS = Object.fromEntries(['memory-page', 'feature-tests', 'flight-path', 'cli-walk'].map((flag) => [flag, { type: 'boolean', default: false }]));
 
 /** A flag that runs a gate, and its items; the first flag given wins, then `--only`. */
 const GATES = [

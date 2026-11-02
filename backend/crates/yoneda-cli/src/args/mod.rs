@@ -266,13 +266,6 @@ mod tests {
             parsed("sync --land").ok(),
             Some(Command::Sync(SyncMode::Land))
         );
-        assert_eq!(
-            parsed("sync --attempt external-1").ok(),
-            Some(Command::Sync(SyncMode::Attempt {
-                id: "external-1".into(),
-                mcp_url: None
-            }))
-        );
         assert_eq!(parsed("").ok(), Some(Command::Help));
         assert_eq!(
             parsed("auth token").ok(),
@@ -839,7 +832,7 @@ mod tests {
     #[test]
     fn refuses_bad_lines_with_usage_code() {
         for line in [
-            "sync --land --attempt a",
+            "sync --attempt a",
             "clone",
             "clone r1 --full --offline",
             "clone r1 --sparse ,",

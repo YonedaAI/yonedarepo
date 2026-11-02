@@ -72,7 +72,7 @@ pub fn revoke_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
         let event = json!({ "token": name });
         audit_outbox::record(db, c, "repo.token_revoked", &actor.principal, event)?;
     }
-    Ok(json!({ "name": name, "revoked": true }))
+    Ok(json!({ "name": name, "revoked": !revoked.is_empty() }))
 }
 
 pub fn list_tokens<S: SqlStore>(db: &S, actor: &Actor) -> Result<Value> {

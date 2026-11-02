@@ -347,17 +347,20 @@ fn cases() -> Vec<Case> {
         case(
             "blame src/a.rs --repo {REPO} --origin {ORIGIN}",
             "blame",
-            pretty(&mock::blame()),
+            format!(
+                "{short}  1 fn main() {{\n{short} 12 }}\n",
+                short = &COMMIT[..12]
+            ),
         ),
         case(
             "diff --repo {REPO} --origin {ORIGIN}",
             "diff",
-            "--- a/a.txt\n+++ b/a.txt\nD b.txt\n",
+            "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\nD b.txt\n",
         ),
         case(
             "symbols src/a.rs --repo {REPO} --origin {ORIGIN}",
             "symbols",
-            pretty(&mock::symbols()),
+            "fn main 1-12\n",
         ),
         case(
             "land --branch topic --repo {REPO} --origin {ORIGIN}",
@@ -605,6 +608,12 @@ fn failures_print_the_error_document_and_keep_their_exit_codes() -> TestResult {
             "conflict",
             2,
             Some("CONFLICT"),
+        ),
+        (
+            "token revoke nobody --repo {REPO} --origin {ORIGIN}",
+            "failed",
+            1,
+            None,
         ),
     ] {
         let args = world.args(line);
