@@ -11,12 +11,14 @@ import {
   type GitHubConnection,
   IMPORT_HINT,
   importBody,
+  keepPending,
   parseGitHubRepo,
   pickedRepository,
+  takePending,
 } from '../source-platform/importModel';
 import type { OrgSummary } from '../source-platform/orgModel';
 import type { Visibility } from '../source-platform/repoAccess';
-import { sourceApi } from '../source-platform/sourceApi';
+import { SourceApiError, sourceApi } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
 import {
   CREATE_TIMEOUT_MS,
@@ -66,9 +68,12 @@ export function GitHubImportDialog({
   const [connectResult] = useState(takeConnectResult);
   const github = useSource<GitHubConnection>('/github/repositories').data;
   const connected = github?.connection === 'ok';
-  const [source, setSource] = useState('');
+  const [source, setSource] = useState(takePending);
   const [invalid, setInvalid] = useState(false);
-  const [name, setName] = useState('');
+  const [name, setName] = useState(() => {
+    const parsed = parseGitHubRepo(source);
+    return parsed ? defaultRepoName(parsed.repo) : '';
+  });
   // The name follows the address until someone types their own.
   const [named, setNamed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -101,6 +106,11 @@ export function GitHubImportDialog({
       );
       await onImported({ repo: created.id, owner });
     } catch (e) {
+      if (e instanceof SourceApiError && e.code === 'GITHUB_NOT_CONNECTED') {
+        keepPending(source);
+        window.location.assign(CONNECT_PATH);
+        return;
+      }
       setError(createFailure(e));
       setBusy(false);
     }

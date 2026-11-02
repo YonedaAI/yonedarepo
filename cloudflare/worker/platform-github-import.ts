@@ -8,7 +8,7 @@ import { NonRetryableError } from 'cloudflare:workflows';
 import { githubAppOn, repositoryAccess } from './platform-github-app';
 import { connection, personOf } from './platform-github-connect';
 import { accessGone } from './platform-github-refused';
-import { githubRemote } from './repo-git-remote';
+import { githubRemote, remoteHead } from './repo-git-remote';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import type { Env } from './types';
 
@@ -17,12 +17,34 @@ export type GitHubSource = { installation: number; repository: number };
 
 const RECONNECT = 'Connect GitHub again to add this repository';
 
+/** How long the request waits on GitHub before leaving the question to the Workflow. */
+const REMOTE_WAIT_MS = 3_000;
+
+/** A source only a connection could read stops here, before there is a repository to fail, and
+ * the dialog sends the person to GitHub. Any other trouble is the Workflow's to report. */
+async function needsConnection(env: Env, requester: Credentials, url: string) {
+  if (!githubAppOn(env)) return;
+  const refused = await remoteHead(url, undefined, AbortSignal.timeout(REMOTE_WAIT_MS)).then(
+    () => false,
+    (e) => /answered 40[134]/.test(String(e?.message)),
+  );
+  if (!refused) return;
+  const held = await connection(env, personOf(requester));
+  if (held.state !== 'ok')
+    throw new ApiError('GITHUB_NOT_CONNECTED', 'Connect GitHub to add this repository');
+  throw new ApiError(
+    'FORBIDDEN',
+    "GitHub didn't find this repository. Add it to the YonedaRepo app on GitHub.",
+  );
+}
+
 /** What `POST /repos/import` clones. `hidden`: GitHub says the source is private. */
 export async function importSource(env: Env, requester: Credentials, body: Json) {
   const repository = body.github_repository;
   if (repository === undefined) {
     const url = githubRemote(String(body.url ?? ''));
     if (!url) throw new ApiError('INVALID_INPUT', 'url must be a public GitHub repository');
+    await needsConnection(env, requester, url);
     return { url, hidden: false };
   }
   if (!Number.isSafeInteger(repository) || repository <= 0)

@@ -69,6 +69,33 @@ export function importBody(
 /** Where Connect starts; the Worker takes it from there. */
 export const CONNECT_PATH = '/github/connect';
 
+const PENDING = 'github-import-source';
+
+/** The address waiting on a trip to GitHub, kept for the way back. Storage can be unavailable:
+ * the person then types it again. */
+export function keepPending(source: string) {
+  try {
+    window.sessionStorage.setItem(PENDING, source);
+  } catch {}
+}
+
+export function takePending() {
+  try {
+    const source = window.sessionStorage.getItem(PENDING) ?? '';
+    window.sessionStorage.removeItem(PENDING);
+    return source;
+  } catch {
+    return '';
+  }
+}
+
+/** Linking GitHub is the first half of connecting: go on to the install if an import waits. */
+export function continueToGitHub() {
+  try {
+    if (window.sessionStorage.getItem(PENDING)) window.location.assign(CONNECT_PATH);
+  } catch {}
+}
+
 export type GitHubRepository = { id: number; full_name: string; private: boolean };
 
 /** What `GET /github/repositories` answers: no `available`, no Connect on this site. */

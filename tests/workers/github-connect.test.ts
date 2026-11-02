@@ -362,6 +362,27 @@ describe('importing a picked repository', () => {
     expect(PLATFORM_IMPORT.created).toEqual([]);
   });
 
+  it('stops a private address before there is a repository, and sends the person to connect', async () => {
+    serve();
+    const { cookie } = await person('gh_paste', 126, 'paste');
+    const PLATFORM_IMPORT = workflows();
+    const target = { ...env, PLATFORM_IMPORT } as unknown as Env;
+    const remote = 'https://github.com/someone/secret.git';
+    const original = globalThis.fetch;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.startsWith(remote)) return new Response('', { status: 401 });
+      return original(input, init);
+    });
+
+    const made = await api('/repos/import', { cookie }, { body: { url: remote, name: 'secret' } }, target);
+
+    expect(made.body.error.code).toBe('GITHUB_NOT_CONNECTED');
+    expect(PLATFORM_IMPORT.created).toEqual([]);
+    const listed = await api('/repos', { cookie }, {}, target);
+    expect(listed.body.repos.map((r: { name: string }) => r.name)).not.toContain('secret');
+  });
+
   it('refuses without a connection, a removed one, and an API token', async () => {
     serve();
     const { cookie } = await person('gh_noconn', 124, 'noconn');
