@@ -3,7 +3,6 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import css from '../../styles/theme.css?raw';
 import { FileHeader } from './FileHeader';
 import { fileSize, languageOf, PLAIN_BYTES } from './fileFacts';
 import { Markdown } from './markdown';
@@ -119,7 +118,11 @@ describe('syntax colors', () => {
     const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
     return (hi + 0.05) / (lo + 0.05);
   };
-  it('read on the code surface in both themes', () => {
+  it('read on the code surface in both themes', async () => {
+    // Off disk, not `?raw`: Vitest empties CSS unless a config says otherwise. The computed
+    // specifier keeps Vite from bundling `fs`, and the browser tsconfig has no Node types.
+    const fs = await import(`node:${'fs'}`);
+    const css: string = fs.readFileSync(new URL('../../styles/theme.css', import.meta.url), 'utf8');
     const themes = [
       ...css.matchAll(
         /--bg: (#[0-9a-f]{6});(?:(?!--bg:)[\s\S])*?--syntax-property: #[0-9a-f]{6};/g,

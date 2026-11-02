@@ -16,6 +16,11 @@
   grid-column: 2;
   overflow-wrap: anywhere;
 }
+.source-changes strong {
+  font-size: var(--text-base);
+  font-weight: 500;
+  line-height: var(--leading-chrome);
+}
 .source-changes a:hover strong {
   color: var(--blue-text);
 }

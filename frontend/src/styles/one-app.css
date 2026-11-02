@@ -520,8 +520,6 @@ a.chip:hover {
   }
 }
 .page-heading h1 {
-  font-size: var(--text-3xl);
-  font-weight: 600;
   margin-bottom: 6px;
 }
 .page-heading p {

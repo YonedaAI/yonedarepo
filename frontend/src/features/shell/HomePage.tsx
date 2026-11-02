@@ -3,6 +3,7 @@ import type { Session } from '../../hooks/useSession';
 import { WorkspaceWelcome } from '../workspace/WorkspaceWelcome';
 import { HomeDashboard } from './HomeDashboard';
 import type { AccountActivity } from './homeModel';
+import { greetingName } from './homeModel';
 import type { Navigate } from './useRoute';
 
 export function HomePage({
@@ -35,7 +36,7 @@ export function HomePage({
     );
   return (
     <HomeDashboard
-      username={session.identity?.handle ?? session.identity?.username?.split('@')[0]}
+      username={greetingName(session.identity ?? undefined)}
       activity={activity}
       loading={activityLoading}
       error={activityError}
