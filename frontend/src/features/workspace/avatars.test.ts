@@ -61,6 +61,20 @@ describe('the account menu', () => {
       }),
     );
 
+  it('names the account by its handle, not an email address', () => {
+    const html = render(
+      createElement(AccountMenu, {
+        identity: { username: 'ada@example.com', handle: 'ada_l' },
+        navigate: vi.fn(),
+        onConnect: vi.fn(),
+        onSignOut: async () => {},
+        onError: () => {},
+      }),
+    );
+    expect(html).toContain('Account: ada_l');
+    expect(html).not.toContain('ada@example.com');
+  });
+
   it('lists Account, Organizations, Billing, Connect agents, Appearance, Support, Documentation, About and Log out, in order', () => {
     const html = menu(null);
     const order = [

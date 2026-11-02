@@ -175,7 +175,9 @@ main {
 .topbar-title {
   margin: 0;
   overflow: hidden;
+  font-size: var(--text-md);
   font-weight: 500;
+  line-height: var(--leading-chrome);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -208,8 +210,10 @@ main {
   color: var(--faint);
 }
 .topbar-crumbs a {
+  overflow: hidden;
   color: var(--muted);
   text-decoration: none;
+  text-overflow: ellipsis;
 }
 .topbar-crumbs a:hover {
   color: var(--text);

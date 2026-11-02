@@ -11,6 +11,7 @@
   --text-sm: 13px; /* metadata under a row's title */
   --text-md: 14px; /* chrome: sidebar, breadcrumbs, tables, toolbars, controls */
   --text-base: 16px; /* the page default: reading text and row titles */
+  --text-control: 14px; /* what a field shows */
   --text-lg: 16px; /* card titles */
   --text-xl: 18px; /* section headings */
   --text-2xl: 22px; /* a change's title, large figures */

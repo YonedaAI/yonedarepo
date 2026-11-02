@@ -76,7 +76,7 @@ export function AccountMenu({
   const close = () => {
     if (menu.current) menu.current.open = false;
   };
-  const label = identity?.username ?? 'Signed in';
+  const label = identity?.handle ?? identity?.username ?? 'Signed in';
   const description = 'Personal account';
   const openSupport = () => {
     // The dialog gives focus back to what held it, which must not be inside the closed menu.

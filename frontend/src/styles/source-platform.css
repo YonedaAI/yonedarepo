@@ -118,7 +118,7 @@
   justify-content: space-between;
   gap: 16px;
   min-height: var(--row-h);
-  padding: var(--row-y) 12px;
+  padding: 5px 12px; /* With the 1 px line and two text lines, 48 high. */
 }
 .source-history li + li {
   border-top: 1px solid var(--row-line);
