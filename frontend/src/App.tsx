@@ -452,7 +452,6 @@ export function App() {
                 name={row?.name}
                 authenticated={session.authenticated}
                 username={session.identity?.username}
-                ownHandle={session.identity?.handle ?? undefined}
                 navigate={navigate}
                 onSignIn={() => setPanel('account')}
                 onLoaded={onLoaded}
