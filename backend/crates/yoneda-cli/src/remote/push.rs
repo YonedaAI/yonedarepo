@@ -149,9 +149,7 @@ pub async fn push(session: &mut Session, specs: Vec<Spec>) -> String {
         );
         ready.clear();
     }
-    if !session.options.dry_run && !doomed.is_empty() {
-        delete::send(session, &doomed, &mut outcomes).await;
-    }
+    delete::send(session, &doomed, &mut outcomes).await;
     if !session.options.dry_run && !ready.is_empty() {
         match declared::reads(session) {
             Ok(reads) => {

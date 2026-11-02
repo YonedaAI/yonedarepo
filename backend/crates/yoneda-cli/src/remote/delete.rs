@@ -16,12 +16,15 @@ pub fn update(dst: &str, current: Option<&String>) -> Result<Value, String> {
     }
 }
 
-/// Sends `updates` as one batch; a refusal is every one's.
+/// Sends `updates` as one batch, unless this is a dry run; a refusal is every one's.
 pub async fn send(
     session: &Session,
     updates: &[Value],
     outcomes: &mut BTreeMap<String, Result<(), String>>,
 ) {
+    if session.options.dry_run || updates.is_empty() {
+        return;
+    }
     let body = json!({ "updates": updates });
     if let Err(failure) = session.api.post("/refs/batch", &body).await {
         for update in updates {
