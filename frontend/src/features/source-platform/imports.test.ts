@@ -284,7 +284,7 @@ describe('connecting an organization', () => {
     expect(connectMessage('requested')).toContain('approve');
     expect(connectMessage('org_owner')).toContain('Only an owner');
     expect(connectMessage('not_member')).toContain('member');
-    expect(connectMessage('org_blocked')).toContain('owner can allow');
+    expect(connectMessage('org_blocked')).toContain('Third-party Access');
     expect(connectMessage('org_denied')).toContain('confirm');
     expect(connectMessage('lost')).toContain('suspended');
     expect(connectMessage('org')).not.toContain("can't connect yet");
