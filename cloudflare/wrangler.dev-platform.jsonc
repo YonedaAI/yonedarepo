@@ -88,6 +88,21 @@
       },
       "image": "./containers/Dockerfile",
       "image_build_context": "..",
+      "instance_type": "standard-1",
+      "max_instances": 4,
+      "rollout_step_percentage": [
+        100
+      ]
+    },
+    {
+      "class_name": "ImportContainer",
+      "constraints": {
+        "regions": [
+          "ENAM"
+        ]
+      },
+      "image": "./containers/Dockerfile",
+      "image_build_context": "..",
       "instance_type": "standard-3",
       "max_instances": 4,
       "rollout_step_percentage": [
@@ -146,6 +161,10 @@
       {
         "class_name": "CheckContainer",
         "name": "CHECK_RUNNERS"
+      },
+      {
+        "class_name": "ImportContainer",
+        "name": "IMPORT_RUNNERS"
       },
       {
         "class_name": "CommitShard",
@@ -214,6 +233,12 @@
         "ObjectPushQueue"
       ],
       "tag": "v7"
+    },
+    {
+      "new_sqlite_classes": [
+        "ImportContainer"
+      ],
+      "tag": "v8"
     }
   ],
   "name": "yonedarepo-dev-platform",

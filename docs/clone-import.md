@@ -1,6 +1,6 @@
 # Clone import
 
-An import is a `git clone`. `cloneRepository` (`cloudflare/worker/repo-clone.ts`) runs Git in a check container and hands what it fetched to what a push stores and records with, with no public Git endpoint in between. The result is an ordinary repository: every object in R2, every commit of every branch and tag recorded under its own id, and each ref as it stood on the remote.
+An import is a `git clone`. `cloneRepository` (`cloudflare/worker/repo-clone.ts`) runs Git in an `ImportContainer` and hands what it fetched to what a push stores and records with, with no public Git endpoint in between. The result is an ordinary repository: every object in R2, every commit of every branch and tag recorded under its own id, and each ref as it stood on the remote.
 
 Public GitHub repositories only for now. A credential goes by the instance's environment alone, so private access plugs in later (see **Private repositories**).
 
@@ -14,7 +14,7 @@ Written before the code. **Nothing here is measured on dev.** The cold start is 
 | The remote asked before a container starts | 1 request, under 300 ms |
 | A remote that is private or gone | no container started |
 | Container | 1 instance, 1 of the class's slots, under 180 s to start |
-| `git clone` | at most 60 min, 10 GB of pack; about 13.8 GB of disk free on `standard-3` (16 GB, less the 2.19 GB image) |
+| `git clone` | at most 60 min, 10 GB of pack; about 13.8 GB of disk free on `standard-3` (16 GB, less the 2.19 GB image), in `ImportContainer`, the check image on a class of its own, so checks stay on `standard-1` |
 | The objects | 1 R2 write per 4 MiB, at most 3 at once, 1 index call per 5,000 objects. A file over 8 MiB is 1 R2 write of its own |
 | The commits | 1 authority call per 100 commits or 1 MiB of changes |
 | The refs | 1 authority call for main, then 1 per 100 refs |
@@ -29,7 +29,7 @@ Bench: `tools/import-bench.mjs`, 3 runs of each repository, server-side timing, 
 
 1. The request checks the address (`githubRemote`), makes a repository on the platform's own store, and starts the Workflow.
 2. The Workflow asks GitHub for the head, so a remote that is private or gone costs no container.
-3. A fresh check instance named `clone:<repo>` starts with `enableInternet` on for that start alone; every check still starts with it off. `POST /clone` runs a bare clone of every branch and tag, and nothing else a remote keeps (a pull request's refs).
+3. A fresh `ImportContainer` named `clone:<repo>` starts with `enableInternet` on for that start alone; every check still starts with it off. `POST /clone` runs a bare clone of every branch and tag, and nothing else a remote keeps (a pull request's refs).
 4. Steps read what it holds, each time-boxed, so that no Worker fits a repository into one call:
    - `/clone/objects`: every commit, tree and file, framed as a push's, to `storeBundle`, and a large file to its own raw object.
    - `/clone/commits`: every commit, parents first, each with its bytes and its changes against its first parent, to `repo_record_pushed`.
@@ -59,7 +59,7 @@ The trunk has to exist as `main`: it is a fixed name in the code rather than a s
 | https only; no private, loopback, link-local, shared or multicast host, as written or as resolved; no user, port, query or fragment | `clone_remote.rs`, before Git starts |
 | A bare clone: no checkout, no template, `core.hooksPath=/dev/null`, `GIT_ALLOW_PROTOCOL=https`, no redirects, no prompts, no configuration read | `clone_git.rs` |
 | 60 min for Git, killed with its whole process group; 10 GB of pack, watched as it arrives | `clone_git.rs` |
-| Destroyed when the import ends, on any failure, and after 2 minutes idle | `cloneRepository`, `CheckContainer` |
+| Destroyed when the import ends, on any failure, and after 2 minutes idle | `cloneRepository`, `ImportContainer` |
 | One clone an instance, for the holder of its one-start secret | `clone_import.rs` |
 
 **The internet is not limited to GitHub at the network level.** `allowedHosts` would need `interceptHttps`, which carries every byte through a Worker. What keeps the instance to GitHub is the fixed command above: no code from any repository runs on it.

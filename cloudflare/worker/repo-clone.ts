@@ -1,4 +1,4 @@
-// An import is a clone. `cloneRepository` runs `git clone` in a check container (its one kind
+// An import is a clone. `cloneRepository` runs `git clone` in an ImportContainer (the one kind
 // of instance with the internet), and hands what that fetched to what a push stores and
 // records with: bundles, `repo_record_pushed` and the repository's refs. Nothing goes over the
 // public Git endpoint: the Worker reads the instance's own routes (clone_import.rs), so the
@@ -286,8 +286,8 @@ export async function cloneRepository(
   if (!remote)
     throw new NonRetryableError('INVALID_URL: Only public GitHub repositories can be added');
   await step.do('ask the remote', STEP, () => asked(remote, params.branch).then(() => true));
-  const runner = env.CHECK_RUNNERS.get(
-    env.CHECK_RUNNERS.idFromName(`clone:${params.repo}`),
+  const runner = env.IMPORT_RUNNERS.get(
+    env.IMPORT_RUNNERS.idFromName(`clone:${params.repo}`),
   ) as unknown as CloneRunner;
   const clean = { ...params, url: remote };
   try {

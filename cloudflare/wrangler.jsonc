@@ -57,6 +57,10 @@
       {
         "name": "CHECK_RUNNERS",
         "class_name": "CheckContainer"
+      },
+      {
+        "name": "IMPORT_RUNNERS",
+        "class_name": "ImportContainer"
       }
     ]
   },
@@ -125,6 +129,12 @@
       "deleted_classes": [
         "ObjectPushQueue"
       ]
+    },
+    {
+      "tag": "v11",
+      "new_sqlite_classes": [
+        "ImportContainer"
+      ]
     }
   ],
   "containers": [
@@ -134,6 +144,16 @@
       "image_build_context": "..",
       "max_instances": 8,
       "instance_type": "standard-1",
+      "rollout_step_percentage": [
+        100
+      ]
+    },
+    {
+      "class_name": "ImportContainer",
+      "image": "./containers/Dockerfile",
+      "image_build_context": "..",
+      "max_instances": 4,
+      "instance_type": "standard-3",
       "rollout_step_percentage": [
         100
       ]

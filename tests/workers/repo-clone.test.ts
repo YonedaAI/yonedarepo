@@ -5,7 +5,8 @@
 // lightweight and annotated tags. No test here reaches any other object store: R2 and the
 // authority are real, and a clone is read back through the platform's own Git.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { type CheckInstance, cloneSession, startCheck } from '../../cloudflare/worker/check-container';
+import { type CheckInstance, startCheck } from '../../cloudflare/worker/check-container';
+import { cloneSession } from '../../cloudflare/worker/import-container';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { type CloneParams, cloneRepository, MAX_PACK_BYTES } from '../../cloudflare/worker/repo-clone';
 import { caller } from '../../cloudflare/worker/repo-ops';
@@ -199,7 +200,7 @@ async function asked(name: string, instance: CheckInstance, extra: object = {}) 
   let session: ReturnType<typeof cloneSession> | undefined;
   let started: any;
   const holder: { env?: Env; named: string[]; steps: any[] } = { named: [], steps: [] };
-  const CHECK_RUNNERS = {
+  const IMPORT_RUNNERS = {
     idFromName: (n: string) => (holder.named.push(n), n),
     get: () => ({
       cloneStep: (stage: any, params: CloneParams, credential?: string) => {
@@ -210,7 +211,7 @@ async function asked(name: string, instance: CheckInstance, extra: object = {}) 
     }),
   };
   const workflows = { create: async (o: any) => ((started = o), { id: o.id }), get: async () => ({ status: async () => ({ status: 'running' }) }) };
-  const env = { ...scoped, CHECK_RUNNERS, PLATFORM_IMPORT: workflows, PACK_CACHE: 'on', PUSH_BUNDLES: 'on', ...extra } as unknown as Env;
+  const env = { ...scoped, IMPORT_RUNNERS, PLATFORM_IMPORT: workflows, PACK_CACHE: 'on', PUSH_BUNDLES: 'on', ...extra } as unknown as Env;
   holder.env = env;
   const created = await api('/repos/import', owner, { body: { name, url: URL_OF, policy: { required_checks: [], approvals: 0 } } }, env);
   expect(created.status).toBe(200);
@@ -584,7 +585,7 @@ describe('what reaches a clone', () => {
   it('is an https GitHub address alone, refused before anything starts', async () => {
     const box = await container(new Remote());
     const owner = { cookie: await signup('clone_urls') };
-    const env = { ...scoped, CHECK_RUNNERS: { idFromName: () => 'x', get: () => box.fake } } as unknown as Env;
+    const env = { ...scoped, IMPORT_RUNNERS: { idFromName: () => 'x', get: () => box.fake } } as unknown as Env;
     for (const url of [
       'http://github.com/acme/src.git',
       'git@github.com:acme/src.git',

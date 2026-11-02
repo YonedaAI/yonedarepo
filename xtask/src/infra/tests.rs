@@ -734,3 +734,27 @@ fn prod_has_every_switch_dev_has() {
         }
     }
 }
+
+#[test]
+fn imports_have_their_own_class_with_the_disk_and_checks_stay_on_their_price() {
+    let prod = include_str!("../../../infra/envs/prod.json");
+    let prod_lock = include_str!("../../../infra/envs/prod.lock.json");
+    for (text, locked) in [(DEV, DEV_LOCK), (prod, prod_lock)] {
+        let spec = Spec::parse(text).unwrap();
+        let platform = spec.workers.iter().find(|w| w.role == "platform").unwrap();
+        let config = spec.worker_config(platform, &lock(locked)).unwrap();
+        let containers = config["containers"].as_array().unwrap();
+        let class = |name: &str| containers.iter().find(|c| c["class_name"] == name).unwrap();
+        assert_eq!(class("CheckContainer")["instance_type"], "standard-1");
+        assert_eq!(class("ImportContainer")["instance_type"], "standard-3");
+        assert_eq!(
+            class("ImportContainer")["image"],
+            class("CheckContainer")["image"]
+        );
+        let migrations = config["migrations"].as_array().unwrap();
+        assert_eq!(
+            migrations.last().unwrap()["new_sqlite_classes"],
+            json!(["ImportContainer"])
+        );
+    }
+}

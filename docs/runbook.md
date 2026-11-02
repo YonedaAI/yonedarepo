@@ -207,11 +207,11 @@ node tools/staging-realworld.mjs --prod --only 0,browser,12,13,14,15,16,17
 
 ## Importing a repository
 
-An import is a `git clone` in a check container: every branch and tag, with every commit. Public GitHub repositories only for now. [clone-import.md](clone-import.md) has the budget, the rules of the instance and what is proved.
+An import is a `git clone` in an `ImportContainer`, the check image on `standard-3`: every branch and tag, with every commit. Public GitHub repositories only for now. [clone-import.md](clone-import.md) has the budget, the rules of the instance and what is proved.
 
 - **Progress.** `GET /repos/:id/import` answers `queued`, `running`, then `complete`, `errored` or `terminated`. Refs land last, so while it runs the repository has none.
 - **Result.** A finished import's `output` has `commit` (main), `refs`, `left_out`, `commits`, `objects` and `pack_bytes`.
-- **Cost.** One check slot for the clone. The runtime image must hold `/clone`.
+- **Cost.** One `ImportContainer` for the clone, 4 at once at most, and none of the check slots. The runtime image must hold `/clone`.
 - **Failure.** No ref moves. Delete the repository and add it again.
 - **Find what needs a re-import.** `cargo xtask admin imports --env dev|prod` lists every repository with what it needs, and read-only:
 

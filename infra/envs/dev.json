@@ -305,6 +305,10 @@
               "class_name": "CheckContainer"
             },
             {
+              "name": "IMPORT_RUNNERS",
+              "class_name": "ImportContainer"
+            },
+            {
               "name": "COMMIT_SHARDS",
               "class_name": "CommitShard"
             },
@@ -366,6 +370,12 @@
             "deleted_classes": [
               "ObjectPushQueue"
             ]
+          },
+          {
+            "tag": "v8",
+            "new_sqlite_classes": [
+              "ImportContainer"
+            ]
           }
         ],
         "containers": [
@@ -373,7 +383,22 @@
             "class_name": "CheckContainer",
             "image": "./containers/Dockerfile",
             "image_build_context": "..",
+            "instance_type": "standard-1",
+            "rollout_step_percentage": [
+              100
+            ],
+            "constraints": {
+              "regions": [
+                "ENAM"
+              ]
+            }
+          },
+          {
+            "class_name": "ImportContainer",
+            "image": "./containers/Dockerfile",
+            "image_build_context": "..",
             "instance_type": "standard-3",
+            "max_instances": 4,
             "rollout_step_percentage": [
               100
             ],
