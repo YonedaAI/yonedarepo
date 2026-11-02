@@ -303,9 +303,13 @@ a.chip:hover {
   color: var(--text);
 }
 .readme-body pre {
-  background: var(--bg);
+  background: var(--code-bg);
   padding: 12px;
   border-radius: 6px;
+}
+.readme-body img {
+  max-width: 100%;
+  height: auto;
 }
 .readme-body blockquote {
   margin: 0 0 12px;

@@ -1,6 +1,5 @@
 // A Markdown file reads rendered, with its source a click away. A search result's link names a
 // line, so it opens on the source, where that line can be marked.
-import { Markdown } from './markdown';
 
 export const isMarkdown = (path: string) => /\.(md|markdown|mdx)$/i.test(path);
 
@@ -21,13 +20,5 @@ export function PreviewToggle({
         Preview
       </button>
     </fieldset>
-  );
-}
-
-export function FilePreview({ content }: { content: string }) {
-  return (
-    <div className="readme-body">
-      <Markdown source={content} />
-    </div>
   );
 }

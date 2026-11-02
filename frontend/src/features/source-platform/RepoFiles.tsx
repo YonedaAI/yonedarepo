@@ -7,11 +7,9 @@ import { BranchPicker, CloneButton, LatestCommit } from './CodeParts';
 import { CommitFile } from './CommitFile';
 import { readQuery, useActivity, useListing } from './codeData';
 import { currentApiOrigin } from './connect';
-import { FileBlame } from './FileBlame';
-import { FilePreview, isMarkdown, PreviewToggle } from './FilePreview';
 import { FileTable } from './FileTable';
-import { FileText } from './FileText';
-import { Markdown } from './markdown';
+import { FileView } from './FileView';
+import { RepoMarkdown } from './RepoMarkdown';
 import { canMoveBranches, type RepoStatus } from './repoStatus';
 import { Failure, Loading } from './SourceStatus';
 import type { SourceRoute } from './sourceRoute';
@@ -39,9 +37,7 @@ function Readme({ repo, ref, path, at }: { repo: string; ref: string; path: stri
       <header>
         <code>{path.split('/').pop()}</code>
       </header>
-      <div className="readme-body">
-        <Markdown source={file.data.content} />
-      </div>
+      <RepoMarkdown source={file.data.content} place={{ repo, ref, path, at }} />
     </article>
   );
 }
@@ -62,8 +58,6 @@ export function RepoFiles({
   // A line belongs to the file on screen: every link away leaves it behind.
   const { line, ...place } = route;
   const listing = useListing(route.repo, ref, route.path, route.at);
-  const [blaming, setBlaming] = useState(false);
-  const [source, setSource] = useState(false);
   // The place the form was opened on: moving to another closes it.
   const here = `${route.ref}:${route.path}`;
   const [writingAt, setWritingAt] = useState<string | null>(null);
@@ -85,11 +79,6 @@ export function RepoFiles({
   );
   const crumbs = route.path.split('/').filter(Boolean);
   const readme = tree?.entries.find((e) => e.type !== 'tree' && README.test(e.name));
-  const previewable =
-    listing.value?.kind === 'file' &&
-    listing.value.encoding === 'utf-8' &&
-    !line &&
-    isMarkdown(route.path);
   return (
     <section className="source-files" aria-label="Files">
       <div className="source-toolbar">
@@ -200,42 +189,16 @@ export function RepoFiles({
           )}
         </>
       )}
-      {listing.value?.kind === 'file' && (
-        <article className="source-file">
-          <header>
-            <code>{route.path}</code>
-            <span>
-              {listing.value.size} bytes{listing.value.executable ? ' · executable' : ''}
-            </span>
-            {previewable && !blaming && (
-              <PreviewToggle preview={!source} onChange={(preview) => setSource(!preview)} />
-            )}
-            {canCommit && listing.value.encoding === 'utf-8' && !writing && (
-              <button type="button" className="quiet" onClick={() => setWritingAt(here)}>
-                Edit
-              </button>
-            )}
-            {route.at === undefined && listing.value.encoding === 'utf-8' && ref && (
-              <button
-                type="button"
-                className="quiet"
-                aria-pressed={blaming}
-                onClick={() => setBlaming((b) => !b)}
-              >
-                {blaming ? 'Hide blame' : 'Blame'}
-              </button>
-            )}
-          </header>
-          {blaming && route.at === undefined && ref ? (
-            <FileBlame repo={route.repo} path={route.path} refName={ref} onNavigate={navigate} />
-          ) : previewable && !source ? (
-            <FilePreview content={listing.value.content} />
-          ) : listing.value.encoding === 'utf-8' ? (
-            <FileText content={listing.value.content} line={line} />
-          ) : (
-            <p className="source-empty">Binary file not shown.</p>
-          )}
-        </article>
+      {listing.value?.kind === 'file' && !writing && ref && (
+        <FileView
+          file={listing.value}
+          path={route.path}
+          line={line}
+          place={{ repo: route.repo, ref, path: route.path, at: route.at }}
+          onLine={(at) => navigate({ ...route, line: at })}
+          onEdit={canCommit ? () => setWritingAt(here) : undefined}
+          onNavigate={navigate}
+        />
       )}
     </section>
   );

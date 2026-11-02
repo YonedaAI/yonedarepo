@@ -81,11 +81,10 @@
 }
 .source-file pre {
   margin: 0;
-  padding: 12px;
+  padding: 10px 16px;
   overflow: auto;
-  font:
-    var(--text-mono-dense) / 1.5 "IBM Plex Mono",
-    monospace;
+  background: var(--code-bg);
+  font: var(--text-mono-dense) / 1.5 var(--mono);
 }
 .source-history h3 {
   margin: 16px 0 6px;
