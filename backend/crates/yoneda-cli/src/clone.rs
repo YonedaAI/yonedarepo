@@ -44,7 +44,12 @@ pub async fn clone(
             ));
         }
     };
-    let target = PathBuf::from(dir.unwrap_or(spec.folder()));
+    let folder = match (&spec, dir) {
+        (_, Some(dir)) => dir.to_owned(),
+        (Spec::Id(id), None) => name_of(&origin, &path, id).await,
+        (Spec::Named { name, .. }, None) => name.clone(),
+    };
+    let target = PathBuf::from(folder);
     if target.exists()
         && std::fs::read_dir(&target)
             .map(|mut d| d.next().is_some())
@@ -102,6 +107,21 @@ pub async fn clone(
     Ok(())
 }
 
+/// The folder for a clone by id: the repository's name, or the id when it can't be read here
+/// (the clone then says why).
+async fn name_of(origin: &str, credentials_file: &Path, id: &str) -> String {
+    let token =
+        credentials::load_optional(credentials_file, origin, std::env::var("YONEDA_TOKEN").ok());
+    let status = match token.and_then(|t| Api::account(origin, t.as_ref())) {
+        Ok(api) => api.get(&format!("/repos/{id}")).await.ok(),
+        Err(_) => None,
+    };
+    status
+        .and_then(|s| s["name"].as_str().map(str::to_owned))
+        .filter(|name| Spec::parse(&format!("ada/{name}")).is_some())
+        .unwrap_or_else(|| id.to_owned())
+}
+
 /// `git clone args`: Git's own words for a person, quiet under `--json`, whose stdout is one
 /// document and whose failures carry Git's message.
 fn git_clone(git: &Git, args: &[&str]) -> Result<()> {
@@ -157,7 +177,6 @@ async fn offline(repo: &str, origin: &str, path: &Path, target: &Path) -> Result
         platform: Default::default(),
         series: Vec::new(),
         last_land: None,
-        attempts: Default::default(),
     };
     let root = std::fs::canonicalize(target).context(format!("resolving {}", target.display()))?;
     state.save(&root)?;

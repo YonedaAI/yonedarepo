@@ -208,6 +208,16 @@ fn yoneda_works_inside_a_clone_by_name() -> TestResult {
 }
 
 #[test]
+fn clone_by_id_lands_in_the_repository_name_too() -> TestResult {
+    let w = World::new()?;
+    let out = w.yoneda(&w.work(), &["clone", EMPTY])?;
+    ensure(out.status.success(), said(&out))?;
+    ensure(said(&out).contains("Cloning into 'empty'..."), said(&out))?;
+    ensure(w.work().join("empty/.git").exists(), "not in ./empty")?;
+    ensure(!w.work().join(EMPTY).exists(), "a folder named by the id")
+}
+
+#[test]
 fn clone_refuses_what_is_neither_a_name_nor_an_id() -> TestResult {
     let w = World::new()?;
     let bare = w.yoneda(&w.work(), &["clone", "empty"])?;

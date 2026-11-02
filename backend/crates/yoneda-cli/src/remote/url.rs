@@ -68,14 +68,6 @@ impl Spec {
             Self::Named { handle, name } => format!("yoneda::{origin}/{handle}/{name}"),
         }
     }
-
-    /// The folder a clone lands in by default.
-    pub fn folder(&self) -> &str {
-        match self {
-            Self::Id(id) => id,
-            Self::Named { name, .. } => name,
-        }
-    }
 }
 
 /// The Git config key holding the id of the repository `/<handle>/<name>` names on `origin`.
