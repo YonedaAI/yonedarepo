@@ -99,6 +99,9 @@
 //          --yes: tools/staging/memory-flow.mjs)
 //        node tools/staging-realworld.mjs --feature-tests [--headed]
 //          (= --only 0,12,33-44,17, no model: tools/staging/feature-items.mjs; --flight-path: 43, 44)
+//        node tools/staging-realworld.mjs --cli-walk [--cli-bin <dir>]
+//          (= --only 0,48, dev only, no model: every yoneda command read back, on the owner's account
+//          in throwaway HOMEs, with its coverage table: tools/staging/cli-walk-flow.mjs)
 //        node tools/staging-realworld.mjs --memory-page [--headed]
 //          (= --only 0,12,32,17, dev only, no model: a session record, its transcript and context
 //          delivery behind a change, read by API and in Chrome: tools/staging/memory-page-flow.mjs)
@@ -112,6 +115,7 @@ import { bigClone } from './staging/big-clone-flow.mjs';
 import { browserFlow } from './staging/browser-flow.mjs';
 import { compactionFlow } from './staging/compaction-flow.mjs';
 import { cliChangeRequest } from './staging/change-flow.mjs';
+import { cliWalk } from './staging/cli-walk-flow.mjs';
 import { accountMcp, cleanupRepos, cliCleanup, revokePat, serverReads } from './staging/cli-account-flow.mjs';
 import { cliConcurrency, cliLoginRepo, cliTransactional } from './staging/cli-flow.mjs';
 import { CliKit } from './staging/cli-tools.mjs';
@@ -216,6 +220,8 @@ const { values } = parseArgs({
     'memory-page': { type: 'boolean', default: false },
     'feature-tests': { type: 'boolean', default: false },
     'flight-path': { type: 'boolean', default: false },
+    // Item 48: every yoneda command, on the owner's dev account.
+    'cli-walk': { type: 'boolean', default: false },
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -288,6 +294,9 @@ await step('browser', 'Browser: sign in, source pages, a change landed, releases
 );
 await step('31', 'Visibility: anonymous stock-Git clone and page of a public repository; private refuses within 1 s', (m) =>
   visibilityFlow({ origin: values.origin, api: values.api, platform: platformAccount }, m),
+);
+await step('48', 'Every yoneda command, for real, in throwaway HOMEs on the dev owner\'s account: install, sign-in, repositories, orgs, Git, Landings, sessions, hooks, refusals', (m) =>
+  cliWalk({ origin: values.origin, api: values.api, bin: values['cli-bin'] ?? resolve(root, 'target/release'), root, headed: values.headed, prod: values.prod, kitName: account.name, kitSession: platformAccount }, m),
 );
 await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi({ api: values.api, platform: platformAccount }, m));
 await step('7', 'Check run in a container, 0 left after', (m) => containerCheck(platformAccount, m));
@@ -401,9 +410,9 @@ rec.items = ran;
 const evidence = { schema: 1, origin: values.origin, platform: values.platform, tree, recorded_at: new Date().toISOString(), items: ran, not_run: notRun };
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 // Smoke-only evidence keeps its own name: the prod guard reads the newest realworld*.json.
-const smoke = ['model', 'hooks', 'members', 'reads', 'browser', '22', '24', '25', '26', '31'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
+const smoke = ['model', 'hooks', 'members', 'reads', 'browser', '22', '24', '25', '26', '31', '48'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
 const gate = featureRun(only) ? 'feature-gate' : values['git-semantics'] ? 'git-semantics-gate' : values['agent-hooks'] ? 'agent-hooks-gate' : values.agents ? 'agents-gate' : values['memory-page'] ? 'memory-page-gate' : null;
-const prefix = gate ?? { model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', 22: 'forks-gate', 24: 'orgs-gate', 25: 'lfs-gate', 31: 'visibility-gate' }[smoke] ?? (values.prod ? 'prod-smoke' : 'realworld');
+const prefix = gate ?? { model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', 22: 'forks-gate', 24: 'orgs-gate', 25: 'lfs-gate', 31: 'visibility-gate', 48: 'cli-walk-gate' }[smoke] ?? (values.prod ? 'prod-smoke' : 'realworld');
 const file = resolve(root, `.local/staging/${prefix}-${Date.now()}.json`);
 await writeFile(file, `${JSON.stringify(evidence, null, 2)}\n`);
 console.log(`\n${rec.table()}\n\nEvidence: ${file}`);
