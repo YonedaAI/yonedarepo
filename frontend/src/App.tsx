@@ -93,7 +93,11 @@ export function App() {
   const [missing, setMissing] = useState<string>();
   const platform = useSource<{ repos: PlatformRepo[] }>(session.authenticated ? '/repos' : null);
   const orgs = useSource<{ orgs: OrgSummary[] }>(session.authenticated ? '/orgs' : null);
-  const activity = useSource<AccountActivity>(session.authenticated ? '/activity' : null);
+  const activity = useSource<AccountActivity>(
+    session.authenticated && (!routeRepo(route) || shown?.repo === routeRepo(route))
+      ? '/activity'
+      : null,
+  );
   // Operators: the sign-up feed, badged in the sidebar with those since this browser looked.
   const { isAdmin, signups, signupsSeen, onSignupsSeen } = useSignups(session.identity);
   // Before anything renders a link, so repository links carry their readable address.

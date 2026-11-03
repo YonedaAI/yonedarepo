@@ -1,9 +1,12 @@
 // `GET /repos/:id`: the repository's name, log version, policy, refs and the caller's access.
 // The type is generated from the Rust status (shared/contracts, `cargo xtask contracts`).
+
+import type { RepoStatus as FullRepoStatus } from '../../../../shared/contracts/repo-status';
 import type { Policy } from '../repo-settings/policy';
 import type { Viewer } from './RepoMembers';
 
-export type { RepoStatus } from '../../../../shared/contracts/repo-status';
+/** Browser metadata deliberately excludes expensive storage diagnostics. */
+export type RepoStatus = Omit<FullRepoStatus, 'objects'>;
 
 /** Whether the viewer may create and delete branches and create tags: the write role and
  * above (the server decides each request; this only hides controls). */

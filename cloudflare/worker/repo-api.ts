@@ -155,6 +155,11 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (resource === 'purge' && !sha && post) return purgeDeleted(env, auth, repo);
   if (resource === 'refs' && sha === 'batch' && !sub && post)
     return batchRefs(ctx, await bodyOf(req));
+  if (!resource && get && url.searchParams.get('summary') === 'true') {
+    // Browser metadata must not wait for storage diagnostics across every shard.
+    const { objects: _objects, ...summary } = await ctx.status();
+    return withPath(env, repo, summary);
+  }
   if (!resource && get) return withPath(env, repo, await run('git_status', {}));
   if (resource === 'name' && !sha && req.method === 'PUT')
     return renameRepository(ctx, (await bodyOf(req)).name);
