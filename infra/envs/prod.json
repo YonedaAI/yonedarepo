@@ -532,6 +532,9 @@
           "crons": [
             "* * * * *"
           ]
+        },
+        "placement": {
+          "mode": "smart"
         }
       }
     },
@@ -1025,7 +1028,8 @@
       "jurisdiction": "eu",
       "ratelimit": "1003",
       "public_ratelimit": "1004",
-      "bound": true
+      "bound": true,
+      "placement": "smart"
     }
   ]
 }
