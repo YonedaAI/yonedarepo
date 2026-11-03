@@ -24,8 +24,9 @@ bytes and readiness after integration rather than claiming a latency improvement
 
 Old/off servers use the existing ascending `after` windows, with validated bounds
 and a chain anchor; no unsupported descending query may silently label an old page
-as newest. Legacy fragments may need up to 50 strictly advancing reads plus an
-anchor read; normal new-server pages use one request. All reads retain fresh server
+as newest. Legacy fragments may need up to 50 strictly advancing window reads plus opening
+and closing anchor reads. Rebasing stale initial metadata can need one extra anchor
+read. Normal new-server pages use one request. All reads retain fresh server
 admission, path redaction and principal
 privacy. No viewer/access state or unfinished network I/O is shared across requests.
 
@@ -52,3 +53,18 @@ requests the former 500-entry payload. Private scripts, requests and screenshots
 are in `.local/implementation-20261103/recent-versions/`.
 
 This is local validation, not deployment or retained-history latency proof.
+
+Legacy reset-race follow-up: establish the snapshot chain before the first window
+and check it again after every page is collected. This rejects a reset between an
+older-page anchor and its data, and a reset between first-page archive fragments.
+Forward writes may advance the server head while the anchored snapshot stays fixed.
+A closing admission denial returns no collected rows. The existing ascending old
+protocol has no atomic multi-request snapshot; these are optimistic fences, not a
+new server guarantee. The advertised recent endpoint remains one authority read.
+
+Both reviewer repros failed before the fix and pass afterward. Fourteen version
+unit cases (42 targeted frontend cases total) pass, as do five served Chrome cases
+for stable forward writes, older reset, fragmented reset, closing denial and
+cancellation. Changed/denied histories clear the table, and reset rows never paint.
+Wide/375px light/dark screenshots were inspected. Private evidence is in
+`.local/implementation-20261103/legacy-version-fence/`. No deployment was performed.
