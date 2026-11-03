@@ -289,10 +289,6 @@ export function AppSidebar({
           ))}
         </nav>
       )}
-      <p className="sidebar-foot">
-        <i aria-hidden="true" />
-        Built on Cloudflare
-      </p>
     </aside>
   );
 }

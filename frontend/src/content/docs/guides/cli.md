@@ -28,7 +28,7 @@ irm https://yonedarepo.com/install.ps1 | iex
 
 The script picks the build for your machine, downloads it from yonedarepo.com, checks it against the release's published SHA-256 sums, and only then installs `yoneda` and `git-remote-yoneda` into `~/.local/bin` (`%LOCALAPPDATA%\Programs\yoneda` on Windows). It says each step as it goes. That directory must be on your `PATH` for Git to find the helper, so the script adds it: once, in your shell's start file (`~/.zshrc`, `~/.bashrc`, `~/.bash_profile` on macOS, fish's `conf.d`, else `~/.profile`), or to your user `PATH` on Windows, and sets up completion there too. Nothing runs as root or needs admin rights.
 
-It also installs `cloudflared`, which [Git over SSH](/docs/guides/git-remotes#ssh) goes through: Cloudflare's own release at a pinned version, checked against a pinned SHA-256. A working `cloudflared` already on your `PATH` is left alone. If the download fails the install still succeeds with a warning, because HTTPS Git works without it.
+It also installs the transport helper for [Git over SSH](/docs/guides/git-remotes#ssh), at a pinned version checked against a pinned SHA-256. A working helper already on your `PATH` is left alone. If the download fails the install still succeeds with a warning, because HTTPS Git works without it.
 
 | Builds | |
 |---|---|

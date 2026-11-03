@@ -59,7 +59,7 @@ One result connects to the companion paper on scheduling. Its independence condi
 
 ## What was measured
 
-The paper calls these correctness evidence first, all from the Cloudflare reference implementation (Table 4):
+The paper calls these correctness evidence first, all from the reference cloud implementation (Table 4):
 
 | Quantity | Result | Setting |
 | --- | --- | --- |

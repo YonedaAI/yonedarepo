@@ -64,7 +64,7 @@ Only if you sign up at /updates. We keep your email address, when you signed up,
 
 ### Request logs
 
-Our servers run on Cloudflare Workers, which log each request's outcome, errors and timing. Cloudflare may record request metadata with them, such as your IP address and browser user agent. Our code is written never to log passwords, tokens or authorization headers. An internal monitor counts these events to find faults.
+Our hosting infrastructure logs each request's outcome, errors and timing. These logs may include request metadata such as your IP address and browser user agent. Our code is written never to log passwords, tokens or authorization headers. An internal monitor counts these events to find faults.
 
 ### Site analytics
 
@@ -72,13 +72,13 @@ To learn which pages people read and how they find us, we count views of our pub
 
 - the page path, without its query string;
 - the referring site's name only, such as `news.ycombinator.com`, not the full address;
-- your country, as Cloudflare works it out from the connection;
+- your country, inferred from the connection;
 - the device type (desktop, mobile, tablet or bot), worked out from your browser's user agent, which we do not store;
 - campaign tags in the link you followed (`utm_source`, `utm_medium` and `utm_campaign`), if it had any.
 
 When you create an account, we count the sign-up the same way: how you signed up (email, GitHub or Google) and the referring site and campaign tags of the page you first landed on, never your account or email address. Your browser holds that first page's referring site and tags in `sessionStorage` until you close the tab; it is not a cookie and is not sent anywhere else.
 
-We also use Cloudflare Web Analytics on our public pages. Its script sets no cookies and does not fingerprint your browser; it reports the page, referring site, country, device type and how fast the page loaded.
+We also use cookieless website analytics on our public pages. Its script sets no cookies and does not fingerprint your browser; it reports the page, referring site, country, device type and how fast the page loaded.
 
 ## How we use it
 
@@ -98,7 +98,7 @@ We do not sell personal data, and we do not use your repositories or transcripts
 
 ## Where it is stored
 
-Everything is stored and processed by Cloudflare. Requests are served from Cloudflare's global network, and you do not choose a region. Our main storage is placed in eastern North America, so your data is processed in the United States. The service providers below may process the data they receive in other countries.
+We store and process service data on managed infrastructure. Requests reach our global network, and you do not choose a region. Our main storage is placed in eastern North America, so your data is processed in the United States. The service providers below may process the data they receive in other countries.
 
 ## How long we keep it
 
@@ -108,7 +108,7 @@ Everything is stored and processed by Cloudflare. Requests are served from Cloud
 - **Transaction log history** is kept according to each repository's retention settings.
 - **Managed agent transcripts and credit records** are retained while the workspace exists and are not deleted automatically. We erase them when you ask at [legal@yonedarepo.com](mailto:legal@yonedarepo.com).
 - **Model gateway logs** of review-agent requests and responses are kept until the log store reaches its cap of 10 million entries; then the oldest are deleted first. We erase them when you ask at [legal@yonedarepo.com](mailto:legal@yonedarepo.com).
-- **Request logs** are kept for the period Cloudflare's logging service allows, which is days, not months.
+- **Request logs** are kept for our hosting provider's logging retention period, which is days, not months.
 - **Site analytics** page-view and sign-up counts are kept for three months, then deleted automatically.
 - **Your account** is kept until you ask us to delete it.
 
@@ -139,14 +139,14 @@ Passwords, recovery codes, sessions and tokens are stored only as hashes. Every 
 
 | Provider | What it receives | When |
 |---|---|---|
-| Cloudflare | Everything above: it hosts our servers, storage, databases, containers, logs and the AI Gateway that managed review agents' model calls pass through | Always |
+| Hosting infrastructure | Everything above: it hosts our servers, storage, databases, containers, logs and the model gateway that managed review agents' model calls pass through | Always |
 | Resend | Your email address and the message | When we send you an email |
 | GitHub, Google | The sign-in exchange | Only if you sign in with them |
 | Z.ai, Xiaomi (MiMo), Anthropic, OpenAI | The code and text a managed review agent reads, and its instructions | Only for repositories whose owner enables a managed review agent; which provider depends on the agent and the model the owner picks |
 | Z.ai | A commit's diff and message | Only for repositories whose owner sets up a model check |
 | Xiaomi (MiMo) | Error counts and short error messages from our servers, with credentials removed | When our internal monitor summarizes a fault |
 
-Managed review agents reach their model providers through our Cloudflare AI Gateway. The gateway logs each of those requests and its response, including the code sent, under our Cloudflare account. Model checks call Z.ai directly and are not logged by the gateway. Checks you write run in containers on Cloudflare, and their code is not sent anywhere else.
+Managed review agents reach their model providers through our model gateway. The gateway logs each of those requests and its response, including the code sent, under our infrastructure account. Model checks call Z.ai directly and are not logged by the gateway. Checks you write run in isolated containers, and their code is not sent anywhere else.
 
 ## Cookies
 
