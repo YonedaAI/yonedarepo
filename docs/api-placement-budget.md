@@ -1,5 +1,8 @@
 # Data-local API placement validation
 
+Current dev uses explicit US East/Frankfurt API placement. The Smart Placement
+comparison below failed its live speed gate and was replaced, not accepted.
+
 The frontend stays at the viewer's edge. API compute should avoid repeated distant
 calls to account and repository authorities. On the unplaced dev path the owner's
 connection reaches SJO; a warm named Overview accumulates six 80–120 ms authority,
@@ -56,3 +59,32 @@ Pinned regional client Workers preserve the original caller's geography. A
 Frankfurt client Worker invoked from Costa Rica therefore cannot establish a
 European creator-location result. Its physical execution location is useful for
 network timing, not as a substitute for actual European requester geography.
+
+## Dev result
+
+Deployment `b38706d6` and its smoke passed. The unchanged large-history Overview
+was measured in three fresh browser contexts, each with a reload and repeat.
+Numbers below are milliseconds, ordered minimum / median / maximum. Browser
+image completion is separate from completed Markdown and repository sections.
+
+| Measurement | Unplaced API | Explicit regional API |
+| --- | --- | --- |
+| Cold Overview complete | 671 / 891 / 2290 | 686 / 692 / 835 |
+| Reload Overview complete | 538 / 562 / 642 | 490 / 607 / 790 |
+| Repeat Overview complete | 548 / 551 / 558 | 409 / 424 / 513 |
+| Repeat visible images | 894 / 910 / 915 | 793 / 1126 / 1226 |
+| Agents cards | 565 / 629 / 813 | 552 / 681 / 683 |
+
+Smart Placement was rejected: repeat Overview completion was
+2896 / 3672 / 3710 ms and the API actually ran in BOM against IAD data.
+Explicit placement ran the API in IAD beside that repository; the existing
+European repository's API ran in FRA with its authority in MXP. Those location
+reads passed three times. This does not move existing objects or prove universal
+regional residency. New-fixture checks retained original Costa Rica geography
+through US and Frankfurt client Workers; no region override was supplied.
+
+All three dedicated 1000-writer bursts passed: 3000 commits, landings and correct
+readbacks. Across runs, client read p95 was 1732 / 2644 / 2796 ms. Temporary writer
+tokens were revoked and dedicated fixtures retained. These burst timings do not
+support a subsecond-under-load claim. Images and Agents are not proven faster;
+full release QA and production promotion remain separate.
