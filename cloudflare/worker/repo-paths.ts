@@ -14,7 +14,9 @@ import { cellOfRegion, cellOfRepo, cellsOn, FIRST_CELL, indexOf, thisCell } from
 import { audited } from './repo-audit';
 import { refreshHead } from './repo-head';
 import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
+import { joinedPathHandle } from './repo-path-metadata';
 import { admitAnonymous } from './repo-public';
+import { timed } from './repo-timing';
 import { repoAnalytics } from './repo-usage';
 import type { Env } from './types';
 import { workspace } from './workspace';
@@ -287,12 +289,17 @@ export async function renameRepository(ctx: RepoContext, name: unknown): Promise
   };
 }
 
-/** A repository's status with its owner's handle and readable path (from the listing). */
-export async function withPath(env: Env, repo: string, status: Json): Promise<Json> {
+async function pathHandle(env: Env, repo: string) {
+  if (env.JOINED_REPO_PATH === 'on') return joinedPathHandle(env, repo);
   const row = await env.INDEX.prepare('SELECT workspace FROM platform_repos WHERE id=?')
     .bind(repo)
     .first<{ workspace: string }>();
-  const handle = row ? await handleOf(env, row.workspace) : null;
+  return row ? handleOf(env, row.workspace) : null;
+}
+
+/** A repository's status with its owner's handle and readable path (from the listing). */
+export async function withPath(env: Env, repo: string, status: Json): Promise<Json> {
+  const handle = await timed('path.metadata', () => pathHandle(env, repo));
   const named = {
     ...status,
     owner_handle: handle,
