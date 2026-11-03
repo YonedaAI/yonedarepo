@@ -87,7 +87,10 @@ test('organization layout, recovery focus and permission states in the served ap
         await page.screenshot({path:`${evidence}/${width}-${colorScheme}-${name}.png`,fullPage:true});
       };
       await open('full');
-      await page.getByRole('heading',{name:'Members',exact:true}).waitFor();
+      await page.getByRole('heading',{name:'Members',exact:true}).waitFor().catch(async error=>{
+        await shot('boot-error');
+        throw new Error(`${error.message}\nPage errors: ${errors.join('; ')}\n${await page.locator('body').innerText()}`);
+      });
       const ownerRow=page.getByRole('row').filter({has:page.locator('.org-member-name').getByText(owner,{exact:true})});
       assert.equal(await ownerRow.getByRole('combobox').count(),0,'the only owner cannot be demoted');
       assert.equal(await ownerRow.getByRole('button',{name:'Remove',exact:true}).count(),0,'the only owner cannot be removed');

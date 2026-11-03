@@ -196,8 +196,10 @@ export async function orgPages(page, { account, member, shot, cleanup }, m) {
   await see(devs.getByRole('heading', { name: /^devs/ }), 'the team entry devs');
 
   const members = page.getByRole('region', { name: 'Members', exact: true });
-  await members.getByRole('combobox', { name: 'Account', exact: true }).fill(member.identifier);
-  const candidate = members.getByRole('option', { disabled: false });
+  const email = member.identifier.includes('@');
+  await members.getByRole('combobox', { name: 'Account', exact: true }).fill(email ? member.identifier : `@${member.name}`);
+  // Email resolves one account; a handle prefix may also match longer handles.
+  const candidate = members.getByRole('option', { disabled: false, ...(email ? {} : { name: `@${member.name}`, exact: true }) });
   await candidate.waitFor();
   assert.equal(await candidate.count(), 1, 'an exact account identifier must resolve one candidate');
   await candidate.click();
