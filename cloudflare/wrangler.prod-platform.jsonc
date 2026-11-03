@@ -367,6 +367,7 @@
     "GITHUB_APP_ID": "5583304",
     "GITHUB_APP_SLUG": "yonedarepo-import",
     "GLOBAL_AUTH_LIMITS": "on",
+    "JOINED_REPO_PATH": "on",
     "LANDING_INSTRUMENTS": "on",
     "LAND_MODE": "batch",
     "LAND_WHEN_CLEARED": "on",

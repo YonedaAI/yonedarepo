@@ -293,7 +293,8 @@
           "AUTOMATIC_LOCALITY": "on",
           "CELLS": "on",
           "GLOBAL_AUTH_LIMITS": "on",
-          "SHARED_READ_TREES": "on"
+          "SHARED_READ_TREES": "on",
+          "JOINED_REPO_PATH": "on"
         },
         "secrets_store_secrets": [
           {
