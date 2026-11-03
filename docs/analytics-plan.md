@@ -157,6 +157,34 @@ As built: System is the owner token and anything named a backfill or rebuild, so
 
 Per-organization analytics, exports and a reporting API, then public `yonedarepo.com/stats`, with only figures we can explain and defend.
 
+## Home contribution details
+
+Home bubbles open a paginated list of the commits they count. This is repository
+activity visible to the account, not a claim that the viewer authored each commit.
+The chart and details share the same unique commit query: platform/push commits
+plus landed shard changesets, at their earliest recorded time; imported history
+and fork copies do not count. Author time and the current branch do not filter it.
+
+Each cached activity summary carries commit/changeset row cutoffs. Details use
+those server-held cutoffs and that summary's original `since`, including a clipped
+first hour. Later work does not enter the clicked snapshot. Whole UTC-hour IDs
+survive local-day/hour folding: a repeated daylight-saving hour opens both buckets,
+and the dialog lists their UTC boundaries. Half-hour zones retain the chart's
+existing convention of placing a UTC bucket in the local hour where it starts.
+
+`GET /api/v1/activity/contributions` takes `hours`, `snapshots`, and optional
+`cursors`. Snapshot hashes bind the account, currently listed repositories and
+cached summaries. Cursors bind that snapshot and the selected hours. Callers never
+provide repository cutoffs. Every authority page checks whole-repository access;
+path-restricted credentials cannot read it. A refreshed/missing summary or changed
+access returns `ACTIVITY_CHANGED` (409), requiring an activity refresh.
+
+Request budget: each details page lists the account's bounded repository set,
+reads its D1 summary rows, and asks one contributing authority for at most 25
+commits per region. Ordering is repository ID, then recorded time and commit ID;
+pagination does not fetch history into the browser. Region responses retain their
+own cursors, and the UI refuses incomplete regional replies or mismatched totals.
+
 ## Page layout
 
 Admin's **Traffic** tab becomes **Analytics**, with six tabs: Overview, Visitors, Agents, Repositories, Operations, Infrastructure. Audit log stays separate.

@@ -7,6 +7,14 @@ use crate::storage::{SqlStore, bad};
 use serde_json::{Value, json};
 use yoneda_core::Result;
 
+/// Shared with drill-down: one event per commit at its earliest recorded time, within
+/// the chart's immutable row cutoffs. Later adoption of a changeset remains one event.
+pub(super) const FIRST_RECORDS: &str = "SELECT commit_id, MIN(at) AS at FROM (\
+    SELECT id AS commit_id, recorded_at AS at FROM commits \
+    WHERE origin IN ('platform','push') AND rowid <= ? \
+    UNION ALL SELECT commit_id, COALESCE(recorded_at, landed_at) FROM changesets WHERE rowid <= ?) \
+    GROUP BY commit_id";
+
 const HOUR_MS: i64 = 3_600_000;
 /// The newest session records carried (the Home lists a handful across repositories).
 const SESSIONS: i64 = 10;
@@ -29,23 +37,22 @@ pub fn activity<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     // Commits made on the platform or pushed with Git, when they were recorded (imported
     // history and fork copies are not new work). Changesets are commits a shard recorded
     // and landed before they were adopted here; a commit counts once.
-    let first = "SELECT commit_id, MIN(at) AS at FROM (\
-         SELECT id AS commit_id, recorded_at AS at FROM commits \
-         WHERE origin IN ('platform','push') \
-         UNION ALL SELECT commit_id, COALESCE(recorded_at, landed_at) FROM changesets) \
-         GROUP BY commit_id";
+    let snapshot = db.query("SELECT (SELECT COALESCE(MAX(rowid),0) FROM commits) AS commits, (SELECT COALESCE(MAX(rowid),0) FROM changesets) AS changesets", &[])?[0].clone();
+    let bounds = [snapshot["commits"].clone(), snapshot["changesets"].clone()];
+    let first = FIRST_RECORDS;
     let commits = db
         .query(
             &format!(
                 "SELECT (at / {HOUR_MS}) * {HOUR_MS} AS hour, COUNT(*) AS n FROM ({first}) \
                  WHERE at >= ? GROUP BY hour ORDER BY hour"
             ),
-            &[json!(since)],
+            &[bounds[0].clone(), bounds[1].clone(), json!(since)],
         )?
         .iter()
         .map(|r| json!([r["hour"], r["n"]]))
         .collect::<Vec<_>>();
-    let commits_total = &db.query(&format!("SELECT COUNT(*) AS n FROM ({first})"), &[])?[0]["n"];
+    let commits_total =
+        &db.query(&format!("SELECT COUNT(*) AS n FROM ({first})"), &bounds)?[0]["n"];
     let sessions = db
         .query(
             &format!(
@@ -83,6 +90,7 @@ pub fn activity<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         .is_empty();
     Ok(json!({
         "since": since,
+        "snapshot": snapshot,
         "commits": commits,
         "commits_total": commits_total,
         "sessions": sessions,

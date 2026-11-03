@@ -54,6 +54,15 @@ describe('home greeting and stat cards', () => {
 });
 
 describe('contribution grid', () => {
+  it('keeps both UTC hours when daylight saving repeats the same local hour', () => {
+    const hours = [Date.UTC(2026, 10, 1, 5), Date.UTC(2026, 10, 1, 6)];
+    const grid = contributionGrid(
+      hours.map((h) => [h, 1]),
+      Date.UTC(2026, 10, 1, 18),
+      'America/New_York',
+    );
+    expect(grid.cells).toEqual([{ day: 29, hour: 1, count: 2, buckets: hours }]);
+  });
   it('buckets by local day and hour in the viewer time zone', () => {
     const now = Date.UTC(2026, 9, 28, 18, 30); // 11:30 in Los Angeles (PDT)
     const commits: [number, number][] = [
@@ -67,20 +76,22 @@ describe('contribution grid', () => {
     expect(la.days.at(-1)).toEqual({ key: '2026-10-28', label: 'Oct 28' });
     expect(la.days[0].key).toBe('2026-09-29');
     expect(la.cells).toEqual([
-      { day: 28, hour: 20, count: 2 },
-      { day: 29, hour: 10, count: 5 },
+      { day: 28, hour: 20, count: 2, buckets: [Date.UTC(2026, 9, 28, 3)] },
+      { day: 29, hour: 10, count: 5, buckets: [Date.UTC(2026, 9, 28, 17)] },
     ]);
     expect([la.total, la.max]).toEqual([7, 5]);
     // The same instants in UTC fall on other cells.
     const utc = contributionGrid(commits, now, 'UTC');
     expect(utc.cells).toEqual([
-      { day: 29, hour: 3, count: 2 },
-      { day: 29, hour: 17, count: 5 },
+      { day: 29, hour: 3, count: 2, buckets: [Date.UTC(2026, 9, 28, 3)] },
+      { day: 29, hour: 17, count: 5, buckets: [Date.UTC(2026, 9, 28, 17)] },
     ]);
     // A half-hour zone counts a bucket at the local hour it starts in.
     const india = contributionGrid([[Date.UTC(2026, 9, 28, 4), 1]], now, 'Asia/Kolkata');
     // (It is already Oct 29 there: Oct 28 is the second-to-last column.)
-    expect(india.cells).toEqual([{ day: 28, hour: 9, count: 1 }]);
+    expect(india.cells).toEqual([
+      { day: 28, hour: 9, count: 1, buckets: [Date.UTC(2026, 9, 28, 4)] },
+    ]);
   });
 
   it('keeps one column per calendar day across a daylight-saving change', () => {
@@ -160,6 +171,8 @@ describe('home dashboard', () => {
       ],
     });
     expect(html.match(/<circle/g)).toHaveLength(1);
+    expect(html).toContain('role="button"');
+    expect(html).toContain('tabindex="0"');
     expect(html).toContain('3 commits');
     expect(html).toContain('href="/source/r0000000000000000000a/agents/sessions/7"');
     expect(html).toContain('Added the parser');
