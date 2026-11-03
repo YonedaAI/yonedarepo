@@ -71,3 +71,46 @@ it('calls without a request scope do not share pending work', async () => {
     await old.work;
   }
 });
+
+it('explicit durable ownership shares work across requests and retains it until settled', async () => {
+  const retained: Promise<unknown>[] = [];
+  const owner = { waitUntil: (work: Promise<unknown>) => { retained.push(work); } };
+  const flights = new Flights<string>(owner);
+  let release!: (value: string) => void;
+  const first = request(() => flights.join('k', () => new Promise<string>((resolve) => { release = resolve; })));
+  const second = request(() => flights.join('k', async () => 'duplicate'));
+  try {
+    expect(second.joined).toBe(true);
+    expect(retained).toHaveLength(1);
+    const other = new Flights<string>({ waitUntil: () => {} });
+    expect(await request(() => other.join('k', async () => 'separate object')).work).toBe('separate object');
+  } finally {
+    release('held');
+    expect(await second.work).toBe('held');
+    await Promise.all(retained);
+  }
+  expect(await request(() => flights.join('k', async () => 'fresh')).work).toBe('fresh');
+});
+
+it('durable work keeps stale replacement and retry semantics across caller scopes', async () => {
+  vi.useFakeTimers();
+  const retained: Promise<unknown>[] = [];
+  const flights = new Flights<string>({ waitUntil: (work) => { retained.push(work); } });
+  let releaseOld!: (value: string) => void;
+  let releaseFresh!: (value: string) => void;
+  const old = request(() => flights.join('k', () => new Promise<string>((resolve) => { releaseOld = resolve; })));
+  vi.advanceTimersByTime(31_000);
+  const fresh = request(() => flights.join('k', () => new Promise<string>((resolve) => { releaseFresh = resolve; })));
+  expect(fresh.joined).toBe(false);
+  releaseOld('old');
+  await old.work;
+  expect(request(() => flights.join('k', async () => 'duplicate')).joined).toBe(true);
+  releaseFresh('fresh');
+  expect(await fresh.work).toBe('fresh');
+  const failed = request(() => flights.join('k', async () => { throw new Error('retry'); }));
+  const joined = request(() => flights.join('k', async () => 'must join'));
+  await expect(failed.work).rejects.toThrow('retry');
+  await expect(joined.work).rejects.toThrow('retry');
+  expect(await request(() => flights.join('k', async () => 'recovered')).work).toBe('recovered');
+  await Promise.all(retained);
+});

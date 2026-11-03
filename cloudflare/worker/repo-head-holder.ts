@@ -4,6 +4,7 @@
 // it reloads in the background; an access change reloads it before that change answers,
 // so the access snapshot it serves is never older than the last change it was told of.
 // It also serves the trees commits build on (see `trees`).
+import type { DurableFlightOwner } from './flights';
 import { warned } from './log';
 import { parseStore, RepoObjects, type TreeEntry } from './repo-objects';
 import { caller, type Json } from './repo-ops';
@@ -53,7 +54,10 @@ export class HeadHolder {
   #hot = new Set<string>();
   #warming: Promise<unknown> | null = null;
 
-  constructor(private readonly env: Env) {}
+  constructor(
+    private readonly env: Env,
+    private readonly owner?: DurableFlightOwner,
+  ) {}
 
   /** The head it holds when that is recent enough for the caller (a stale one is
    * refreshed in the background: begins validate their base when they land); otherwise
@@ -175,7 +179,13 @@ export class HeadHolder {
     if (this.#objects?.spec !== spec)
       this.#objects = {
         spec,
-        objects: new RepoObjects(this.env, repo, parseStore(this.env, spec), this.#trees),
+        objects: new RepoObjects(
+          this.env,
+          repo,
+          parseStore(this.env, spec),
+          this.#trees,
+          this.owner,
+        ),
       };
     return this.#objects.objects;
   }

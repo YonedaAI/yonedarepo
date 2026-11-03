@@ -10,3 +10,5 @@ export class GeographyEcho extends WorkerEntrypoint {
     return Response.json({ continent: req.cf?.continent, colo: req.cf?.colo, method: req.method, body: req.method === 'POST' ? await req.json() : null });
   }
 }
+
+export { DurableFlightsFixture } from './durable-flights-fixture';

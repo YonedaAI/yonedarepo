@@ -242,3 +242,38 @@ it('shows a reader who names a landing the files a stale copy of main is missing
   const refs = await api(`${repo}/refs?min_version=${version}`, owner, {}, env);
   expect(refs.body.version).toBeGreaterThanOrEqual(version);
 });
+
+it('a durable refs holder coalesces independent cold requests and fences invalidated loads', async () => {
+  const { id, version } = await seededRepo('refs-durable-cold', scoped);
+  const { inScope } = await import('../../cloudflare/worker/request-scope');
+  const base = scoped.SOURCE_REPOS;
+  let reads = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const env = { ...scoped, SOURCE_REPOS: {
+    idFromName: (name: string) => base.idFromName(name),
+    get: (id: DurableObjectId) => ({ fetch: async (url: string, init: RequestInit) => {
+      const command = JSON.parse(String(init.body));
+      const answer = await base.get(id).fetch(url, init);
+      if (command.op === 'repo_refs') { reads++; await gate; }
+      return answer;
+    } }),
+  } } as unknown as Env;
+  const retained: Promise<unknown>[] = [];
+  const holder = new RefsHolder(env, { waitUntil: (work: Promise<unknown>) => { retained.push(work); } });
+  const work = Array.from({ length: 25 }, () => inScope({}, () => holder.refs(id, version)));
+  try {
+    await vi.waitFor(() => expect(reads).toBeGreaterThan(0));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(reads).toBe(1);
+    holder.forget();
+    work.push(inScope({}, () => holder.refs(id, version)));
+    await vi.waitFor(() => expect(reads).toBe(2));
+  } finally {
+    release();
+    for (const answer of await Promise.all(work)) expect(answer.version).toBe(version);
+    await Promise.all(retained);
+  }
+  expect((await holder.refs(id, version)).version).toBe(version);
+  expect(reads).toBe(2);
+});

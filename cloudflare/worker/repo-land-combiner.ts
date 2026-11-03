@@ -55,8 +55,8 @@ export class LandCombiner extends DurableObject<Env> {
       });
   }
   #projection = new ProjectionRunner(this.env);
-  #head = new HeadHolder(this.env);
-  #refs = new RefsHolder(this.env);
+  #head = new HeadHolder(this.env, this.ctx);
+  #refs = new RefsHolder(this.env, this.ctx);
 
   async wait(repo: string, ref: string, ticket: number, timeoutMs: number) {
     await this.ctx.storage.put('target', { repo, ref });
@@ -112,8 +112,8 @@ export class LandCombiner extends DurableObject<Env> {
    * first needs the repository's authority or a commit shard, which answer GONE. */
   async erase() {
     this.#batcher.target = undefined;
-    this.#head = new HeadHolder(this.env);
-    this.#refs = new RefsHolder(this.env);
+    this.#head = new HeadHolder(this.env, this.ctx);
+    this.#refs = new RefsHolder(this.env, this.ctx);
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
   }

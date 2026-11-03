@@ -40,6 +40,10 @@
       {
         "name": "READ_COPIES",
         "class_name": "RepositoryReadCopy"
+      },
+      {
+        "name": "DURABLE_FLIGHTS",
+        "class_name": "DurableFlightsFixture"
       }
     ]
   },
@@ -57,6 +61,12 @@
       "tag": "v2",
       "new_sqlite_classes": [
         "RepositoryReadCopy"
+      ]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": [
+        "DurableFlightsFixture"
       ]
     }
   ],
