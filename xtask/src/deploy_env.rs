@@ -49,6 +49,10 @@ pub(crate) enum Step {
         worker: usize,
         dry_run: bool,
     },
+    Bootstrap {
+        worker: usize,
+        config: serde_json::Value,
+    },
     Secrets {
         worker: usize,
     },
@@ -66,7 +70,8 @@ impl Step {
             | Self::Secrets { .. }
             | Self::PushImage
             | Self::RecordImage
-            | Self::MoveHosts { .. } => true,
+            | Self::MoveHosts { .. }
+            | Self::Bootstrap { .. } => true,
             Self::Deploy { dry_run, .. } | Self::DetachConsumers { dry_run, .. } => !dry_run,
             Self::BuildWasm
             | Self::BuildFrontend
@@ -196,9 +201,11 @@ pub(crate) async fn run(
         crate::deploy_evidence::prod_facts(&mut facts, options).await?;
     }
     guard::preflight(env, spec, &facts, options)?;
-    if !options.front_only && !options.dry_run {
-        crate::deploy_cells::verify(env, spec).await?;
-    }
+    let missing = if !options.front_only && !options.dry_run {
+        crate::deploy_cells::missing(env, spec).await?
+    } else {
+        BTreeSet::new()
+    };
     timings.record("preflight: clean tree, branch tip", started, true);
     let head = facts.head.clone();
     let prebuilt = match &options.prebuilt {
@@ -220,7 +227,9 @@ pub(crate) async fn run(
         }
         (None, _) => (Source::Dockerfile, None, None),
     };
-    let mut plan = steps(env, &workers, options.dry_run, &source);
+    let mut plan = crate::deploy_bootstrap::insert(
+        steps(env, &workers, options.dry_run, &source), &workers, &missing
+    )?;
     if host_token.is_some() && !options.dry_run {
         plan = with_host_moves(plan, &workers);
     }
@@ -280,7 +289,7 @@ pub(crate) async fn run(
 pub(crate) fn with_host_moves(plan: Vec<Step>, workers: &[Deployable]) -> Vec<Step> {
     let mut out = Vec::with_capacity(plan.len() + workers.len());
     for step in plan {
-        if let Step::Deploy { worker, .. } = step
+        if let Step::Deploy { worker, .. } | Step::Bootstrap { worker, .. } = step
             && !inventory::routes(&workers[worker].config).is_empty()
         {
             out.push(Step::MoveHosts { worker });
@@ -294,8 +303,10 @@ pub(crate) fn with_host_moves(plan: Vec<Step>, workers: &[Deployable]) -> Vec<St
 pub(crate) fn with_consumer_detach(plan: Vec<Step>) -> Vec<Step> {
     let mut out = Vec::with_capacity(plan.len() * 2);
     for step in plan {
-        if let Step::Deploy { worker, dry_run } = step {
-            out.push(Step::DetachConsumers { worker, dry_run });
+        match &step {
+            Step::Deploy{worker,dry_run} => out.push(Step::DetachConsumers{worker:*worker,dry_run:*dry_run}),
+            Step::Bootstrap{worker,..} => out.push(Step::DetachConsumers{worker:*worker,dry_run:false}),
+            _=>{}
         }
         out.push(step);
     }

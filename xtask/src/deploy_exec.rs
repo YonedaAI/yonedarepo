@@ -70,6 +70,7 @@ impl Run<'_> {
                     if *dry_run { " (dry run)" } else { "" }
                 )
             }
+            Step::Bootstrap { worker, .. } => format!("bootstrap {} (unbound)", name(worker)),
             Step::Secrets { worker } => format!("secrets {}", name(worker)),
             Step::Health { worker } => format!("/health {}", name(worker)),
             Step::Smoke => "smoke".into(),
@@ -179,6 +180,11 @@ impl Run<'_> {
                 wrangler::run(&spec.account_id, &deploy)?;
                 let state = if dry_run { "dry run" } else { "deployed" };
                 summary.insert(worker, row(w, state, "-"));
+            }
+            Step::Bootstrap { worker, config } => {
+                self.rollout_started.get_or_insert_with(crate::deploy_ledger::now_ms);
+                crate::deploy_bootstrap::deploy(env,spec,&workers[worker],config,self.image.as_deref(),head)?;
+                summary.insert(worker,row(&workers[worker],"bootstrapped","-"));
             }
             Step::Secrets { worker } => crate::deploy_secrets::ensure(spec, &workers[worker])?,
             Step::Health { worker } => {

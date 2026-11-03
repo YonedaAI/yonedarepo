@@ -12,6 +12,7 @@ pub(crate) mod inventory;
 pub(crate) mod jsonc;
 pub(crate) mod live;
 pub(crate) mod plan;
+pub(crate) mod prepare;
 pub(crate) mod prune;
 pub(crate) mod retired;
 pub(crate) mod secrets;

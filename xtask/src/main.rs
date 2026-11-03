@@ -6,6 +6,7 @@ mod cloudflare;
 mod cloudflare_deploy;
 mod commands;
 mod contracts;
+mod deploy_bootstrap;
 mod deploy_cells;
 mod deploy_credentials;
 mod deploy_env;
