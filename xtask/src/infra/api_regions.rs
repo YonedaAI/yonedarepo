@@ -140,6 +140,20 @@ pub(super) fn expand(spec: &mut Spec) -> Result<()> {
         .ok_or("API regions have no provider")?
         + 1;
     spec.workers.splice(at..at, aliases);
+    let watched = spec
+        .workers
+        .iter()
+        .filter(|w| {
+            w.role.starts_with("api-")
+                || (w.role == "platform-weur"
+                    && spec.cells.iter().any(|c| c.code == "weur" && c.bound))
+        })
+        .map(|w| w.role.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    if let Some(watcher) = spec.workers.iter_mut().find(|w| w.role == "superfan") {
+        watcher.config["vars"]["WATCH_BACKENDS"] = json!(watched);
+    }
     for worker in &mut spec.workers {
         if matches!(
             worker.role.as_str(),

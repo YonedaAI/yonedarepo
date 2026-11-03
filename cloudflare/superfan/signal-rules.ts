@@ -6,7 +6,13 @@ import type { Health } from './probes';
 import type { ReleaseComparison } from './release';
 import { NAMED_SEPARATOR, type TailComponent, type TailSample, type TailStats } from './tail';
 
-export type Component = TailComponent | 'billing' | 'storage' | 'deadman' | 'synthetic';
+export type Component =
+  | TailComponent
+  | 'billing'
+  | 'storage'
+  | 'deadman'
+  | 'synthetic'
+  | 'regional_resources';
 
 export interface Signal {
   name: string;
@@ -153,7 +159,7 @@ export function backlogSignals(q: QueueStats): Signal[] {
   ];
 }
 
-export function queueSignals(a: Analytics): Signal[] {
+export function queueSignals(a: Pick<Analytics, 'queue'>): Signal[] {
   const q = a.queue;
   return [
     ...backlogSignals(q),

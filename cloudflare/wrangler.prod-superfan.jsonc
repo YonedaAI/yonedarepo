@@ -84,6 +84,7 @@
     "SERVICE_LEVELS": "on",
     "SUPERFAN_MODEL": "mimo-v2.6-flash",
     "TELEMETRY_SOURCE": "cloudflare",
+    "WATCH_BACKENDS": "platform-weur,api-enam,api-weur,api-apac,api-oc,api-sam,api-afr",
     "WATCH_FRONT_URL": "https://yonedarepo.com",
     "WATCH_SCRIPT": "yonedarepo-prod-platform",
     "WATCH_URL": "https://api.yonedarepo.com",

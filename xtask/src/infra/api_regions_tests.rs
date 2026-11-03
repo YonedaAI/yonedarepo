@@ -513,3 +513,28 @@ fn retry_restores_existing_but_unbound_receivers_before_entry_activation() {
         }
     }
 }
+
+#[test]
+fn monitor_backend_scope_is_generated_from_declared_aliases_and_bound_authorities() {
+    for prod in [false, true] {
+        let mut value = source(prod);
+        for bound in [false, true] {
+            value["cells"][0]["bound"] = json!(bound);
+            let spec = Spec::parse(&value.to_string()).unwrap();
+            let watcher = spec.workers.iter().find(|w| w.role == "superfan").unwrap();
+            let watched = watcher.config["vars"]["WATCH_BACKENDS"].as_str().unwrap();
+            let expected: std::collections::BTreeSet<_> = REGIONS
+                .iter()
+                .map(|(code, _)| format!("api-{code}"))
+                .chain(bound.then(|| "platform-weur".to_owned()))
+                .collect();
+            assert_eq!(
+                watched
+                    .split(',')
+                    .map(str::to_owned)
+                    .collect::<std::collections::BTreeSet<_>>(),
+                expected
+            );
+        }
+    }
+}

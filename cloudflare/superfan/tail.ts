@@ -4,6 +4,8 @@
 // watched Worker lists the superfan as a tail consumer. Exception text is untrusted; it is
 // redacted and truncated before storage.
 
+import { NOT_DEAD } from './service-points';
+
 export type TailComponent =
   | 'api_worker'
   | 'source_repository'
@@ -16,7 +18,8 @@ export type TailComponent =
   | 'workspace_authority'
   | 'cron'
   | 'front_worker'
-  | 'managed_worker';
+  | 'managed_worker'
+  | 'backend_execution';
 export interface TailSample {
   name: string;
   message: string;
@@ -191,8 +194,8 @@ function classify(item: TraceItem): TailComponent | null {
 }
 
 /** The scripts read: the platform Worker (null: classified per event), and on the wide watch its
- * environment's front and managed Workers, each one component. */
-function watched(script: string, wide: boolean) {
+ * front/managed Workers and a separate diagnostic series for declared backends. */
+function watched(script: string, wide: boolean, backends: string[]) {
   const prefix = script.replace(/-platform$/, '');
   return new Map<string, TailComponent | null>([
     [script, null],
@@ -200,14 +203,20 @@ function watched(script: string, wide: boolean) {
       ? ([
           [`${prefix}-agents`, 'front_worker'],
           [`${prefix}-agents-managed`, 'managed_worker'],
+          ...backends.map((name) => [name, 'backend_execution'] as const),
         ] as const)
       : []),
   ]);
 }
 
 /** Aggregates one tail batch; events from any other script are ignored. */
-export function aggregate(events: TraceItem[], script: string, wide = false): TailRow[] {
-  const scripts = watched(script, wide);
+export function aggregate(
+  events: TraceItem[],
+  script: string,
+  wide = false,
+  backends: string[] = [],
+): TailRow[] {
+  const scripts = watched(script, wide, backends);
   const rows = new Map<string, TailRow>();
   const row = (minute: number, component: TailComponent) => {
     const key = `${minute}/${component}`;
@@ -235,7 +244,8 @@ export function aggregate(events: TraceItem[], script: string, wide = false): Ta
     if (owner === undefined) continue;
     const minute = Math.floor((item.eventTimestamp ?? Date.now()) / 60_000) * 60_000;
     const retries = item.logs.filter((l) => PUSH_RETRY.test(text(l.message))).length;
-    if (retries) row(minute, 'source_repository').pushRetries += retries;
+    if (retries && owner !== 'backend_execution')
+      row(minute, 'source_repository').pushRetries += retries;
     const component = owner ?? classify(item);
     const named = item.logs.map((l) => markOf(l.message)).filter((m) => m !== null);
     // A mark counts whichever invocation logged it, one this watcher has no component for too.
@@ -250,12 +260,30 @@ export function aggregate(events: TraceItem[], script: string, wide = false): Ta
     const thrown =
       real.length > 0 || (item.outcome === 'exception' && item.exceptions.length === 0);
     const killed = RESOURCE_KILLS.has(item.outcome);
+    const reset = item.exceptions.length > 0 && real.length === 0;
+    const died =
+      component === 'backend_execution' &&
+      !NOT_DEAD.has(item.outcome) &&
+      !thrown &&
+      !killed &&
+      !reset;
+    if (died) {
+      r.marks.backend_deaths = (r.marks.backend_deaths ?? 0) + 1;
+      if (r.samples.length < MAX_SAMPLES)
+        r.samples.push({
+          name: redact(item.outcome),
+          message: 'Backend execution stopped without a response',
+        });
+    }
     r.invocations++;
     if (thrown) r.exceptions++;
     if (killed) r.resourceKills++;
-    if (thrown || killed || (status ?? 0) >= 500) r.errors++;
+    // Backend execution diagnostics exclude propagated HTTP status and latency.
+    // They are never merged into customer/entry failure denominators or baselines.
+    if (thrown || killed || died || (component !== 'backend_execution' && (status ?? 0) >= 500))
+      r.errors++;
     r.errorLogs += item.logs.filter((l) => l.level === 'error').length;
-    r.hist[bucket(item.wallTime)]++;
+    if (component !== 'backend_execution') r.hist[bucket(item.wallTime)]++;
     for (const e of real)
       if (r.samples.length < MAX_SAMPLES)
         r.samples.push({ name: redact(e.name), message: redact(e.message) });

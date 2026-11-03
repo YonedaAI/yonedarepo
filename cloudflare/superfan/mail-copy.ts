@@ -21,6 +21,8 @@ export { capital, number } from './mail-words';
 /** Component keys in the reader's words. They also rewrite the model's guess. */
 export const WORD: Record<string, string> = {
   api_worker: 'API',
+  backend_execution: 'backend execution',
+  regional_resources: 'European backend',
   front_worker: 'website',
   managed_worker: 'managed agent',
   source_repository: 'repository',
@@ -61,6 +63,12 @@ const healthLink = (component: string): Link => ({
 const admin = (path: string, label: string) => () => ({ label, path });
 
 export const COPY: Copy[] = [
+  {
+    signals: ['backend_deaths'],
+    title: (f) => `${plural(count(f, 'backend_deaths'), 'backend execution')} stopped`,
+    means: 'The backend stopped before it could answer.',
+    first: 'Open the regional backend logs. Check resource limits and recent deploys.',
+  },
   {
     signals: ['health'],
     title: (f) => `${capital(f.word)} health check failing`,
