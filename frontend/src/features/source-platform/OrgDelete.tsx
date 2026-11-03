@@ -45,12 +45,11 @@ export function DeleteOrganization({
     <section aria-labelledby="org-delete-heading" className="source-danger">
       <h2 id="org-delete-heading">Delete organization</h2>
       <p>
-        This can&apos;t be undone. Delete its repositories first. Type <strong>{org}</strong> to
-        confirm.
+        This can&apos;t be undone. Type <strong>{org}</strong> to confirm.
       </p>
       {repoCount !== undefined && repoCount > 0 && (
         <p className="source-meta">
-          It owns {repoCount} {repoCount === 1 ? 'repository' : 'repositories'} you can see.
+          Delete its {repoCount} {repoCount === 1 ? 'repository' : 'repositories'} first.
         </p>
       )}
       {inWindow > 0 && (
@@ -61,7 +60,7 @@ export function DeleteOrganization({
       )}
       {held && <p className="source-meta">{HELD_NOTE}</p>}
       <form onSubmit={remove} className="source-create" aria-label="Delete organization">
-        <label htmlFor="org-delete-confirm" className="sr-only">
+        <label htmlFor="org-delete-confirm" className="org-confirm-label">
           Organization name
         </label>
         <input
