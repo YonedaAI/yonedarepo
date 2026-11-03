@@ -21,11 +21,15 @@ async function fixture() {
   const { once } = await import('node:events');
   const { spawn } = await import('node:child_process');
   const assert = (await import('node:assert/strict')).default;
+  const { serve } = await import('/opt/yoneda/gateway-shim.mjs');
+  const { GatewayLimits } = await import('/opt/yoneda/gateway-limits.mjs');
   const seen = [];
   const server = createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString());
+    assert.equal(req.headers.authorization, 'Bearer fixture');
+    assert.equal(req.headers['cf-aig-authorization'], undefined);
     seen.push(body);
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     for (const chunk of [
@@ -35,9 +39,11 @@ async function fixture() {
     res.end('data: [DONE]\n\n');
   }).listen(0, '127.0.0.1');
   await once(server, 'listening');
+  const shim = serve({ gateway: `http://127.0.0.1:${server.address().port}`, token: 'fixture', model: 'test', port: 0, provider: 'zai', limits: new GatewayLimits({ requests: 2 }) });
+  await once(shim, 'listening');
   try {
     const config = { update: 'disable', share: 'disabled', default_agent: 'build', agents: { build: { steps: 1 } }, providers: {
-      fixture: { package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: `http://127.0.0.1:${server.address().port}/v1`, apiKey: 'fixture' }, models: { test: { type: 'chat', limit: { context: 32000, output: 8192 }, body: { max_tokens: 8192 } } } },
+      fixture: { package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: `http://127.0.0.1:${shim.address().port}/glm`, apiKey: 'sandbox-shim' }, models: { test: { type: 'chat', limit: { context: 32000, output: 8192 }, body: { max_tokens: 8192 } } } },
     } };
     const child = spawn('opencode', ['run', '--standalone', '--auto', '--format', 'json', '--model', 'fixture/test', 'Say ok.'], { cwd: '/work', env: { ...process.env, OPENCODE_CONFIG_CONTENT: JSON.stringify(config) }, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
@@ -47,11 +53,14 @@ async function fixture() {
     const [code] = await once(child, 'close');
     clearTimeout(timer);
     assert.equal(code, 0, output.slice(-2000));
-    assert.equal(seen.length, 1, 'one final agent step');
-    assert.equal(seen[0].max_tokens, 8192, 'provider output overlay reached the actual request');
-    assert.ok(!seen[0].tools?.length, 'final configured step has no tools');
-    console.log('PASS simulated OpenCode: configured step and output limits reached the API');
-  } finally { server.closeAllConnections(); server.close(); }
+    assert.ok(seen.length > 0, 'the stock client reached its simulated provider');
+    assert.ok(seen.every(body => body.max_tokens === 8192), 'output limits reached every actual request');
+    const extra = () => fetch(`http://127.0.0.1:${shim.address().port}/glm/chat/completions`, { method: 'POST', body: JSON.stringify({ model: 'test' }) });
+    while (seen.length < 2) assert.equal((await extra()).status, 200);
+    assert.equal((await extra()).status, 429, 'auxiliary and primary model requests share one hard budget');
+    assert.equal(seen.length, 2);
+    console.log('PASS simulated OpenCode: auxiliary and primary requests share the enforced gateway quota; output limits reach the API');
+  } finally { shim.closeAllConnections(); shim.close(); server.closeAllConnections(); server.close(); }
 }
 
 try {

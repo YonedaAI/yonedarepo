@@ -21,16 +21,7 @@ node /opt/yoneda/egress-check.mjs || fail "egress reaches more than the proxy's 
 if [ "${SANDBOX_CREDENTIAL:-}" = stdin ]; then
   opencode auth import --standalone >/dev/null 2>&1 || fail "opencode auth import failed"
 fi
-# Claude Code and Codex reach the model through the loopback shim alone (gateway-shim.mjs); the
-# gateway's token stays with it, and no variable of it reaches the agent.
-if [ -n "${SANDBOX_GATEWAY_URL:-}" ]; then
-  NODE_USE_ENV_PROXY=1 node /opt/yoneda/gateway-shim.mjs &
-  tries=0
-  until node -e "require('net').connect(8719,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"; do
-    tries=$((tries + 1))
-    [ "$tries" -lt 50 ] || fail "the gateway shim did not start"
-  done
-  unset SANDBOX_GATEWAY_URL SANDBOX_GATEWAY_TOKEN SANDBOX_GATEWAY_MODEL SANDBOX_GATEWAY_PROVIDER
-fi
+# sandbox-init owns the model shim under another UID and strips its secret before exec.
+[ -z "${SANDBOX_GATEWAY_TOKEN:-}" ] || fail "a provider key reached the agent environment"
 unset SANDBOX_CREDENTIAL SANDBOX_EXPECTED_ORIGIN
 exec "$@" </dev/null

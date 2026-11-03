@@ -59,7 +59,11 @@ export function runAgent({ task, name, cwd, env, credential, scrub, args, eviden
     child.on('close', (code, signal) => {
       clearTimeout(timer);
       offBudget();
-      if (partial) lines.push(partial);
+      if (partial) {
+        lines.push(partial);
+        appendFileSync(join(evidence, `${task.agent}.events.jsonl`), `${scrub(partial)}\n`);
+      }
+      budget.report(task.agent, costOf(lines));
       done({ agent: task.agent, code, signal, killed: reason, ms: Math.round(performance.now() - started), cost: costOf(lines), stderr: scrub(stderr).slice(-600) });
     });
   });

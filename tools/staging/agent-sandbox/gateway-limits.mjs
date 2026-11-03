@@ -29,6 +29,12 @@ export class GatewayLimits {
     if (this.inputBytes + bytes > this.limits.inputBytes) throw new Error('sandbox model input limit reached');
     const json = JSON.parse(body);
     if (!path.endsWith('/count_tokens')) {
+      if ((json.n !== undefined && json.n !== 1) || (json.best_of !== undefined && json.best_of !== 1)) throw new Error('sandbox requests allow one completion only');
+      for (const field of ['max_tokens', 'max_output_tokens', 'max_completion_tokens']) {
+        if (json[field] === undefined) continue;
+        if (!Number.isSafeInteger(json[field]) || json[field] < 1) throw new Error('invalid model output limit');
+        json[field] = Math.min(json[field], this.limits.outputTokens);
+      }
       const key = path === '/openai/responses' ? 'max_output_tokens' : 'max_tokens';
       const asked = json[key] ?? this.limits.outputTokens;
       if (!Number.isSafeInteger(asked) || asked < 1) throw new Error('invalid model output limit');

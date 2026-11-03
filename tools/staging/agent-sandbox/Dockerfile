@@ -24,7 +24,8 @@ FROM node
 # glob tools run; without it they try to download it, the sandbox refuses, and every call fails.
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates iptables ripgrep \
     && rm -rf /var/lib/apt/lists/* \
-    && usermod --login agent --home /home/agent --move-home node && groupmod --new-name agent node
+    && usermod --login agent --home /home/agent --move-home node && groupmod --new-name agent node \
+    && useradd --uid 1001 --user-group --no-create-home --shell /usr/sbin/nologin model-shim
 # Claude Code and Codex, pinned, for the runs that compare stock agents. npm's optional platform
 # packages bring each CLI's own Linux build; no postinstall reaches the network afterwards.
 RUN npm install -g --no-fund --no-audit @anthropic-ai/claude-code@2.1.316 @openai/codex@0.166.0 \

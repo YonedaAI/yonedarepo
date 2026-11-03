@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { delimiter, join } from 'node:path';
 import { AGENTS_BY_KIND, REPOS } from '../../tools/staging/demo-repos-plan.mjs';
+import { usageOf } from '../../tools/staging/demo-repos-run.mjs';
+import { runAgent, spendBudget } from '../../tools/staging/agent-run-flow.mjs';
 import { demoFlights } from '../../tools/staging/demo-repos-flights.mjs';
 import { assertFlight, finishDemoRun, removeOwnedContainer, DemoTokens } from '../../tools/staging/demo-repos-acceptance.mjs';
 
@@ -65,4 +70,19 @@ test('a failed release-token revocation remains tracked for retry', async () => 
   assert.equal(tokens.paths.size, 1);
   await finishDemoRun({ clean: tokens.cleanup(), check: async () => [] });
   assert.equal(tokens.paths.size, 0);
+});
+
+test('a simulated final event without a newline is saved and included in the spend budget', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'demo-eof-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const event = JSON.stringify({ type: 'result', id: 'fixture', cost: 0.125, total_cost_usd: 0.125, usage: { input_tokens: 20, output_tokens: 5 } });
+  // A fake Docker executable emits fixture bytes only; no agent or container is started.
+  await writeFile(join(dir, 'docker'), `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(event)});\n`, { mode: 0o700 });
+  const budget = spendBudget(1);
+  const done = await runAgent({ task: { agent: 'fixture' }, name: 'yoneda-demo-fixture', cwd: dir, env: { PATH: `${dir}${delimiter}${process.env.PATH}`, HOME: dir }, scrub: String, args: [], evidence: dir, timeoutMs: 5000, budget });
+  assert.equal(done.code, 0);
+  assert.equal(budget.total(), 0.125);
+  const used = usageOf('claude', (await readFile(join(dir, 'fixture.events.jsonl'), 'utf8')).split('\n'));
+  assert.equal(used.usd, 0.125);
+  assert.equal(used.input, 20);
 });

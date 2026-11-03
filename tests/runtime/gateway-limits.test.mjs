@@ -26,6 +26,15 @@ test('Claude limits preserve a smaller requested output and valid manual thinkin
   assert.throws(() => limit.admit('/openai/responses', JSON.stringify({ max_output_tokens: 'unlimited' })), /output limit/);
 });
 
+test('output aliases and extra completions cannot bypass the per-response ceiling', () => {
+  const limit = new GatewayLimits({ outputTokens: 2048 });
+  const bounded = JSON.parse(limit.admit('/glm/chat/completions', JSON.stringify({ max_completion_tokens: 99999 })));
+  assert.equal(bounded.max_tokens, 2048);
+  assert.equal(bounded.max_completion_tokens, 2048);
+  for (const extra of [{ n: 2 }, { best_of: 5 }])
+    assert.throws(() => limit.admit('/glm/chat/completions', JSON.stringify(extra)), /one completion/);
+});
+
 test('oversized chunked input is rejected before it can be buffered without bound', async () => {
   await assert.rejects(readBody(Readable.from(['1234', '5678']), 6), /body limit/);
   assert.equal(await readBody(Readable.from(['123', '456']), 6), '123456');
