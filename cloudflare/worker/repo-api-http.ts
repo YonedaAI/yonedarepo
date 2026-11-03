@@ -8,6 +8,7 @@ import { deviceCode, deviceToken } from './platform-tokens';
 import { bodyOf } from './repo-api-body';
 import { answer, failure } from './repo-api-failure';
 import { credentials } from './repo-credentials';
+import { imageAnswer } from './repo-image-response';
 import { repoMcp } from './repo-mcp';
 import { downloadBlob } from './repo-object-download';
 import { streamObjects } from './repo-object-fetch';
@@ -141,5 +142,12 @@ export async function handle(
         streamObjects(new RepoContext(env, page[1], caller(env, page[1], auth)), body),
       )
       .catch(failure);
+  if (
+    env.REPO_IMAGE_REVALIDATION === 'on' &&
+    req.method === 'GET' &&
+    /^\/api\/v1\/repos\/r[0-9a-f]{20}\/blob$/.test(url.pathname) &&
+    url.searchParams.get('revalidate') === 'image'
+  )
+    return imageAnswer(req, (admitted) => route(admitted, env, url, auth)).catch(failure);
   return answer(() => route(req, env, url, auth));
 }

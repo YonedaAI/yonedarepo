@@ -414,6 +414,7 @@
     "REGION_SIGNALS": "on",
     "REPO_ANALYTICS": "on",
     "REPO_ERASE": "on",
+    "REPO_IMAGE_REVALIDATION": "on",
     "REPO_SIZE_GUARD": "on",
     "REPO_STORAGE_GUARD": "on",
     "REPO_UNDO_DAYS": "30",

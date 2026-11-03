@@ -92,6 +92,8 @@ export interface Env {
   OVERVIEW_BOOTSTRAP?: string;
   /** Off by default: optional activity follows admitted core content at the captured revision. */
   OVERVIEW_DEFER_ACTIVITY?: string;
+  /** `on`: private raster-image HTTP revalidation after the existing authorized read. */
+  REPO_IMAGE_REVALIDATION?: string;
   /** Off by default: reuse exact-content code matches after fresh authority admission. */
   SEARCH_CODE_MEMO?: string;
   RECENT_VERSIONS?: string;
