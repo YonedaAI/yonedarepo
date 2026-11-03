@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DemoGuards } from '../../tools/staging/demo-repos-guards.mjs';
 
-function fixture({ used = 2.853516, overrides = {}, pending = [] } = {}) {
+function fixture({ used = 2.853516, overrides = {}, pending = [], refs = { 'refs/heads/main': 'a'.repeat(40) } } = {}) {
   const calls = [];
   const agents = ['slop-review', 'intent-drift'].map(id => ({ id, active: true, enabled_repos: ['demo'], cost_cap_usd: 0.5, fallback: [], settings: { block_at: 'high', trigger: { when: 'push', changes: 'ready_for_review', paths: [], branches: [] } }, repo_overrides: overrides }));
   const account = { get: async path => path.includes('/runs?') ? { runs: pending } : { capabilities: ['exact_head_review'], credit: { used_usd: used }, agents }, call: async (...args) => calls.push(args) };
-  const owner = { get: async path => path.endsWith('/refs') ? { refs: { 'refs/heads/main': 'a'.repeat(40) } } : { policy: { approvals: 0, required_checks: ['tests'] } }, call: async (...args) => calls.push(args) };
+  const owner = { get: async path => path.endsWith('/refs') ? { refs: structuredClone(refs) } : { policy: { approvals: 0, required_checks: ['tests'] } }, call: async (...args) => calls.push(args) };
   const guard = new DemoGuards({ account, owner, managed: '/managed', baseline: 1.15439, capUsd: 2.9 });
   return { guard, calls };
 }
@@ -69,6 +69,39 @@ test('unexpected additional publications leave triggers suppressed instead of ch
   guard.owner.get = async () => ({ refs: { 'refs/heads/main': 'a'.repeat(40), 'refs/heads/unexpected': 'c'.repeat(40) } });
   await assert.rejects(guard.run(async () => {}), /unreviewed.*publication/);
   assert.equal(calls.length, 2, 'no automatic trigger was restored');
+});
+
+for (const deleted of ['refs/heads/retained', 'refs/tags/retained'])
+  test(`deleting initial ${deleted} keeps automatic reviews suppressed`, async () => {
+    const refs = { 'refs/heads/main': 'a'.repeat(40), 'refs/heads/retained': 'b'.repeat(40), 'refs/tags/retained': 'c'.repeat(40) };
+    const { guard, calls } = fixture({ refs });
+    await guard.suppress('demo');
+    const now = { ...refs };
+    delete now[deleted];
+    guard.owner.get = async () => ({ refs: now });
+    await assert.rejects(guard.run(async () => {}), /deleted initial ref/);
+    assert.equal(calls.length, 2, 'neither automatic trigger was restored');
+  });
+
+test('a landed result alone cannot authorize deleting its initial branch', async () => {
+  const refs = { 'refs/heads/main': 'a'.repeat(40), 'refs/heads/feature': 'b'.repeat(40), 'refs/tags/retained': 'c'.repeat(40) };
+  const { guard, calls } = fixture({ refs });
+  await guard.suppress('demo');
+  guard.owner.get = async () => ({ refs: { 'refs/heads/main': 'd'.repeat(40), 'refs/tags/retained': refs['refs/tags/retained'] } });
+  await guard.complete('demo', { branch: 'feature', head: 'd'.repeat(40), status: 'landed' });
+  await assert.rejects(guard.run(async () => {}), /deleted initial ref/);
+  assert.equal(calls.length, 2);
+});
+
+test('a completed target may move while every initial branch and tag remains present', async () => {
+  const refs = { 'refs/heads/main': 'a'.repeat(40), 'refs/heads/feature': 'b'.repeat(40), 'refs/tags/retained': 'c'.repeat(40) };
+  const { guard, calls } = fixture({ refs });
+  await guard.suppress('demo');
+  const head = 'd'.repeat(40);
+  guard.owner.get = async () => ({ refs: { ...refs, 'refs/heads/main': head, 'refs/heads/feature': head } });
+  await guard.complete('demo', { branch: 'feature', head, status: 'landed' });
+  await guard.run(async () => {});
+  assert.equal(calls.length, 4);
 });
 
 test('an existing trigger override is refused before any suppression write', async () => {

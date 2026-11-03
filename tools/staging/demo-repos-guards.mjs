@@ -65,6 +65,10 @@ export class DemoGuards {
   async safeToRestore(repo) {
     const { refs, allowed } = this.suppressed.get(repo);
     const now = (await this.owner.get(`/repos/${repo}/refs`)).refs;
+    // Landing currently retains its branch. A landed result alone is not evidence that
+    // the platform was meant to delete it, and no initial tag may disappear.
+    const deleted = Object.keys(refs).filter(ref => !Object.hasOwn(now, ref));
+    assert.equal(deleted.length, 0, `deleted initial ref: ${deleted.join(', ')}; automatic reviews remain suppressed`);
     assert.ok(Object.entries(now).every(([ref, head]) => refs[ref] === head || allowed[ref] === head), 'unreviewed additional publication: automatic reviews remain suppressed');
     const { runs } = await this.account.get(`${this.managed}/runs?repo=${repo}&limit=200`);
     assert.ok(runs.every(run => TERMINAL.has(run.status)), 'unsettled reviews: automatic reviews remain suppressed');
