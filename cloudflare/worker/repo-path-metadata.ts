@@ -43,5 +43,5 @@ export function statusWithHandle(
     ...(env.RECENT_VERSIONS === 'on' && { recent_versions: true }),
     ...(cellsOn(env) && { region: cellOfRepo(repo) }),
   };
-  return repoAnalytics(env) ? { ...named, insights: true } : named;
+  return repoAnalytics(env) && status.grant === null ? { ...named, insights: true } : named;
 }

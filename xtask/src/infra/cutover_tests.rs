@@ -845,3 +845,28 @@ fn api_alias_and_authority_placement_leave_public_entries_global() {
         }
     }
 }
+
+#[test]
+fn repository_usage_is_enabled_for_each_api_and_authority_in_both_environments() {
+    for (_, workers) in [dev(), prod()] {
+        for worker in workers
+            .iter()
+            .filter(|w| w.role.starts_with("platform") || w.role.starts_with("api-"))
+        {
+            assert_eq!(
+                worker.config["vars"]["REPO_ANALYTICS"], "on",
+                "{}",
+                worker.role
+            );
+            assert_eq!(worker.config["vars"]["TRAFFIC_EVENTS"], "on");
+            assert_eq!(worker.config["vars"]["TRAFFIC_REPORT"], "on");
+            assert!(
+                worker.config["analytics_engine_datasets"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|d| d["binding"] == "SITE_EVENTS")
+            );
+        }
+    }
+}
