@@ -124,24 +124,31 @@ function startShards(env: Env, id: string) {
 }
 
 /**
- * Takes back a failed create, so that repeating it finds nothing in its way: the answer
+ * Takes back a failed create or fork, so that repeating it finds nothing in its way: the answer
  * waits (boundedly) for the name and the listing, and a repository the authority accepted
  * is deleted after it, tokens and objects with it. Nobody was told its id, so there is
  * nothing to undo or log. Never throws: the failure answered is the create's own. A store or
  * authority whose create landed after its bound stays, unreachable by name or listing.
  */
-async function takeBack(
+export async function takeBack(
   env: Env,
   ctx: RepoContext,
   owner: string,
   name: string,
   accepted: boolean,
+  parent?: string,
 ) {
   const left = (e: any) => log.warn('repo.create_left_behind', { error: e });
   const repo = ctx.repo;
   await bounded(
     TAKE_BACK_MS,
-    Promise.all([releaseNames(env, owner, repo), unlistRepository(env, repo)]),
+    Promise.all([
+      releaseNames(env, owner, repo),
+      unlistRepository(env, repo),
+      ...(parent
+        ? [caller(env, parent, { _system: 'fork' })({ op: 'repo_fork_forget', fork: repo })]
+        : []),
+    ]),
   ).catch(left);
   if (!accepted) return;
   await afterAnswer(async () => {

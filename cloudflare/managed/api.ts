@@ -244,6 +244,7 @@ export async function managedApi(req: Request, env: ManagedEnv, parts: string[])
     return {
       run,
       findings: await stub.findings(sub),
+      previous_attempts: await stub.previousAttempts(sub),
       transcript: transcript ?? null,
       cost: await ledgerStub(env, workspace).runEntries(sub),
     };

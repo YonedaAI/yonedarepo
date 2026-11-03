@@ -32,7 +32,8 @@ const LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const;
 const RANK: Record<string, number> = { low: 1, medium: 2, high: 3 };
 const MAX_COMMENTS = 20;
 
-export const reference = (p: RunParams, n: number | 'summary') => `${p.run}#${n}`;
+export const reference = (p: RunParams, n: number | 'summary') =>
+  `${p.run}${p.attempt > 1 ? `@${p.attempt}` : ''}#${n}`;
 export const footer = (agent: ManagedAgentDefinition, ref: string) =>
   `\n\n_${agent.defaults.name} by YonedaRepo managed agents · ${ref}_`;
 /** Whether a comment carrying `ref` is among `comments` (a retried step posts none twice). */

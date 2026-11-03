@@ -47,6 +47,7 @@ mod checks;
 mod classes;
 mod commit_authors;
 mod contracts;
+mod contributions;
 mod deletion;
 mod dir_activity;
 mod direct_landings;

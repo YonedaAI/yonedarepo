@@ -63,6 +63,8 @@ const neutral = new Set([
   '../../shared/service-levels',
   // The Insights page's and admin reports' wire shapes; types only.
   '../../shared/repo-insights',
+  // Contribution drill-down pages and cursors, shared with the browser; types only.
+  '../../shared/contributions',
   // The admin Operations, Infrastructure, Visitors and Agents tabs' wire shapes and the clients
   // an agent can name; imports only types.
   '../../shared/platform-reports',

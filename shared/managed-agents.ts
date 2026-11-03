@@ -128,16 +128,18 @@ export const MANAGED_AGENTS: readonly ManagedAgentDefinition[] = [
       name: 'Slop review',
       description:
         'Spots sloppy patterns before they spread: leftovers, duplication, vague comments, filler.',
-      harness: 'opencode',
-      provider: 'mimo',
-      model: 'mimo-v2.6-flash',
+      harness: 'codex',
+      provider: 'codex',
+      model: 'gpt-5.6-luna',
       reasoning: 'low',
       timeout_minutes: 15,
       instructions: MANAGED_INSTRUCTIONS['slop-review'],
       trigger: TRIGGER,
       block_at: 'high',
     },
-    fallback: [{ harness: 'opencode', provider: 'zai', model: 'glm-5.3-flash' }],
+    // Keep the configured model and cap: an unavailable reviewer fails instead of silently
+    // switching models. Retained-repository acceptance is recorded separately from local tests.
+    fallback: [],
     cost_cap_usd: 0.5,
   },
   {
@@ -152,16 +154,16 @@ export const MANAGED_AGENTS: readonly ManagedAgentDefinition[] = [
       name: 'Intent drift',
       description:
         'Reads the goal filed before the work against the diff. A change with no plan costs nothing.',
-      harness: 'opencode',
-      provider: 'mimo',
-      model: 'mimo-v2.6-flash',
+      harness: 'codex',
+      provider: 'codex',
+      model: 'gpt-5.6-luna',
       reasoning: 'low',
       timeout_minutes: 15,
       instructions: MANAGED_INSTRUCTIONS['intent-drift'],
       trigger: TRIGGER,
       block_at: 'high',
     },
-    fallback: [{ harness: 'opencode', provider: 'zai', model: 'glm-5.3-flash' }],
+    fallback: [],
     cost_cap_usd: 0.5,
   },
 ];
@@ -269,7 +271,7 @@ export const MODEL_RATES: readonly ModelRate[] = [
     cache_read: 0.02,
     output: 1.2,
     source_url: 'https://developers.openai.com/api/docs/models/gpt-5.6-luna',
-    verified_at: '2026-10-29',
+    verified_at: '2026-11-03',
   },
   {
     provider: 'claude',
@@ -516,6 +518,8 @@ export interface CostEntry {
 export interface RunDetail {
   run: ManagedRun;
   findings: RunFinding[];
+  /** Failed attempts retained before an explicit retry; costs are cumulative at that point. */
+  previous_attempts?: { attempt: number; run: ManagedRun; findings: RunFinding[] }[];
   /** The harness CLI's transcript tail, redacted; null when none was kept. */
   transcript: string | null;
   cost: CostEntry[];

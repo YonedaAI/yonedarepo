@@ -4,13 +4,49 @@
 // stay pending for the next view), a session record marks its repository for re-reading,
 // another account sees none of it, and a repository token cannot ask.
 import { expect, it } from 'vitest';
+import { contributionSnapshot } from '../../cloudflare/worker/platform-contribution-snapshot';
 import { summarize } from '../../cloudflare/worker/platform-account-activity';
-import { api, author, countingOps, file, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, bindings, countingOps, failingOp, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
+
+it('explains a chart snapshot without later commits, other accounts or forged cursors', async () => {
+  const cookie = await signup('contribution_owner');
+  const made = await api('/repos', { cookie }, { body: { name: 'contribution-fixture', files: [file('a.md', 'a')], author } });
+  const other = await api('/repos', { cookie }, { body: { name: 'contribution-second', files: [file('a.md', 'second')], author } });
+  const repo = made.body.id;
+  const activity = (await api('/activity', { cookie })).body;
+  const hours = activity.commits.map(([hour]: [number, number]) => hour);
+  const query = new URLSearchParams({ hours: hours.join(','), snapshots: JSON.stringify(activity.contributionSnapshots) });
+  const read = () => api(`/activity/contributions?${query}`, { cookie });
+  const first = await read();
+  expect(first.status, JSON.stringify(first.body)).toBe(200);
+  expect(first.body.total).toBe(2);
+  expect(first.body.items).toHaveLength(1);
+  const expected = new Map([[repo, made.body.commit], [other.body.id, other.body.commit]]);
+  expect(first.body.items[0].commit).toBe(expected.get(first.body.items[0].repo));
+  query.set('cursors', JSON.stringify(first.body.cursors));
+  const next = await read();
+  expect(next.status).toBe(200);
+  expect(next.body.items).toHaveLength(1);
+  expect(new Set([...first.body.items, ...next.body.items].map(item => item.repo)).size).toBe(2);
+  expect(Object.values(next.body.cursors)).toEqual([null]);
+  query.delete('cursors');
+  const extra = await api(`/repos/${repo}/commits`, { cookie }, { body: { ref: 'main', changes: [file('b.md', 'b')], message: 'Later', author } });
+  expect(extra.status).toBe(200);
+  expect((await api(`/repos/${repo}/refs/batch`, { cookie }, { body: { updates: [{ ref: 'later', commit: extra.body.commit, expected: null }] } })).status).toBe(200);
+  expect((await read()).body.items).toHaveLength(1);
+  const stranger = await signup('contribution_stranger');
+  expect((await api(`/activity/contributions?${query}`, { cookie: stranger })).status).toBe(409);
+  query.set('cursors', JSON.stringify({ enam: 'not-a-cursor' }));
+  expect((await read()).status).toBe(400);
+  query.delete('cursors');
+  await api('/activity', { cookie });
+  expect((await read()).status).toBe(409);
+});
 
 it('summarizes the account from bounded authority reads', async () => {
   const cookie = await signup('activity_owner');
@@ -71,7 +107,7 @@ it('counts only the last 30 days and the newest sessions across repositories', (
   const now = Date.UTC(2026, 9, 28, 18, 30);
   const since = now - 30 * DAY;
   const session = (id: number, at: number) => ({ id, commit: 'c'.repeat(40), cli: 'opencode', model: null, summary: `s${id}`, subject: 'x', session_id: null, at });
-  const summary = (over: object) => ({ since: 0, commits: [], commits_total: 1, sessions: [], last_session_at: null, changes_landed: [], changes_landed_total: 0, pushed: false, ...over });
+  const summary = (over: object) => ({ since: 0, snapshot: { commits: 0, changesets: 0 }, commits: [], commits_total: 1, sessions: [], last_session_at: null, changes_landed: [], changes_landed_total: 0, pushed: false, ...over });
   const out = summarize(
     [
       { id: 'ra', name: 'a', visibility: 'public' },
@@ -94,4 +130,74 @@ it('counts only the last 30 days and the newest sessions across repositories', (
   expect(out.sessions[0]).toMatchObject({ repo: 'rb', name: 'b', id: 10 });
   expect(out.sessions.some((s) => s.repo === 'ra')).toBe(false);
   expect(out.steps).toEqual({ repository: true, pushed: true, cli: false, session: true, landed: true });
+});
+
+it('migrates legacy summaries before repeatedly touched summaries within the refresh budget', async () => {
+  const cookie = await signup('legacy_activity');
+  for (let n = 0; n < 15; n++) {
+    const made = await api('/repos', { cookie }, { body: { name: `legacy-${n}`, files: [file('a.md', 'a')], author } });
+    expect(made.status).toBe(200);
+  }
+  for (let n = 0; n < 4; n++) await api('/activity', { cookie });
+  await bindings.INDEX.prepare("UPDATE platform_activity SET summary=json_remove(summary,'$.snapshot')").run();
+  const counted = countingOps(scoped);
+  const first = await api('/activity', { cookie }, {}, counted.env);
+  expect(counted.take().repo_activity).toBe(4);
+  expect(first.body.pending).toBe(11);
+  await bindings.INDEX.prepare("UPDATE platform_activity SET touched_at=? WHERE json_type(summary,'$.snapshot')='object'").bind(Date.now() + DAY).run();
+  const second = await api('/activity', { cookie }, {}, counted.env);
+  expect(counted.take().repo_activity).toBe(4);
+  expect(second.body.pending).toBe(7);
+  await api('/activity', { cookie });
+  const done = await api('/activity', { cookie });
+  expect(done.body.pending).toBe(0);
+  expect(Object.values(done.body.contributionSnapshots)).toHaveLength(1);
+  const query = new URLSearchParams({ hours: done.body.commits.map(([hour]: [number, number]) => hour).join(','), snapshots: JSON.stringify(done.body.contributionSnapshots) });
+  const details = await api(`/activity/contributions?${query}`, { cookie });
+  expect(details.status, JSON.stringify(details.body)).toBe(200);
+  expect(details.body.total).toBe(15);
+});
+
+it('does not block known chart counts on an unrelated summary without contributions', async () => {
+  const cookie = await signup('unrelated_activity');
+  const make = async (name: string) => (await api('/repos', { cookie }, { body: { name, files: [file('a.md', 'a')], author } })).body.id;
+  await make('counted');
+  const empty = await make('unrelated');
+  const activity = (await api('/activity', { cookie })).body;
+  await bindings.INDEX.prepare("UPDATE platform_activity SET summary=json_remove(json_set(summary,'$.commits',json('[]'),'$.commits_total',0),'$.snapshot') WHERE repo=?").bind(empty).run();
+  const summaries = (await bindings.INDEX.prepare('SELECT repo,summary FROM platform_activity').all<{repo: string; summary: string}>()).results;
+  const map = new Map(summaries.map(row => [row.repo, JSON.parse(row.summary)]));
+  const repos = (await api('/repos', { cookie })).body.repos;
+  const owner = await bindings.INDEX.prepare('SELECT workspace FROM platform_repos WHERE id=?').bind(empty).first<{workspace: string}>();
+  const snapshot = await contributionSnapshot(owner!.workspace, repos, map);
+  expect(snapshot).not.toBeNull();
+  const query = new URLSearchParams({ hours: activity.commits.map(([hour]: [number, number]) => hour).join(','), snapshots: JSON.stringify({ enam: snapshot }) });
+  const details = await api(`/activity/contributions?${query}`, { cookie });
+  expect(details.status, JSON.stringify(details.body)).toBe(200);
+  expect(details.body.total).toBe(1);
+  await bindings.INDEX.prepare('DELETE FROM platform_activity WHERE repo=?').bind(empty).run();
+  map.delete(empty);
+  const missing = await contributionSnapshot(owner!.workspace, repos, map);
+  expect(missing).not.toBe(snapshot);
+  query.set('snapshots', JSON.stringify({ enam: missing }));
+  const known = await api(`/activity/contributions?${query}`, { cookie });
+  expect(known.status, JSON.stringify(known.body)).toBe(200);
+  expect(known.body.total).toBe(1);
+  await api('/activity', { cookie });
+  expect((await api(`/activity/contributions?${query}`, { cookie })).status).toBe(409);
+});
+
+it('keeps failed legacy refreshes pending without fabricating cutoffs', async () => {
+  const cookie = await signup('failed_activity');
+  await api('/repos', { cookie }, { body: { name: 'counted', files: [file('a.md', 'a')], author } });
+  await api('/activity', { cookie });
+  await bindings.INDEX.prepare("UPDATE platform_activity SET summary=json_remove(summary,'$.snapshot')").run();
+  const failed = await api('/activity', { cookie }, {}, failingOp(scoped, 'repo_activity'));
+  expect(failed.status).toBe(200);
+  expect(failed.body.pending).toBe(1);
+  expect(failed.body.contributionSnapshots).toEqual({});
+  expect(failed.body.commits.reduce((n: number, [, count]: [number, number]) => n + count, 0)).toBe(1);
+  const recovered = await api('/activity', { cookie });
+  expect(recovered.body.pending).toBe(0);
+  expect(Object.values(recovered.body.contributionSnapshots)).toHaveLength(1);
 });

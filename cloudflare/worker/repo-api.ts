@@ -12,6 +12,7 @@ import { accountActivity, mergeActivity } from './platform-account-activity';
 import { adminRoute } from './platform-admin';
 import { auditExport, auditExportOrg } from './platform-audit-export';
 import { isOwnAvatar, ownAvatar, publicAvatarName, servePublicAvatar } from './platform-avatars';
+import { accountContributions, mergeContributions } from './platform-contributions';
 import { favoritesRoute } from './platform-favorites';
 import { repoHold } from './platform-holds';
 import { orgsRoute } from './platform-orgs';
@@ -103,6 +104,18 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return deviceRoute(env, auth, parts[1], req, url, () => bodyOf(req));
   if (parts[0] === 'activity' && parts.length === 1 && req.method === 'GET')
     return acrossCells(env, url.pathname, () => accountActivity(env, auth), mergeActivity);
+  if (
+    parts[0] === 'activity' &&
+    parts[1] === 'contributions' &&
+    parts.length === 2 &&
+    req.method === 'GET'
+  )
+    return acrossCells(
+      env,
+      `${url.pathname}${url.search}`,
+      () => accountContributions(env, auth, url),
+      mergeContributions,
+    );
   if (parts[0] === 'search' && parts.length === 1 && req.method === 'GET')
     return acrossCells(
       env,

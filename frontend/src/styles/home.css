@@ -128,8 +128,34 @@
   stroke: var(--bubble);
   stroke-width: 1;
 }
-.chart-bubble:hover {
+.chart-bubble:hover,
+.chart-bubble:focus-visible {
   fill-opacity: 0.9;
+  cursor: pointer;
+  stroke-width: 2;
+}
+.contribution-details {
+  min-height: 180px;
+}
+.contribution-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+.contribution-list > :where(li + li) {
+  border-top: 1px solid var(--line);
+}
+.contribution-list a {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0;
+  overflow-wrap: anywhere;
+}
+.contribution-list span,
+.contribution-list time {
+  color: var(--muted);
+  font-size: var(--text-sm);
 }
 .home-sessions {
   display: flex;

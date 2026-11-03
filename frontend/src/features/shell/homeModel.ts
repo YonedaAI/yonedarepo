@@ -30,6 +30,7 @@ export type AccountActivity = {
   steps: Record<StepId, boolean>;
   /** Repositories whose activity the platform has not read yet. */
   pending: number;
+  contributionSnapshots?: Record<string, string>;
 };
 
 /** By the viewer's local hour. */
@@ -54,7 +55,7 @@ export const DAYS = 30;
 const DAY_MS = 86_400_000;
 
 export type ContributionDay = { key: string; label: string };
-export type ContributionCell = { day: number; hour: number; count: number };
+export type ContributionCell = { day: number; hour: number; count: number; buckets: number[] };
 export type ContributionGrid = {
   days: ContributionDay[];
   cells: ContributionCell[];
@@ -112,8 +113,9 @@ export function contributionGrid(
     const day = index.get(at.key);
     if (day === undefined || n <= 0) continue;
     const key = `${day}:${at.hour}`;
-    const cell = counts.get(key) ?? { day, hour: at.hour, count: 0 };
+    const cell = counts.get(key) ?? { day, hour: at.hour, count: 0, buckets: [] };
     cell.count += n;
+    if (!cell.buckets.includes(hourStart)) cell.buckets.push(hourStart);
     counts.set(key, cell);
   }
   const cells = [...counts.values()].sort((a, b) => a.day - b.day || a.hour - b.hour);

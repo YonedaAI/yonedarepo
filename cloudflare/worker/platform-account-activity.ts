@@ -4,7 +4,10 @@
 // the getting-started steps. Each repository's numbers come from its D1 summary (the
 // authority's `repo_activity` answer); a view re-reads at most REFRESHES authorities whose
 // summary is missing, touched since or old, and reports the rest as pending.
+
+import { thisCell } from './cells';
 import { log } from './log';
+import { contributionSnapshot } from './platform-contribution-snapshot';
 import { accountOf, listRepositories } from './repo-admin';
 import { type Credentials, caller, type Json } from './repo-ops';
 import type { Env } from './types';
@@ -33,6 +36,7 @@ export type RepoSession = {
 /** One repository's `repo_activity` answer as kept in D1. */
 export type RepoActivity = {
   since: number;
+  snapshot?: { commits: number; changesets: number };
   commits: [number, number][];
   commits_total: number;
   sessions: RepoSession[];
@@ -59,6 +63,7 @@ export type AccountActivity = {
   steps: { repository: boolean; pushed: boolean; cli: boolean; session: boolean; landed: boolean };
   /** Repositories whose activity is not read yet. */
   pending: number;
+  contributionSnapshots?: Record<string, string>;
 };
 
 const clip = (text: unknown, max: number) => {
@@ -70,6 +75,7 @@ const clip = (text: unknown, max: number) => {
 function kept(answer: Json): RepoActivity {
   return {
     since: Number(answer.since),
+    snapshot: answer.snapshot,
     commits: (answer.commits as [number, number][]).map(([h, n]) => [Number(h), Number(n)]),
     commits_total: Number(answer.commits_total ?? 0),
     sessions: (answer.sessions as Json[]).slice(0, SESSIONS).map((s) => ({
@@ -136,12 +142,15 @@ export async function accountActivity(
   const due = (id: string) => {
     const row = byRepo.get(id);
     return (
-      !row?.summary || row.touched_at >= row.refreshed_at || row.refreshed_at < now - MAX_AGE_MS
+      !row?.summary ||
+      !summaries.get(id)?.snapshot ||
+      row.touched_at >= row.refreshed_at ||
+      row.refreshed_at < now - MAX_AGE_MS
     );
   };
   // Unread repositories first, then the most recently touched.
   const order = (id: string) =>
-    byRepo.get(id)?.summary ? (byRepo.get(id)?.touched_at ?? 0) : Infinity;
+    summaries.get(id)?.snapshot ? (byRepo.get(id)?.touched_at ?? 0) : Infinity;
   const read = ids
     .filter(due)
     .sort((a, b) => order(b) - order(a))
@@ -154,7 +163,11 @@ export async function accountActivity(
       ),
     ),
   );
-  return summarize(repos, summaries, now, (tokens?.n ?? 0) > 0);
+  const snapshot = await contributionSnapshot(account, repos, summaries);
+  return {
+    ...summarize(repos, summaries, now, (tokens?.n ?? 0) > 0),
+    contributionSnapshots: snapshot ? { [thisCell(env)]: snapshot } : {},
+  };
 }
 
 /** The Home's numbers from the repositories' summaries (pure). */
@@ -178,6 +191,7 @@ export function summarize(
       pending++;
       continue;
     }
+    if (!s.snapshot) pending++;
     for (const [hour, n] of s.commits)
       if (hour >= firstHour) hours.set(hour, (hours.get(hour) ?? 0) + n);
     if (s.last_session_at !== null && s.last_session_at >= since) capturing++;
@@ -229,5 +243,6 @@ export function mergeActivity(parts: AccountActivity[]): AccountActivity {
       landed: any((s) => s.landed),
     },
     pending: sum((p) => p.pending),
+    contributionSnapshots: Object.assign({}, ...parts.map((p) => p.contributionSnapshots)),
   };
 }

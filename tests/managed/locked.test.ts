@@ -30,6 +30,22 @@ const put = (h: Harness, agent: string, body: unknown) =>
   api(h, `/agents/${agent}`, { method: 'PUT', body: JSON.stringify(body) });
 
 describe('locked maintained fields', () => {
+  for (const id of ['slop-review', 'intent-drift'] as const)
+    it(`${id} replaces retired provider overrides in the actual run`, async () => {
+      const h = harness();
+      h.platform.change({ files: FIXTURES[id].trigger.files, flight_plan: { goal: 'Review this fixture', scope: 'src/' } });
+      await put(h, id, { repos: [h.platform.repo] });
+      await workspaceStub(h.env, h.platform.account).save(id, '', { harness: 'opencode', provider: 'mimo', model: 'mimo-v2.6-flash' }, 'owner');
+      const state = await (await api(h, `/agents/${id}`)).json<any>();
+      expect(state.settings).toMatchObject({ harness: 'codex', provider: 'codex', model: 'gpt-5.6-luna' });
+      fakeGateway();
+      h.harness.scripts = [{ result: { summary: 'Fixture result', findings: [], ...(id === 'intent-drift' && { verdict: 'on_course' }) } }];
+      const opened: QueueMessage = { kind: 'event', repo: h.platform.repo, event: 'change', ref: 'refs/heads/feature', commit: HEAD_A, change: 1, action: 'opened' };
+      await consume({ messages: [{ body: opened, ack: vi.fn(), retry: vi.fn() }] } as unknown as MessageBatch<QueueMessage>, h.env);
+      expect(await runAgent(h.env, h.created[0], inline)).toMatchObject({ status: 'passed' });
+      expect(h.harness.started.map((s) => [s.spec.harness, s.spec.provider, s.spec.model])).toEqual([['codex', 'codex', 'gpt-5.6-luna']]);
+    });
+
   const locked: [string, unknown][] = [
     ['name', 'Mine'],
     ['description', 'Mine too'],
