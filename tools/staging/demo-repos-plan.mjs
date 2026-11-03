@@ -150,8 +150,8 @@ export const REPOS = {
   },
   click: {
     project: 'pallets/click (a Python command-line toolkit)',
-    agent: 'codex',
-    feature: 'Configuration files for options, by Codex; near-miss hints for Choice, by Claude Code',
+    agent: 'glm',
+    feature: 'Configuration files for options and near-miss hints for Choice',
     order: ['clean', 'sloppy', 'fix', 'config', 'sloppy2', 'fix2', 'config2', 'suggest', 'suggest2', 'drift', 'strict', 'sloppy3', 'relax', 'fix3', 'approvals', 'approval'],
     memories: [
       { via: 'web', kind: 'gotcha', anchors: ['src/click/types.py'], text: 'ParamType.fail raises BadParameter with the parameter and context attached, so a type never builds the usage error itself.' },
@@ -212,7 +212,6 @@ export const REPOS = {
         message: 'Test config_file_option with a missing file',
       },
       suggest: {
-        agent: 'claude',
         want: 'landed',
         branch: 'feat/choice-near-miss',
         file: 'src/click/types.py',
@@ -220,7 +219,6 @@ export const REPOS = {
         message: 'Choice: add a Did you mean hint',
       },
       suggest2: {
-        agent: 'claude',
         want: 'landed',
         branch: 'feat/choice-hint-setting',
         work: 'Near-miss hints for Choice, part 2. Add a keyword argument suggest: bool = True to Choice, so a parameter can turn the hint off, keep it in to_info_dict, and describe it in docs/parameter-types.md. Add tests to tests/test_types/test_Choice.py.',
