@@ -49,6 +49,7 @@
     }
   ],
   "vars": {
+    "AUTOMATIC_LOCALITY": "on",
     "CELLS": "on"
   },
   "workers_dev": true

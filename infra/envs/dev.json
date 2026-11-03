@@ -611,7 +611,8 @@
           }
         ],
         "vars": {
-          "CELLS": "on"
+          "CELLS": "on",
+          "AUTOMATIC_LOCALITY": "on"
         },
         "services": [
           {
@@ -924,7 +925,8 @@
           "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
           "REQUEST_IDS": "off",
           "CLIENT_ERRORS": "off",
-          "CELLS": "on"
+          "CELLS": "on",
+          "AUTOMATIC_LOCALITY": "on"
         },
         "services": [
           {

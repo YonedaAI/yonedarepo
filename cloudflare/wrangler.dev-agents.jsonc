@@ -150,6 +150,7 @@
   "vars": {
     "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
     "AUDIT_LOG": "off",
+    "AUTOMATIC_LOCALITY": "on",
     "CELLS": "on",
     "CLIENT_ERRORS": "off",
     "PUBLIC_APP_ORIGIN": "https://dev.yonedarepo.com",

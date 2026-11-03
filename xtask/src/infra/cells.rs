@@ -110,8 +110,8 @@ fn vars(config: &mut Value, cell: &CellSpec) {
     }
     if let Some(all) = vars.as_object_mut() {
         all.remove("SSH_HOST");
-        // A test of the pinned stack: a cell is the real thing.
-        all.remove("REGION_HINT_TEST");
+        // Keep an explicitly enabled dev-only location diagnostic in derived cells too.
+        // Production declares none, so it exposes no extra diagnostic route.
     }
 }
 

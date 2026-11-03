@@ -270,6 +270,7 @@
     "NEWSLETTER": "off",
     "PACK_CACHE": "on",
     "PUSH_BUNDLES": "on",
+    "REGION_HINT_TEST": "on",
     "REGION_SIGNALS": "on",
     "REPO_ERASE": "on",
     "REPO_SIZE_GUARD": "on",
