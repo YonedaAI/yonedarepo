@@ -28,7 +28,7 @@ const OFF_IN_A_CELL: [&str; 2] = ["ADMIN_BILLING", "NEWSLETTER"];
 pub(crate) struct CellSpec {
     /// Its region code, the one accounts and repository ids name.
     pub code: String,
-    /// Optional fetch placement; absent means Cloudflare edge execution.
+    /// Optional fetch placement: `smart` or a cloud region; absent means edge execution.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placement: Option<String>,
     /// Where its containers run: `constraints.regions`.
@@ -173,7 +173,9 @@ fn cell_worker(platform: &WorkerSpec, spec: &Spec, cell: &CellSpec) -> Result<Wo
     let name = cell.service();
     config["name"] = json!(name);
     config["workers_dev"] = json!(true);
-    if let Some(region) = &cell.placement {
+    if cell.placement.as_deref() == Some("smart") {
+        config["placement"] = json!({"mode": "smart"});
+    } else if let Some(region) = &cell.placement {
         config["placement"] = json!({"mode": "targeted", "region": region});
     } else if let Some(config) = config.as_object_mut() {
         config.remove("placement");

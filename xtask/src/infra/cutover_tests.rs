@@ -86,7 +86,7 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     );
     assert_eq!(platform["vars"]["WEB_ORIGIN"], "https://yonedarepo.com");
     assert_eq!(platform["ratelimits"][0]["namespace_id"], "1001");
-    assert!(platform.get("placement").is_none(), "API runs at the edge");
+    assert_eq!(platform["placement"], json!({"mode": "smart"}));
     assert_eq!(platform["vars"]["TRAFFIC_EVENTS"], "on");
     assert_eq!(platform["vars"]["TRAFFIC_REPORT"], "on");
     assert_eq!(platform["vars"]["REGION_SIGNALS"], "on");
@@ -791,5 +791,28 @@ fn managed_list_speed_switch_has_dev_prod_parity() {
             role(&workers, "agents-managed").config["vars"]["FAST_AGENTS_LIST"],
             "on"
         );
+    }
+}
+
+#[test]
+fn api_placement_uses_smart_default_fetch_while_front_stays_global() {
+    for (_, workers) in [dev(), prod()] {
+        for name in ["platform", "platform-weur"] {
+            assert_eq!(
+                role(&workers, name).config["placement"],
+                json!({"mode":"smart"})
+            );
+        }
+        let front = &role(&workers, "agents").config;
+        assert!(front.get("placement").is_none());
+        for binding in front["services"].as_array().unwrap() {
+            let name = binding["binding"].as_str().unwrap();
+            if name == "PLATFORM" || name.starts_with("CELL_") {
+                assert!(
+                    binding.get("entrypoint").is_none(),
+                    "placement must reach default fetch"
+                );
+            }
+        }
     }
 }

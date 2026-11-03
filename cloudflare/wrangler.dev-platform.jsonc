@@ -271,6 +271,9 @@
       "stream": "4ff4b2c0c4ec4234934fa94498ab73c5"
     }
   ],
+  "placement": {
+    "mode": "smart"
+  },
   "preview_urls": false,
   "queues": {
     "consumers": [

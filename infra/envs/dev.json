@@ -19,7 +19,8 @@
       "jurisdiction": "eu",
       "ratelimit": "2003",
       "public_ratelimit": "2004",
-      "bound": true
+      "bound": true,
+      "placement": "smart"
     }
   ],
   "workers": [
@@ -571,6 +572,9 @@
           "crons": [
             "* * * * *"
           ]
+        },
+        "placement": {
+          "mode": "smart"
         }
       }
     },
