@@ -26,7 +26,7 @@ const ENFORCED = [
   ['files in a Git commit', 'backend/crates/yoneda-platform/src/repo_store/pushed.rs', 'TOUCHES: usize = 100_000;', '100,000 changed files'],
   ['files in an API commit', CHANGES, 'MAX_CHANGES: usize = 10_000;', '10,000 changed files'],
   ['a file through the API', CHANGES, 'MAX_FILE_BYTES: usize = 32 * 1024 * 1024;', '32 MiB per file'],
-  ['an API request', 'cloudflare/worker/repo-api.ts', 'COMMIT_BODY_LIMIT = 64 * 1024 * 1024;', 'a 64 MiB request'],
+  ['an API request', 'cloudflare/worker/repo-api-body.ts', 'COMMIT_BODY_LIMIT = 64 * 1024 * 1024;', 'a 64 MiB request'],
 ];
 
 test('every enforced figure on the limits page is the one in the code', () => {
