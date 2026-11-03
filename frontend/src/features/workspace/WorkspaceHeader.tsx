@@ -9,6 +9,7 @@ import { linkTo, type Navigate } from '../shell/useRoute';
 import { formatSourceRoute } from '../source-platform/sourceRoute';
 import { AccountMenu } from './AccountMenu';
 import type { Crumb } from './breadcrumbs';
+import { Notifications } from './Notifications';
 
 export function WorkspaceHeader({
   title,
@@ -111,6 +112,9 @@ export function WorkspaceHeader({
         >
           <RefreshCw size={16} className={loading ? 'spin' : ''} />
         </button>
+        {authenticated && (
+          <Notifications key={identity?.username} enabled={!loading} navigate={navigate} />
+        )}
         {authenticated ? (
           <AccountMenu
             identity={identity}

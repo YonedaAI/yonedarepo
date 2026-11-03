@@ -225,6 +225,9 @@ fn member_put<S: SqlStore>(db: &S, c: &Value, org: &str, actor: &str, now: i64) 
         now,
         json!({ "account": account, "role": role, "previous": previous, "actor": actor }),
     )?;
+    if previous.is_none() {
+        super::member_notices::added(db, org, &account, &role, now)?;
+    }
     Ok(json!({ "account": account, "role": role, "previous": previous }))
 }
 
@@ -249,6 +252,7 @@ fn member_remove<S: SqlStore>(
             "An organization keeps at least one owner",
         ));
     }
+    super::member_notices::cancel(db, Some(&account))?;
     db.query("DELETE FROM org_members WHERE account=?", &[json!(account)])?;
     db.query(
         "DELETE FROM org_team_members WHERE account=?",
@@ -277,6 +281,7 @@ fn delete<S: SqlStore>(db: &S, c: &Value, org: &str, actor: &str, now: i64) -> R
         .into_iter()
         .map(|r| r["account"].clone())
         .collect();
+    super::member_notices::cancel(db, None)?;
     for table in ["org_members", "org_teams", "org_team_members"] {
         db.query(&format!("DELETE FROM {table}"), &[])?;
     }

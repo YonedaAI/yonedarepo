@@ -201,10 +201,18 @@ op_names! {
     }
 }
 
+op_names! {
+ pub(crate) enum NotificationOp {
+ Pending="member_notices_pending",Claim="member_notice_claim",MailBegin="member_notice_mail_begin",Finish="member_notice_finish",
+ Put="notification_put",List="notifications_list",Read="notifications_read",
+ }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum AccountOp {
     Signin(SigninOp),
+    Notification(NotificationOp),
     Access(AccessOp),
     Email(EmailOp),
     Password(PasswordOp),
@@ -239,6 +247,7 @@ impl AccountOp {
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Signin(op) => op.name(),
+            Self::Notification(op) => op.name(),
             Self::Access(op) => op.name(),
             Self::Email(op) => op.name(),
             Self::Password(op) => op.name(),
@@ -265,6 +274,7 @@ impl AccountOp {
     #[cfg(test)]
     pub(crate) fn all() -> Vec<Self> {
         let mut all: Vec<Self> = SigninOp::ALL.iter().copied().map(Self::Signin).collect();
+        all.extend(NotificationOp::ALL.iter().copied().map(Self::Notification));
         all.extend(AccessOp::ALL.iter().copied().map(Self::Access));
         all.extend(EmailOp::ALL.iter().copied().map(Self::Email));
         all.extend(PasswordOp::ALL.iter().copied().map(Self::Password));
