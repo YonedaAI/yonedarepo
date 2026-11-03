@@ -28,8 +28,9 @@ const OFF_IN_A_CELL: [&str; 2] = ["ADMIN_BILLING", "NEWSLETTER"];
 pub(crate) struct CellSpec {
     /// Its region code, the one accounts and repository ids name.
     pub code: String,
-    /// Where its Worker's fetch handler runs: `placement.region`.
-    pub placement: String,
+    /// Optional fetch placement; absent means Cloudflare edge execution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placement: Option<String>,
     /// Where its containers run: `constraints.regions`.
     pub containers: String,
     /// Its objects', bucket's, D1's and queues' jurisdiction, fixed at creation.
@@ -172,7 +173,11 @@ fn cell_worker(platform: &WorkerSpec, spec: &Spec, cell: &CellSpec) -> Result<Wo
     let name = cell.service();
     config["name"] = json!(name);
     config["workers_dev"] = json!(true);
-    config["placement"] = json!({"mode": "targeted", "region": cell.placement});
+    if let Some(region) = &cell.placement {
+        config["placement"] = json!({"mode": "targeted", "region": region});
+    } else if let Some(config) = config.as_object_mut() {
+        config.remove("placement");
+    }
     if let Some(all) = config.as_object_mut() {
         // Reached through bindings; `CHANGELOG` is one stream, and not yet a cell's.
         all.remove("routes");

@@ -95,6 +95,7 @@ export interface Env {
   ASSETS: Fetcher;
   /** The platform's own review-model key (model checks); never an agent-layer key. */
   REVIEW_MODEL_KEY?: { get(): Promise<string> };
+  GLOBAL_AUTH_LIMITS?: string;
   AUTH_LIMITER?: RateLimit;
   /** Sign-in with GitHub / Google (oauth.ts): each provider is on only while both of its
    * secrets are set; otherwise its routes answer 404 and the sign-in page hides it. */

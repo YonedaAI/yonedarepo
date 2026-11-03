@@ -15,7 +15,6 @@
   "cells": [
     {
       "code": "weur",
-      "placement": "aws:eu-central-1",
       "containers": "WEUR",
       "jurisdiction": "eu",
       "ratelimit": "2003",
@@ -241,10 +240,6 @@
             "head_sampling_rate": 0.01
           }
         },
-        "placement": {
-          "mode": "targeted",
-          "region": "aws:us-east-1"
-        },
         "tail_consumers": [
           {
             "service": "{prefix}-superfan"
@@ -296,7 +291,8 @@
           "SERVICE_LEVELS": "on",
           "REQUEST_IDS": "off",
           "AUTOMATIC_LOCALITY": "on",
-          "CELLS": "on"
+          "CELLS": "on",
+          "GLOBAL_AUTH_LIMITS": "on"
         },
         "secrets_store_secrets": [
           {
@@ -926,7 +922,8 @@
           "REQUEST_IDS": "off",
           "CLIENT_ERRORS": "off",
           "CELLS": "on",
-          "AUTOMATIC_LOCALITY": "on"
+          "AUTOMATIC_LOCALITY": "on",
+          "GLOBAL_AUTH_LIMITS": "on"
         },
         "services": [
           {

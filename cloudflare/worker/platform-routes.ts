@@ -1,6 +1,7 @@
 // The source platform's HTTP surface: /api/v1 (REST + MCP), /git (smart HTTP for stock
 // Git), /internal/ssh (the SSH gateway), account sign-in, health, and the /source web UI.
 import { accountRoute } from './accounts';
+import { authCounterEnv } from './auth-counter';
 import { AUTH_LIMIT_PATH, authLimitResponse } from './auth-limit';
 import { forwardTo, repoElsewhere } from './cell-route';
 import { error, response } from './http';
@@ -19,7 +20,10 @@ import { gitByPath } from './repo-git-paths';
 import type { Env } from './types';
 
 export function platformFetch(req: Request, env: Env): Promise<Response> {
-  const elsewhere = repoElsewhere(env, new URL(req.url));
+  const url = new URL(req.url);
+  // Shared sign-in allowances survive API unpinning; other API work stays local.
+  if (url.pathname.startsWith('/api/auth/')) env = authCounterEnv(env);
+  const elsewhere = repoElsewhere(env, url);
   if (elsewhere) return forwardTo(env, elsewhere, req);
   return withRequestAccount(async () => {
     const started = Date.now();
