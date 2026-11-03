@@ -75,6 +75,71 @@ A team buying a code platform asks first whether it trains on their code. Entire
 
 "Newer technology" is shown against plain Git (next step 2), not against another product.
 
+## Git, transactional
+
+Git's storage, history and the `git` command stay. What changes is the write: every landing is a transaction on a log, merged on the server, so concurrent writers never collide.
+
+A stock `git push` straight to a branch someone else just moved is still refused, by the Git client itself, before anything is sent. The server merge happens when work lands: from a pushed branch, or through the `yoneda` CLI, MCP or the API.
+
+| | Plain Git | YonedaRepo |
+|---|---|---|
+| Objects, history, `git clone`, `git push` | Git | Same: stock Git works unchanged |
+| A write | Moves the branch only if nobody moved it first | A transaction: logged, ordered, all or nothing |
+| Two writers at once | One wins; the other fetches, rebases and retries | Both land, merged on the server with Git's three-way merge (`yoneda-core/src/merge.rs`, line-level diff3) |
+| Conflicts | Found by each client, one at a time | Decided once, in order, on the server |
+| History of writes | Commit history | A transaction log of every landing, with the agent session that made it |
+
+Taglines that keep "no new client":
+
+1. **Git, transactional.**
+2. **Same Git. Writes that never collide.**
+3. **Git where every push is a transaction.**
+
+## Novelty and prior art
+
+Searched 2026-11-02: papers, patents and other Git servers. Two passes of web search, not a patent attorney's search.
+
+**Credit rule (owner, 2026-11-02):** prior art is cited in a research paper only, never on marketing pages.
+
+### What is new
+
+No system found does all of these together:
+
+1. Landing work from stock Git, merged on the server with **content-level** three-way merge, so two writers editing different lines of one file both land.
+2. A transaction log as the repository's authority, with the agent session recorded on each write.
+3. Measured for agents: 1,000 writers on one branch, 1,000 landed.
+
+Safe to say publicly: "Git, transactional" and "a new way to write to Git". "First" needs a patent search first.
+
+### How conflicts are handled
+
+Each landing is one transaction: a compare-and-swap on the branch, one hash-chained log entry and the landing record, all or nothing (`repo_store/land.rs`). Busy branches land in batches of up to 256 as one merge commit. When the branch moved since the writer's base, the log decides (`yoneda-core/src/txlog/occ.rs`):
+
+| Since the writer's base | Outcome |
+|---|---|
+| Nothing moved | Compare-and-swap |
+| Others wrote other files | Merge commit on the server, then combined checks |
+| Others wrote the same files, nothing this writer read | Three-way line merge; overlapping lines are a conflict |
+| Others wrote something this writer read (a file, or a symbol `path#symbol`) | Refused as a stale read: reconcile and check again |
+
+The read check is what stops write skew, where two landings each pass alone and go wrong together: 6,441 to 8,001 log entries checked per run, 0 found.
+
+### Closest prior art, for the research paper
+
+| Work | What it does | How YonedaRepo differs |
+|---|---|---|
+| **Meta's Mononoke pushrebase** (Sapling server) | Takes stock `git push` over smart HTTP and, on configured branches, rebases the push onto the latest bookmark on the server. Bookmark update and update-log record commit atomically | **Closest.** Rebases only when changed paths don't overlap: two commits touching the same file conflict even on different lines, and the client must retry. Retries up to about 100 times on races. Built for Meta's monorepo, not offered as hosting |
+| Mercurial pushrebase extension | Server-side rebase of pushed commits, opt-in with `hg push --onto` | Mercurial, not Git |
+| Gerrit "Rebase If Necessary" | Rebases a change on submit | On review submit, not on push |
+| GitHub merge queue, GitLab merge trains | Queue changes and test each against those ahead | A queue in front of the branch: writers wait their turn |
+| Git servers on Cloudflare Durable Objects: dgit, Gitflare, chr33s/git, alchemy/Git | One Durable Object per repository, SQLite refs and objects, R2 for packs | Same layout, so "a repository per Durable Object" isn't new. None found merges concurrent pushes |
+| CoAgent (arXiv 2606.15376) | Optimistic concurrency control for multi-agent systems | Theory for agents in general; notes `git merge` catches only textual conflicts |
+| Multi-agent concurrency position paper (arXiv 2608.18092) | Argues multi-agent systems need concurrency control; cites Git branches and merges | Position, no system |
+| Agent pull request conflict study (arXiv 2607.04697) | Replays three-way merges: concurrent agent PRs collide often | Evidence for the problem; proposes no server protocol |
+| US patent 11914571, optimistic concurrency for a multi-writer database | Writes succeed unless a conflict is found at a log-based store | A database, not Git |
+
+Not yet checked: Google Patents and USPTO searches for "server-side merge on push", Gitaly's server-side merge calls, Jujutsu's operation log, Pijul, Dolt.
+
 ## Sources
 
 - [TechCrunch: Entire's $60M seed at $300M](https://techcrunch.com/2026/02/10/former-github-ceo-raises-record-60m-dev-tool-seed-round-at-300m-valuation/)
@@ -95,3 +160,21 @@ A team buying a code platform asks first whether it trains on their code. Entire
 - [Dealroom: Cursor Origin](https://app.dealroom.co/news/note/cursor-launches-origin-its-own-code-hosting-and-git-platform)
 - [TechNews: Cursor's four acquisitions in H2 2025](https://finance.technews.tw/2026/01/04/cursor-acquires-four-companies-in-h2-2025/)
 - [The Consensus: GitButler](https://theconsensus.dev/company/gitbutler.html)
+- [Mononoke docs (Sapling)](https://github.com/facebook/sapling/tree/main/eden/mononoke/docs)
+- [Mononoke pushrebase doc](https://raw.githubusercontent.com/facebook/sapling/main/eden/mononoke/docs/4.1-pushrebase.md)
+- [Mononoke Git support doc](https://raw.githubusercontent.com/facebook/sapling/main/eden/mononoke/docs/5.1-git-support.md)
+- [Sapling's server, Mononoke](https://github.com/facebook/sapling/blob/main/eden/mononoke/README.md)
+- [Mercurial pushrebase extension](https://reviewboard.mozilla.org/r/37317/diff/)
+- [Gerrit: Rebase If Necessary](https://opendev.org/opendev/gerrit/commit/00aa4f05ee0f56f9548b17781f527a0a1307edee)
+- [Gerrit: submit strategies](https://gerrit.googlesource.com/gerrit/+/d736da341fe1041e879165b0c78177eab9ceed24%5E%21)
+- [GitLab merge trains](https://docs.gitlab.com/ee/ci/pipelines/merge_trains.html)
+- [Graphite: merge queue comparison](https://graphite.com/guides/merge-queue-comparison-github-gitlab-graphite)
+- [GitLab merge-train: pull with merge on failed push](https://gitlab.com/gitlab-org/merge-train/-/merge_requests/47)
+- [dgit](https://github.com/littledivy/dgit/wiki)
+- [Gitflare](https://www.mintlify.com/mdhruvil/gitflare)
+- [chr33s/git](https://github.com/chr33s/git)
+- [alchemy Git](https://alchemy.run/git)
+- [CoAgent, arXiv 2606.15376](https://arxiv.org/html/2606.15376)
+- [Multi-agent concurrency position paper, arXiv 2608.18092](https://arxiv.org/html/2608.18092v1)
+- [Agent pull request conflicts, arXiv 2607.04697](https://arxiv.org/html/2607.04697v2)
+- [US patent 11914571](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11914571)
