@@ -341,3 +341,42 @@ fn missing_default_api_alias_uses_the_legacy_authority_during_unbound_bootstrap(
         assert_eq!(c["workflows"], worker.config["workflows"]);
     }
 }
+
+#[test]
+fn api_only_bootstrap_preserves_creator_locality_but_missing_authorities_disable_it() {
+    use std::collections::BTreeSet;
+    for prod in [false, true] {
+        let workers = configured(prod);
+        let api_missing = BTreeSet::from([
+            role(&workers, "api-enam").name.clone(),
+            role(&workers, "api-apac").name.clone(),
+        ]);
+        let provider_missing = api_missing
+            .iter()
+            .cloned()
+            .chain([role(&workers, "platform-weur").name.clone()])
+            .collect();
+        for name in ["platform", "platform-weur", "api-enam", "api-apac"] {
+            let original = &role(&workers, name).config;
+            assert_eq!(original["vars"]["AUTOMATIC_LOCALITY"], "on");
+            let alias_stage =
+                crate::deploy_bootstrap::configuration(original, &api_missing).unwrap();
+            assert_eq!(
+                alias_stage["vars"]["AUTOMATIC_LOCALITY"], "on",
+                "{name}: existing authorities still place new repositories near their creator"
+            );
+            assert_eq!(alias_stage["vars"]["REGIONAL_API"], "off");
+            let provider_stage =
+                crate::deploy_bootstrap::configuration(original, &provider_missing).unwrap();
+            assert_eq!(provider_stage["vars"]["AUTOMATIC_LOCALITY"], "off");
+            assert_eq!(provider_stage["vars"]["REGIONAL_API"], "off");
+            let mut explicit_off = original.clone();
+            explicit_off["vars"]["AUTOMATIC_LOCALITY"] = json!("off");
+            assert_eq!(
+                crate::deploy_bootstrap::configuration(&explicit_off, &api_missing).unwrap()["vars"]
+                    ["AUTOMATIC_LOCALITY"],
+                "off"
+            );
+        }
+    }
+}

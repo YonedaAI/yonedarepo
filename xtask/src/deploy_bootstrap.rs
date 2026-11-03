@@ -27,6 +27,17 @@ pub(crate) fn configuration(config: &Value, missing: &BTreeSet<String>) -> Resul
                 .and_then(|s| s.get("service"))
                 .cloned()
         });
+    let only_api_aliases = authority
+        .as_ref()
+        .and_then(Value::as_str)
+        .and_then(|name| name.strip_suffix("-platform"))
+        .is_some_and(|prefix| {
+            let prefix = format!("{prefix}-api-");
+            missing.iter().all(|name| {
+                name.strip_prefix(&prefix)
+                    .is_some_and(|code| !code.is_empty())
+            })
+        });
     let services = copy["services"]
         .as_array_mut()
         .ok_or("Bootstrap Worker has no services")?;
@@ -49,8 +60,11 @@ pub(crate) fn configuration(config: &Value, missing: &BTreeSet<String>) -> Resul
                 .as_str()
                 .is_some_and(|name| missing.contains(name))
     });
-    // Do not advertise automatic placement until the desired bound rollout finishes.
-    copy["vars"]["AUTOMATIC_LOCALITY"] = json!("off");
+    // Adding fetch-only aliases leaves the existing authorities available for creator
+    // hints (including later import work). Only missing authority providers disable it.
+    if !only_api_aliases {
+        copy["vars"]["AUTOMATIC_LOCALITY"] = json!("off");
+    }
     // Missing aliases cannot receive public traffic until all desired bindings exist.
     if copy["vars"].get("REGIONAL_API").is_some() {
         copy["vars"]["REGIONAL_API"] = json!("off");
