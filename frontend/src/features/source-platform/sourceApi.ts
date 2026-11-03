@@ -1,5 +1,7 @@
 // Browser client for the public platform API (`/api/v1`), authenticated by the
 // workspace session cookie. The UI holds no authority: every decision is the server's.
+
+import { clearEarlyReads, takeEarlyResponse } from '../../lib/earlyReads';
 import { atLatestLanding, noteLanding } from './landedReads';
 
 export class SourceApiError extends Error {
@@ -67,18 +69,24 @@ export type ApiInit = {
 export async function sourceApi<T = any>(path: string, init: ApiInit = {}): Promise<T> {
   const base = init.base ?? '/api/v1';
   const method = init.method ?? (init.body === undefined ? 'GET' : 'POST');
+  if (method !== 'GET') clearEarlyReads();
   const retries = method === 'GET' && !init.once ? RETRY_DELAYS_MS.length : 0;
   const url = method === 'GET' ? atLatestLanding(path) : path;
   for (let attempt = 0; ; attempt++) {
     let response: Response;
     try {
-      response = await fetch(`${base}${url}`, {
-        method,
-        headers: { 'content-type': 'application/json' },
-        body: init.body === undefined ? undefined : JSON.stringify(init.body),
-        signal: init.signal,
-        credentials: 'same-origin',
-      });
+      const early =
+        attempt === 0 && method === 'GET'
+          ? takeEarlyResponse(`${base}${url}`, init.signal)
+          : undefined;
+      response = await (early ??
+        fetch(`${base}${url}`, {
+          method,
+          headers: { 'content-type': 'application/json' },
+          body: init.body === undefined ? undefined : JSON.stringify(init.body),
+          signal: init.signal,
+          credentials: 'same-origin',
+        }));
     } catch (e) {
       if (init.signal?.aborted || attempt >= retries) {
         if (init.signal?.aborted) throw e;

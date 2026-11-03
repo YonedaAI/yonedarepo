@@ -180,6 +180,7 @@
     "AUTOMATIC_LOCALITY": "on",
     "CELLS": "on",
     "CLIENT_ERRORS": "off",
+    "EARLY_READS": "on",
     "FAST_APP_HEAD": "on",
     "GLOBAL_AUTH_LIMITS": "on",
     "OVERVIEW_MARKDOWN_PRELOAD": "on",
