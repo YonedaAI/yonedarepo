@@ -1,7 +1,8 @@
 import { expect, it } from 'vitest';
 import { caller } from '../../cloudflare/worker/repo-ops';
+import { inScope } from '../../cloudflare/worker/request-scope';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, fakeCombiners, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -18,7 +19,7 @@ it('releases an organization name when fork initialization is refused', async ()
   expect(removed.status, JSON.stringify(removed.body)).toBe(200);
 });
 
-it('takes back an unpublished fork and its parent registration after a listing failure', async () => {
+it('takes back an automatically placed unpublished fork and its parent registration after a listing failure', async () => {
   const owner = { cookie: await signup('fork_unlisted') };
   const org = 'fork_unlisted_org';
   expect((await api('/orgs', owner, { body: { name: org } })).status).toBe(200);
@@ -38,9 +39,16 @@ it('takes back an unpublished fork and its parent registration after a listing f
       };
     },
   };
-  const failing = { ...scoped, INDEX } as unknown as Env;
+  let placed=0;
+  const LAND_COMBINERS={
+    idFromName:fakeCombiners.idFromName,
+    get:(name:string)=>({...fakeCombiners.get(name),where:async()=>{placed++;return 'TST';}}),
+  };
+  const failing = { ...scoped, INDEX, LAND_COMBINERS, AUTOMATIC_LOCALITY:'on' } as unknown as Env;
   const body = { owner: org, name: 'retryable' };
-  const failed = await api(`/repos/${parent}/fork`, owner, { body }, failing);
+  const req=new Request(`https://yoneda/api/v1/repos/${parent}/fork`,{cf:{continent:'EU'}});
+  const failed = await inScope({env:failing,req},()=>api(`/repos/${parent}/fork`, owner, { body }, failing));
+  expect(placed).toBe(3);
   expect(failed.status).toBe(500);
   expect(failedId).toMatch(/^r[0-9a-f]{20}$/);
   expect((await caller(scoped, parent, { _system: 'fork' })({ op: 'repo_fork_list' })).forks).toEqual([]);

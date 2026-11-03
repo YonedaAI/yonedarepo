@@ -172,6 +172,10 @@
       {
         "class_name": "PackBuilder",
         "name": "PACK_BUILDERS"
+      },
+      {
+        "class_name": "RepositoryReadCopy",
+        "name": "READ_COPIES"
       }
     ]
   },
@@ -230,6 +234,12 @@
         "ImportContainer"
       ],
       "tag": "v8"
+    },
+    {
+      "new_sqlite_classes": [
+        "RepositoryReadCopy"
+      ],
+      "tag": "v9"
     }
   ],
   "name": "yonedarepo-prod-platform",
@@ -343,6 +353,7 @@
     "ADMIN_NOTIFY_EMAIL": "",
     "AGENT_SIGNUP": "on",
     "AUDIT_LOG": "off",
+    "AUTOMATIC_LOCALITY": "off",
     "BLOB_WRITE_THROUGH": "off",
     "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
     "EMAIL_CONTACT": "hello@yonedarepo.com",

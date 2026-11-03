@@ -1,6 +1,8 @@
 // Creating platform repositories: the owner (or the operator for a named workspace) creates
 // a repository, optionally seeded with files or imported from a Git remote, and may issue its
-// first repository tokens in the same request.
+// first repository tokens in the same request. Over 300 nonblank lines: create and import
+// admission share owner, name and token checks here; the actual network import executes
+// separately in repo-clone, and the shared compensation is used by forks too.
 
 import { noteOwnerCell } from './account-place';
 import { afterAnswer } from './background';
@@ -15,6 +17,7 @@ import { auditRepo, auditRepoForget } from './repo-audit';
 import { commit } from './repo-commit';
 import { refreshHead } from './repo-head';
 import { startWorkflow } from './repo-import-start';
+import { localityRegion } from './repo-locality';
 import { type ObjectStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
@@ -160,8 +163,11 @@ export async function takeBack(
 export async function createRepository(env: Env, requester: Credentials, body: Json) {
   const cell = await cellForNew(env, body);
   if (cell !== thisCell(env))
-    return askCell(env, cell, '/api/v1/repos', { method: 'POST', body: JSON.stringify(body) });
-  const hint = regionHint(env, body);
+    return askCell(env, cell, '/api/v1/repos', {
+      method: 'POST',
+      body: JSON.stringify({ ...body, region: cell }),
+    });
+  const hint = regionHint(env, body) ?? localityRegion(env);
   if (!hint) {
     const created = await create(env, requester, body);
     return cellsOn(env) ? { ...created, region: cell } : created;
@@ -239,8 +245,10 @@ export async function importRepository(env: Env, requester: Credentials, body: J
   if (cell !== thisCell(env))
     return askCell(env, cell, '/api/v1/repos/import', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, region: cell }),
     });
+  const hint = localityRegion(env);
+  if (hint) env = hintedEnv(env, hint);
   const auth = await timed('import.owner', () => owning(env, requester, body));
   const asked_at = Date.now();
   const { url, github, hidden } = await timed('import.source', () =>
@@ -269,6 +277,10 @@ export async function importRepository(env: Env, requester: Credentials, body: J
         throw e;
       }),
   );
+  if (hint) {
+    await shardOutboxes(env, id);
+    await placeCombiners(env, id);
+  }
   await timed('import.list', () => listRepository(env, id, owner, name, visibility));
   await noteOwnerCell(env, owner);
   const tokens = await timed('import.tokens', () => issueTokens(ctx, body.tokens));

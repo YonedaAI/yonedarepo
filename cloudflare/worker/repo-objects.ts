@@ -11,6 +11,7 @@ import { cachedCopy, edgePut } from './repo-cache-tiers';
 import { compute } from './repo-compute';
 import { Inherited } from './repo-inherit';
 import { SPILL_BYTES, tooLarge } from './repo-large-files';
+import { automaticLocality, keepNearby, localityRegion, readNearby } from './repo-locality';
 import { quarantined, type Withheld, withheldMap } from './repo-quarantine-guard';
 import { SharedShardAsk, stagedInShards, stagedWithCommits } from './repo-shard-reads';
 import { stagedInShardOf } from './repo-shards';
@@ -59,7 +60,7 @@ export type ObjectKind = 'tree' | 'blob' | 'commit';
 export type TierHits = { edge: number; r2: number; store: number };
 type Tier = keyof TierHits;
 /** A walk's answer, and its fills of the tiers above (pending only without a waitUntil). */
-type Walked = { bytes: Uint8Array; tier: Tier; filled: Promise<unknown> };
+type Walked = { bytes: Uint8Array; tier: Tier; filled: Promise<unknown>; nearby?: boolean };
 /** Object reads in flight in this isolate, by repository, kind and id. */
 const inFlight = new Flights<Walked>();
 
@@ -178,10 +179,28 @@ export class RepoObjects {
   async read(id: string, kind: ObjectKind, stagedWith?: string): Promise<Uint8Array> {
     if (kind === 'blob') await this.refuse(id);
     // A guarded read never joins an unguarded one (which may serve inherited bytes).
-    const key = `${this.repo}/${kind}/${id}${this.inherited?.guard ? '/guarded' : ''}`;
+    const region = localityRegion(this.env);
+    const key = `${this.repo}/${kind}/${id}${this.inherited?.guard ? '/guarded' : ''}${region ? `/copy:${region}` : ''}`;
     const { work, joined } = inFlight.join(key, () => this.walk(id, kind, stagedWith));
-    const { bytes, tier, filled } = joined ? await timed('read.joined', () => work) : await work;
-    if (!joined) await filled;
+    const { bytes, tier, filled, nearby } = joined
+      ? await timed('read.joined', () => work)
+      : await work;
+    if (!joined) {
+      await filled;
+      if (
+        !nearby &&
+        automaticLocality(this.env) &&
+        !this.inherited &&
+        kind !== 'commit' &&
+        bytes.byteLength <= 1024 * 1024
+      ) {
+        const object: CachedObject =
+          kind === 'blob'
+            ? { id, kind, data_b64: toBase64(bytes) }
+            : JSON.parse(new TextDecoder().decode(bytes));
+        await keepNearby(this.env, this.repo, object);
+      }
+    }
     this.hits[tier]++;
     return bytes;
   }
@@ -195,6 +214,12 @@ export class RepoObjects {
 
   /** Each tier a cold read asks is timed (`read.*`), so a slow read shows where it waited. */
   private async walk(id: string, kind: ObjectKind, stagedWith?: string): Promise<Walked> {
+    const nearby =
+      automaticLocality(this.env) &&
+      !this.inherited &&
+      (await timed('read.nearby', () => readNearby(this.env, this.repo, id, kind)));
+    if (nearby)
+      return { bytes: this.encode(nearby), tier: 'store', filled: Promise.resolve(), nearby: true };
     const copy = await cachedCopy(this.env, this.repo, this.key(id), id, kind);
     if (copy?.tier === 'edge') return { ...copy, filled: Promise.resolve() };
     if (copy) {

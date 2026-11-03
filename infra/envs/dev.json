@@ -294,7 +294,8 @@
           "SUPPORT_EMAIL": "support@yonedalabs.ai",
           "SPAN_SAMPLE": "off",
           "SERVICE_LEVELS": "on",
-          "REQUEST_IDS": "off"
+          "REQUEST_IDS": "off",
+          "AUTOMATIC_LOCALITY": "off"
         },
         "secrets_store_secrets": [
           {
@@ -341,6 +342,10 @@
             {
               "name": "PACK_BUILDERS",
               "class_name": "PackBuilder"
+            },
+            {
+              "name": "READ_COPIES",
+              "class_name": "RepositoryReadCopy"
             }
           ]
         },
@@ -393,6 +398,12 @@
             "tag": "v8",
             "new_sqlite_classes": [
               "ImportContainer"
+            ]
+          },
+          {
+            "tag": "v9",
+            "new_sqlite_classes": [
+              "RepositoryReadCopy"
             ]
           }
         ],

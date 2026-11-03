@@ -20,6 +20,7 @@ pub fn applied_migrations() -> Vec<AppliedMigration> {
         ("repo_store", repo.copied().collect::<Vec<_>>()),
         ("commit_store", crate::commit_store::MIGRATIONS.to_vec()),
         ("accounts", crate::accounts::MIGRATIONS.to_vec()),
+        ("read_copy", crate::read_copy::MIGRATIONS.to_vec()),
     ];
     let mut applied = Vec::new();
     for (store, migrations) in stores {

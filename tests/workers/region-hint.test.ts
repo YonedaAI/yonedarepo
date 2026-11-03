@@ -5,6 +5,7 @@
 import { runInDurableObject } from 'cloudflare:test';
 import { expect, it, vi } from 'vitest';
 import { coloOf, hintedEnv, regionHint } from '../../cloudflare/worker/repo-region-hint';
+import { inScope } from '../../cloudflare/worker/request-scope';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, fakeCombiners, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
@@ -170,4 +171,25 @@ it('a real combiner answers where it runs, and stores a key only when told to', 
   await stub().erase();
   expect(await stored()).toBe(0);
   vi.restoreAllMocks();
+});
+
+// Automatic placement is independent of the test-only body.region_hint path.
+it('automatic placement follows the current human or agent request, without changing account defaults', async () => {
+  const cookie = await signup('automatic_eu');
+  const { env, gets } = recording(scoped, { AUTOMATIC_LOCALITY: 'on' });
+  const req = new Request('https://yoneda/api/v1/repos', { cf: { continent: 'EU' } });
+  const created = await inScope({ env, req }, () => api('/repos', { cookie }, { body: body('ordinary-repository') }, env));
+  expect(created.status, JSON.stringify(created.body)).toBe(200);
+  for (const binding of ['SOURCE_REPOS', 'COMMIT_SHARDS', 'LAND_COMBINERS']) {
+    expect(gets.some(g => g.binding === binding && g.hint === 'weur')).toBe(true);
+  }
+});
+
+it('automatic placement ignores client-supplied location headers and stays off by default', async () => {
+  const cookie = await signup('automatic_unknown');
+  const { env, gets } = recording(scoped, { AUTOMATIC_LOCALITY: 'on' });
+  const req = new Request('https://yoneda/api/v1/repos', { headers: { 'cf-ipcountry': 'DE', 'x-yoneda-region': 'weur' } });
+  const created = await inScope({ env, req }, () => api('/repos', { cookie }, { body: body('unknown-place') }, env));
+  expect(created.status).toBe(200);
+  expect(gets.every(g => g.hint === null)).toBe(true);
 });

@@ -118,7 +118,9 @@ fn vars(config: &mut Value, cell: &CellSpec) {
 fn bindings(config: &mut Value, cell: &CellSpec, name: &str) -> Result<()> {
     let enam_index = platform_index(config)?;
     for binding in each(config, "/durable_objects/bindings") {
-        if binding["class_name"] == "WorkspaceAuthority" {
+        if binding["class_name"] == "WorkspaceAuthority"
+            || binding["class_name"] == "RepositoryReadCopy"
+        {
             binding["script_name"] = json!("{prefix}-platform");
         }
     }

@@ -3,6 +3,7 @@ import { CheckContainer } from './check-container';
 import { ImportContainer } from './import-container';
 
 export {
+  RepositoryReadCopy,
   SourceRepository,
   WorkspaceAuthority,
 } from '../../backend/crates/yoneda-worker/build/worker/shim.mjs';
