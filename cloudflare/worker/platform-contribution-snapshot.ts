@@ -12,7 +12,16 @@ export async function contributionSnapshot(
       const summary = summaries.get(repo.id);
       return [repo.id, summary?.since, summary?.snapshot, summary?.commits];
     });
-  if (repos.some((repo) => !summaries.get(repo.id)?.snapshot)) return null;
+  // Only summaries that supply chart counts need authority cutoffs. Unread or
+  // empty legacy summaries remain part of the hash, so their later refresh still
+  // invalidates the clicked chart without blocking unrelated known contributions.
+  if (
+    repos.some((repo) => {
+      const summary = summaries.get(repo.id);
+      return summary?.commits.some(([, count]) => count > 0) && !summary.snapshot;
+    })
+  )
+    return null;
   const hash = await crypto.subtle.digest(
     'SHA-256',
     new TextEncoder().encode(JSON.stringify([account, rows])),
