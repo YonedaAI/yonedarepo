@@ -4,6 +4,7 @@
 // ever asks about is a readable name, of the authorities that hold them, and on any doubt it
 // says `enam`, which holds every older repository and forwards the rest.
 import { normalizeHandle } from '../../shared/account';
+import { placedAuthLimit } from './auth-limit';
 import { hinted } from './cell-env';
 import { HOME_COOKIE } from './cell-names';
 import {
@@ -92,7 +93,6 @@ export async function toCell(req: Request, env: Env, url = new URL(req.url)) {
 }
 
 type NewAccounts = { accountCreated(account: string, details: object): Promise<void> };
-type PlacedLimiter = { authLimit(key: string): Promise<{ success: boolean }> };
 
 /** What the front's `PLATFORM` stands for with cells on: a request goes to its cell, a new
  * account's notice to the cell of its region, and anything else to `enam`, as it always did. */
@@ -122,7 +122,7 @@ export function frontEnv(env: Env): Env {
     // one placed backend counter; otherwise OAuth gets a fresh allowance per colo.
     ...(env.AUTH_LIMITER && {
       AUTH_LIMITER: {
-        limit: ({ key }: { key: string }) => (platform as unknown as PlacedLimiter).authLimit(key),
+        limit: ({ key }: { key: string }) => placedAuthLimit(platform, env.OWNER_TOKEN, key),
       },
     }),
   };

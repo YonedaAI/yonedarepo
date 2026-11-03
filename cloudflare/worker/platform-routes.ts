@@ -1,6 +1,7 @@
 // The source platform's HTTP surface: /api/v1 (REST + MCP), /git (smart HTTP for stock
 // Git), /internal/ssh (the SSH gateway), account sign-in, health, and the /source web UI.
 import { accountRoute } from './accounts';
+import { AUTH_LIMIT_PATH, authLimitResponse } from './auth-limit';
 import { forwardTo, repoElsewhere } from './cell-route';
 import { error, response } from './http';
 import { withRequestAccount } from './internal-accounts';
@@ -30,6 +31,7 @@ export function platformFetch(req: Request, env: Env): Promise<Response> {
 
 async function platformRoute(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
+  if (url.pathname === AUTH_LIMIT_PATH) return authLimitResponse(req, env);
   if (url.pathname === '/health') {
     sshWake(env);
     return response({

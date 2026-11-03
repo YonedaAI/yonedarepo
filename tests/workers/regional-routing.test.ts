@@ -17,10 +17,21 @@ const request = (path = '/api/v1/repos') => new Request(`https://yoneda${path}`,
 describe('actual visitor location through edge and internal service hops', () => {
   it('keeps front auth allowances on one placed backend across edge instances', async () => {
     const keys: string[] = [];
-    const platform = { fetch: echo.fetch.bind(echo), authLimit: async (key: string) => { keys.push(key); return { success: keys.length <= 1 }; } } as unknown as Fetcher;
+    const platform = {
+      fetch: async (req: Request) => {
+        expect(new URL(req.url).pathname).toBe('/internal/auth-limit');
+        expect(req.method).toBe('POST');
+        expect(req.headers.get('x-yoneda-auth-limit')).toMatch(/^[a-f0-9]{64}$/);
+        expect(req.headers.get('authorization')).toBeNull();
+        const value = await req.json<any>();
+        keys.push(value.key);
+        return Response.json({ success: keys.length <= 1 });
+      },
+      authLimit: async () => { throw new Error('RPC is not affected by placement'); },
+    } as unknown as Fetcher;
     const local = { limit: async () => { throw new Error('edge-local allowance must not be used'); } };
-    const a = frontEnv({ ...env, PLATFORM: platform, AUTH_LIMITER: local });
-    const b = frontEnv({ ...env, PLATFORM: platform, AUTH_LIMITER: local });
+    const a = frontEnv({ ...env, PLATFORM: platform, AUTH_LIMITER: local, OWNER_TOKEN: 'test-shared-secret' });
+    const b = frontEnv({ ...env, PLATFORM: platform, AUTH_LIMITER: local, OWNER_TOKEN: 'test-shared-secret' });
     expect(await a.AUTH_LIMITER?.limit({ key: 'oauth:example' })).toEqual({ success: true });
     expect(await b.AUTH_LIMITER?.limit({ key: 'oauth:example' })).toEqual({ success: false });
     expect(keys).toEqual(['oauth:example', 'oauth:example']);

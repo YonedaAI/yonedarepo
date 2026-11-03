@@ -7,8 +7,10 @@ Environment-specific names, credentials and resource identities remain separate.
 The browser app runs at the Cloudflare edge with no placement setting. Its static assets use
 Workers Assets. Account password sign-in and its rate limiter run on the existing placed
 platform Workers. OAuth keeps its existing credentials/callbacks on the front, while its
-AUTH_LIMITER calls the placed primary platform over private RPC; edge locations therefore
-share one allowance rather than multiplying the bound. The US platform stays near us-east-1;
+AUTH_LIMITER calls the placed primary platform's default HTTP fetch handler, authenticated
+with a purpose-separated HMAC using the already-shared OWNER_TOKEN. Placement excludes RPC
+and named entrypoints, so neither is used for this counter. The raw operator credential is
+never transmitted; unsigned/tampered/stale calls cannot spend an allowance. The US platform stays near us-east-1;
 Europe stays near eu-central-1.
 The existing region Worker and private European D1/R2/DO jurisdiction must be deployed before
 `cells[].bound=true` adds service bindings. The deployment preflight checks this prerequisite.
@@ -46,6 +48,7 @@ No performance claims are made by this change. Relative to the current path:
 | Known repository ID | Zero routing reads, one edge-to-selected-platform binding hop |
 | Create/import, supported actual location | Zero routing reads, one selected-platform hop; ordinary auth/create work follows |
 | Password sign-in | Zero routing reads, one placed-platform hop |
+| OAuth/front auth allowance | One authenticated default-HTTP primary-platform hop; no RPC or edge-local counter |
 | Readable repository name | Existing owner/handle lookup on cold name, then one platform hop; 60s isolate cache |
 | Account-wide aggregation | Existing per-known-region fanout; a failed region is reported partial |
 | Nearby blob/tree hit | Existing source authorization plus registry permit and regional copy read; no ordinary bytes-tier walk |
