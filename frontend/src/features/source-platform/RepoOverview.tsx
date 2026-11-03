@@ -170,17 +170,8 @@ export function RepoOverview({
           </a>
         </div>
       )}
-      {tree &&
-        (readme ? (
-          <Readme
-            repo={repo}
-            ref={refName}
-            path={readme.name}
-            after={<OverviewActivity key={`${repo}:${refName}`} repo={repo} refName={refName} />}
-          />
-        ) : (
-          <OverviewActivity key={`${repo}:${refName}`} repo={repo} refName={refName} />
-        ))}
+      {tree && <OverviewActivity key={`${repo}:${refName}`} repo={repo} refName={refName} />}
+      {readme && <Readme repo={repo} ref={refName} path={readme.name} />}
     </section>
   );
 }

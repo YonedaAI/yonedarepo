@@ -33,8 +33,8 @@ authority. Known repository IDs continue routing directly.
 
 Session bootstrap uses `GET /api/auth/session?summary=true`: one fresh session check,
 without avatar or handle reads. Full profile details hydrate independently after admission.
-Home feed reads run on Home and global search only. Overview activity mounts after the
-README has answered (including an error), then waits until near the viewport. These
+Home feed reads run on Home and global search only. Overview activity sits above the
+README and loads independently after metadata/tree reads, when near the viewport. These
 optional reads must never gate the repository list, header, files or README text.
 
 Repository navigation starts list and session requests in parallel. The API authenticates
