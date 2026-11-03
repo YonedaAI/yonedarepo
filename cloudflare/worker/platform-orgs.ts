@@ -262,8 +262,14 @@ async function orgRoute(
     const found = await resolveOrgMember(env, account);
     if (!found) throw new ApiError('NOT_FOUND', 'No account found');
     const invited = found.account;
-    const put = await run({ op: 'org_member_put', account: invited, role });
-    await hint(env, invited, org, true);
+    const { incarnation } = await workspace(env, invited, { op: 'notification_identity' });
+    const put = await run({
+      op: 'org_member_put',
+      account: invited,
+      role,
+      recipient_incarnation: incarnation,
+    });
+    await workspace(env, invited, { op: 'notification_hint', org, incarnation });
     forgetOrgAccess(org, invited);
     return put;
   }

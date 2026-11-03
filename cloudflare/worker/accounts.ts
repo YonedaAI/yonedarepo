@@ -8,6 +8,7 @@ import { auditMember } from './account-audit';
 import { accountCreated, emailRoute } from './account-email';
 import { handleState, setHandle } from './account-handles';
 import { noteSeen } from './account-index';
+import { notificationsRoute } from './account-notifications';
 import { passwordRoute } from './account-password';
 import { noteHome } from './account-place';
 import { isAdminAccount } from './admin-auth';
@@ -97,6 +98,8 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
     return error('UNAUTHORIZED', 'Same-origin request required', 401);
   const action = path.slice('/api/auth/'.length);
   try {
+    if (action === 'notifications')
+      return notificationsRoute(req, env, () => accountPrincipal(req, env));
     let result: Response;
     if (action === 'session' && req.method === 'GET') {
       const { principal, suspended } = await sessionCheck(req, env);
