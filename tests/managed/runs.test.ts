@@ -681,6 +681,7 @@ describe('Durable Objects and the Workflow binding', () => {
       const sql = state.storage.sql;
       // Back to the v1 shape, with a run in it.
       sql.exec('DROP TABLE runs');
+      sql.exec('DROP TABLE run_attempts');
       sql.exec('DROP TABLE agents');
       sql.exec('DROP TABLE connection');
       sql.exec(REPO_SCHEMA[0]);

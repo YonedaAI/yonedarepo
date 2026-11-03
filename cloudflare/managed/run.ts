@@ -90,8 +90,9 @@ export async function runAgent(env: ManagedEnv, p: RunParams, step: Steps): Prom
       return { status: 'stopped', reason: collected.stop };
     }
     if (!collected.result) {
-      await repo.finish(p.run, p.attempt, 'failed', { error: collected.error });
+      // A terminal failure can be retried, so its old failing check must settle first.
       await tellLanding(p, agent, env, step);
+      await repo.finish(p.run, p.attempt, 'failed', { error: collected.error });
       return { status: 'failed', error: collected.error ?? 'failed' };
     }
     const result = collected.result;
@@ -127,8 +128,8 @@ export async function runAgent(env: ManagedEnv, p: RunParams, step: Steps): Prom
       e instanceof PlatformError && (e.status === 401 || e.status === 403)
         ? 'The repository token was refused; disable and enable the agent to reconnect'
         : `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e)}`;
-    await repo.finish(p.run, p.attempt, 'failed', { error });
     await tellLanding(p, agent, env, step);
+    await repo.finish(p.run, p.attempt, 'failed', { error });
     return { status: 'failed', error };
   } finally {
     await step
