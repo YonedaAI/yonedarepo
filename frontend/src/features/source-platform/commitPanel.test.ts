@@ -44,6 +44,7 @@ const detail = (over: Partial<CommitDetail> = {}): CommitDetail => ({
 const status = (viewer: Viewer, policy = noChecks): RepoStatus => ({
   name: 'demo',
   version: 2,
+  history_chain: null,
   owner: 'kit',
   owner_handle: 'kit',
   path: '/kit/demo',

@@ -15,6 +15,9 @@ use yoneda_core::Result;
 pub struct RepoStatus {
     pub name: String,
     pub version: u64,
+    /// Identity of this version's history, including after an operator re-import reuses
+    /// version numbers. None before the first transaction-log entry.
+    pub history_chain: Option<String>,
     pub owner: String,
     pub object_store: String,
     pub policy: Policy,
@@ -95,13 +98,29 @@ fn typed<T: serde::de::DeserializeOwned>(rows: Vec<Value>, table: &str) -> Resul
 
 /// The repository's status, with who is asking (`viewer`).
 pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result<RepoStatus> {
+    let history = db.query(
+        "SELECT version,chain FROM txlog ORDER BY version DESC LIMIT 1",
+        &[],
+    )?;
     let refs = db.query(
         "SELECT name,commit_id AS commit_id,version FROM refs ORDER BY name",
         &[],
     )?;
     Ok(RepoStatus {
         name: settings.name.clone(),
-        version: rows::current_version(db)?,
+        version: history
+            .first()
+            .and_then(|row| row["version"].as_u64())
+            .unwrap_or(0),
+        history_chain: history
+            .first()
+            .map(|row| {
+                row["chain"]
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| rows::corrupt("log chain"))
+            })
+            .transpose()?,
         owner: settings.owner.clone(),
         object_store: settings.object_store.clone(),
         policy: settings.policy.clone(),

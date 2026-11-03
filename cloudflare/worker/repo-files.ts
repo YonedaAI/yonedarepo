@@ -41,6 +41,24 @@ export async function listTree(ctx: RepoContext, args: Json) {
   return { commit: where.commit, path, entries };
 }
 
+/** Overview's already-authorized root listing selected this immutable commit and entry.
+ * Recheck the file grant and withholding; no second commit/head lookup is necessary. */
+export async function readFileFromTree(ctx: RepoContext, tree: Json, path: string) {
+  await requirePath(ctx, path);
+  const entry = (tree.entries as TreeEntry[]).find((e) => e.name === path);
+  if (!entry || !['blob', 'exec'].includes(entry.type))
+    throw new ApiError('NOT_FOUND', `${path} is not a file`);
+  const bytes = await (await ctx.objects()).blob(entry.id);
+  return {
+    commit: tree.commit,
+    path,
+    id: entry.id,
+    executable: entry.type === 'exec',
+    size: bytes.length,
+    ...text(bytes),
+  };
+}
+
 /** What last changed each entry of a directory, one read for a page of the Code tab. Only what
  * the caller may list is asked about. */
 export async function treeActivity(ctx: RepoContext, args: Json) {
