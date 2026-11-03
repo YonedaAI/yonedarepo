@@ -73,6 +73,7 @@ Environments and deploys
 - Product scope: agents are stock CLIs used as clients of the git platform; do not build agent orchestration (planners, supervisors, multi-agent teams) into the platform.
 - Exception (owner, 2026-10-29): predefined **managed agents** (code review, security review) run in their own Worker (`<prefix>-agents-managed`) as ordinary API clients of the platform: Cloudflare Workflows + Queues for durable steps, AI Gateway for model calls and per-use cost, billed from the account's credit. The platform never runs, schedules or knows about agents; third-party runtimes (e.g. AgentHero) connect as plugins through webhooks and MCP.
 - Status and task lists contain only what a working dev and prod need; no governance or nice-to-have rows.
+- Reports lead with progress and the next step. No "bad news" section: a problem appears once, inside the plan, as the step that fixes it, still saying plainly what failed or is unverified.
 
 ## UI and UX rules (owner rules)
 
