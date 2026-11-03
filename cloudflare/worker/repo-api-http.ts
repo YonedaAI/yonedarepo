@@ -83,6 +83,7 @@ export async function handle(
             signed,
             decodeURIComponent(resolving[1]),
             decodeURIComponent(resolving[2]),
+            url.searchParams,
           )
         : pathOf(env, signed, (pathing as RegExpExecArray)[1]);
     });

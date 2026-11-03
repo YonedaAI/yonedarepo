@@ -14,10 +14,11 @@ import { cellOfRegion, cellOfRepo, cellsOn, FIRST_CELL, indexOf, thisCell } from
 import { audited } from './repo-audit';
 import { refreshHead } from './repo-head';
 import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
-import { joinedPathHandle } from './repo-path-metadata';
+import { overviewRequested } from './repo-overview';
+import { resolvedOverview } from './repo-overview-resolve';
+import { joinedPathHandle, statusWithHandle } from './repo-path-metadata';
 import { admitAnonymous } from './repo-public';
 import { timed } from './repo-timing';
-import { repoAnalytics } from './repo-usage';
 import type { Env } from './types';
 import { workspace } from './workspace';
 
@@ -182,6 +183,7 @@ export async function resolvePath(
   auth: Credentials | null,
   handle: string,
   name: string,
+  query?: URLSearchParams,
 ): Promise<Json> {
   const owner = await ownerOf(env, handle);
   const found = owner && (await named(env, owner.account, name.replace(/\.git$/, '')));
@@ -189,15 +191,22 @@ export async function resolvePath(
   // Answered where the repository is: only that cell can say who may read it.
   const cell = cellOfRepo(found.repo);
   if (cellsOn(env) && cell !== thisCell(env))
-    return askCell(env, cell, `/api/v1/resolve/${handle}/${encodeURIComponent(name)}`);
-  await readable(env, auth, found.repo);
-  return {
+    return askCell(
+      env,
+      cell,
+      `/api/v1/resolve/${handle}/${encodeURIComponent(name)}${query?.size ? `?${query}` : ''}`,
+    );
+  const status = await readable(env, auth, found.repo);
+  const resolved = {
     id: found.repo,
     handle: owner.handle,
     name: found.name,
     path: `/${owner.handle}/${found.name}`,
     ...(found.renamed_from ? { renamed_from: found.renamed_from } : {}),
   };
+  return overviewRequested(env, query)
+    ? resolvedOverview(env, auth, resolved, status, query as URLSearchParams)
+    : resolved;
 }
 
 /** `GET /repos/<id>/path`: a repository's readable path, for `auth`; NOT_FOUND alike for
@@ -300,11 +309,5 @@ async function pathHandle(env: Env, repo: string) {
 /** A repository's status with its owner's handle and readable path (from the listing). */
 export async function withPath(env: Env, repo: string, status: Json): Promise<Json> {
   const handle = await timed('path.metadata', () => pathHandle(env, repo));
-  const named = {
-    ...status,
-    owner_handle: handle,
-    path: handle ? `/${handle}/${status.name}` : null,
-    ...regionOf(env, repo),
-  };
-  return repoAnalytics(env) ? { ...named, insights: true } : named;
+  return statusWithHandle(env, repo, status, handle);
 }

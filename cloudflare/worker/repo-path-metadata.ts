@@ -1,7 +1,8 @@
 // Status path decoration: one local projection read, with the legacy home-cell alias
 // fallback. The already-authorized repository status still owns its current name.
-import { cellsOn, FIRST_CELL, indexOf, thisCell } from './cells';
-import type { Env } from './types';
+import { cellOfRepo, cellsOn, FIRST_CELL, indexOf, thisCell } from './cells';
+import { repoAnalytics } from './repo-usage';
+import type { Env, Json } from './types';
 
 /** Exactly the owner/handle lookup used by status, combined without caching either. */
 export async function joinedPathHandle(env: Env, repo: string): Promise<string | null> {
@@ -26,4 +27,20 @@ export async function joinedPathHandle(env: Env, repo: string): Promise<string |
       )?.handle ?? null
     );
   return null;
+}
+
+/** Decorates an authorized status using a handle its caller already resolved. */
+export function statusWithHandle(
+  env: Env,
+  repo: string,
+  status: Json,
+  handle: string | null,
+): Json {
+  const named = {
+    ...status,
+    owner_handle: handle,
+    path: handle ? `/${handle}/${status.name}` : null,
+    ...(cellsOn(env) && { region: cellOfRepo(repo) }),
+  };
+  return repoAnalytics(env) ? { ...named, insights: true } : named;
 }

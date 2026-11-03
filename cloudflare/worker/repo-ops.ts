@@ -171,6 +171,7 @@ export async function batch(env: Env, repo: string, commands: Json[]): Promise<J
 /** One repository, as seen by one authenticated caller. */
 export class RepoContext {
   private statusOnce?: Promise<Json>;
+  private authoritativeStatus = false;
   /** Main's published head, when this request reads from it instead of the authority. */
   published?: Json;
   constructor(
@@ -184,6 +185,13 @@ export class RepoContext {
     this.statusOnce ??= this.call({ op: 'repo_status' });
     return this.statusOnce;
   }
+  /** Keeps a successful fresh authority answer for this request's compound read; a
+   * cached-head hint must not replace its newer grant or quarantine snapshot. */
+  retainStatus(status: Json) {
+    this.authoritativeStatus = true;
+    this.statusOnce = Promise.resolve(status);
+    this.cached = undefined;
+  }
   /** Serves this request's access and main's head from the published head. */
   publish(head: Json, access: Json) {
     this.published = head;
@@ -192,6 +200,7 @@ export class RepoContext {
   /** Serves this request's access (grant and object store) from the published head's
    * access snapshot; reads elsewhere than main's head use it too. */
   authorize(head: Json, access: Json) {
+    if (this.authoritativeStatus) return;
     this.statusOnce = Promise.resolve({ object_store: head.object_store, ...access });
   }
   async objects() {
