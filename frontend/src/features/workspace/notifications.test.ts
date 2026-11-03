@@ -12,6 +12,8 @@ const state = (unread = 0) => ({
   error: '',
   load: vi.fn(),
   markRead: vi.fn(),
+  remove: vi.fn(),
+  clearAll: vi.fn(),
 });
 it('shows only a quiet bell until the recipient opens their inbox', () => {
   vi.mocked(useNotifications).mockReturnValue(state());

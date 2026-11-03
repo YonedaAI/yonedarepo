@@ -245,7 +245,7 @@ fn the_org_migration_keeps_a_connected_personal_installation() {
     let versions = db
         .query("SELECT version FROM workspace_migrations", &[])
         .unwrap();
-    assert_eq!(versions.len(), 15);
+    assert_eq!(versions.len(), 16);
 }
 
 #[test]

@@ -51,7 +51,10 @@ mod member_notices;
 mod names;
 #[cfg(test)]
 mod names_tests;
+mod notification_retention;
 mod notifications;
+#[cfg(test)]
+mod notifications_dismiss_tests;
 #[cfg(test)]
 mod notifications_tests;
 mod oauth_flows;
@@ -124,7 +127,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
     }))
 }
 /// Digest-pinned, forward-only account migrations (version, SQL), applied in order.
-pub(crate) const MIGRATIONS: [(i64, &str); 15] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 16] = [
     (1, include_str!("accounts/migrations/0001_accounts.sql")),
     (
         2,
@@ -160,6 +163,10 @@ pub(crate) const MIGRATIONS: [(i64, &str); 15] = [
     (
         15,
         include_str!("accounts/migrations/0015_notification_incarnation.sql"),
+    ),
+    (
+        16,
+        include_str!("accounts/migrations/0016_notification_dismissal.sql"),
     ),
 ];
 fn migrate<S: SqlStore>(store: &S) -> Result<()> {
