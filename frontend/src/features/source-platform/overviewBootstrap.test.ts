@@ -136,9 +136,15 @@ describe('overview bootstrap', () => {
   it('uses an explicitly fresh initial response on its first render', () => {
     function Probe() {
       const found = useSource('/fresh', undefined, { value: 'admitted' });
-      return createElement('p', null, found.data?.value ?? 'pending');
+      return createElement(
+        'p',
+        { 'data-current': found.current === true },
+        found.data?.value ?? 'pending',
+      );
     }
-    expect(renderToStaticMarkup(createElement(Probe))).toContain('admitted');
+    const html = renderToStaticMarkup(createElement(Probe));
+    expect(html).toContain('admitted');
+    expect(html).toContain('data-current="true"');
   });
 
   it('preserves the empty repository view without another directory read', () => {
