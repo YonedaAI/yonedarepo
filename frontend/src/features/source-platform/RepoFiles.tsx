@@ -1,6 +1,6 @@
 // The Files page: branch or tag, path, version (time travel) and Clone; the latest commit; the
 // directory as a file table with its README below, or one file with blame.
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { BranchPicker, CloneButton, LatestCommit } from './CodeParts';
@@ -51,11 +51,15 @@ export function RepoFiles({
   // The place the form was opened on: moving to another closes it.
   const here = `${route.ref}:${route.path}`;
   const [writingAt, setWritingAt] = useState<string | null>(null);
-  const writing = writingAt === here;
   const canCommit =
     canMoveBranches(status?.viewer) &&
     route.at === undefined &&
-    !route.ref.startsWith('refs/tags/');
+    !route.ref.startsWith('refs/tags/') &&
+    Boolean(listing.value?.commit);
+  const writing = writingAt === here && canCommit;
+  useEffect(() => {
+    if (!canCommit) setWritingAt(null);
+  }, [canCommit]);
   const tree = listing.value?.kind === 'tree' ? listing.value : undefined;
   const activity = useActivity(route.repo, route.ref, route.path, Boolean(tree), route.at);
   const go = (path: string): SourceRoute => ({ ...place, path });

@@ -180,20 +180,22 @@ export function LatestCommit({
   preloaded,
 }: {
   repo: string;
-  commit: string;
+  commit: string | null;
   now?: number;
   commitLink: (commit: string, children: ReactNode) => ReactNode;
   /** Fresh detail already included in this page's authorized Overview response. */
   preloaded?: Detail;
 }) {
   const people = usePeople();
-  const detail = useSource<Detail>(preloaded ? null : `/repos/${repo}/commits/${commit}`);
-  if (detail.error) return <Failure error={detail.error} onRetry={detail.reload} />;
-  const d = preloaded ?? detail.data;
+  const detail = useSource<Detail>(
+    !commit || preloaded ? null : `/repos/${repo}/commits/${commit}`,
+  );
+  if (commit && detail.error) return <Failure error={detail.error} onRetry={detail.reload} />;
+  const d = commit ? (preloaded ?? detail.data) : undefined;
   const written = d?.authored_at ?? d?.landings[0]?.landed_at;
   return (
     <div className="latest-commit" aria-busy={!d || undefined}>
-      {d ? (
+      {d && commit ? (
         <>
           <strong>{d.author_name ?? people.principal(d.principal)}</strong>
           <span className="latest-message">{commitLink(commit, d.message.split('\n')[0])}</span>
@@ -203,7 +205,7 @@ export function LatestCommit({
         <span className="source-meta">Loading the latest commit…</span>
       )}
       <span className="latest-meta">
-        {commitLink(commit, <code>{shortSha(commit)}</code>)}
+        {commit && commitLink(commit, <code>{shortSha(commit)}</code>)}
         {written && <time dateTime={new Date(written).toISOString()}>{ago(written, now)}</time>}
       </span>
     </div>

@@ -5,7 +5,8 @@ import { SourceApiError, sourceApi } from './sourceApi';
 import { useSource } from './useSource';
 
 export type FileBody = {
-  commit: string;
+  commit: string | null;
+  version?: number;
   size: number;
   encoding: string;
   content: string;

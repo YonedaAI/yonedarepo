@@ -195,7 +195,7 @@ export function RepoOverview({
       />
       {listing.error && <Failure error={listing.error} onRetry={listing.reload} />}
       {!listing.value && !listing.error && <Loading what="files" />}
-      {listing.value && (
+      {tree && (
         <div className="overview-latest">
           {bootstrap?.errors?.latest ? (
             <Failure
@@ -206,7 +206,7 @@ export function RepoOverview({
           ) : (
             <LatestCommit
               repo={repo}
-              commit={listing.value.commit}
+              commit={tree.commit}
               preloaded={bootstrap?.latest ?? undefined}
               commitLink={(commit, children) => (
                 <a {...linkTo({ view: 'commit', repo, commit }, navigate)}>{children}</a>
