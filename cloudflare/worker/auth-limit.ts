@@ -8,8 +8,12 @@ import type { Env } from './types';
 export const AUTH_LIMIT_PATH = '/internal/auth-limit';
 const SIGNATURE = 'x-yoneda-auth-limit';
 const FRESH_MS = 60_000;
+const SERVICE_MS = 5_000;
 const validKey = (key: unknown): key is string =>
-  typeof key === 'string' && key.length > 0 && key.length <= 256 && !/[\r\n\0]/.test(key);
+  typeof key === 'string' &&
+  key.length > 0 &&
+  key.length <= 256 &&
+  [...key].every((char) => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127);
 const payload = (key: string, at: number) => `yoneda:placed-auth-limit:v1\n${at}\n${key}`;
 
 /** The raw primary default service binding, never its named/RPC/routing proxy. */
@@ -24,6 +28,7 @@ export async function placedAuthLimit(platform: Fetcher, secret: string | undefi
       headers: { 'content-type': 'application/json', [SIGNATURE]: signature },
       body: JSON.stringify({ key, at }),
       redirect: 'manual',
+      signal: AbortSignal.timeout(SERVICE_MS),
     }),
   );
   if (!answer.ok) throw new Error('The auth service is unavailable');

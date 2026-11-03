@@ -20,7 +20,7 @@ it('spends only a verified fresh key and never treats a signature as an operator
   wrongPurpose.headers.set('x-yoneda-auth-limit', await hmacHex(secret, 'other-purpose'));
   const altered = await signed('signed-key');
   const tampered = new Request(altered, { body: JSON.stringify({ key: 'other-key', at: Date.now() }) });
-  for (const req of [await signed('other', Date.now(), 'wrong-key'), await signed('other', Date.now() - 60_001), await signed('other', Date.now() + 120_000), wrongPurpose, tampered, await signed(''), await signed('x'.repeat(257))])
+  for (const req of [await signed('other', Date.now(), 'wrong-key'), await signed('other', Date.now() - 60_001), await signed('other', Date.now() + 120_000), wrongPurpose, tampered, await signed(''), await signed('bad\tkey'), await signed('x'.repeat(257))])
     expect((await authLimitResponse(req, env)).status).toBe(401);
   expect(seen).toEqual(['oauth:client']);
 });
@@ -39,3 +39,15 @@ it('bounds malformed authenticated bodies and fails closed on absent configurati
   await expect(placedAuthLimit(platform, undefined, 'x')).rejects.toThrow('not configured');
   expect(spent).toBe(0);
 });
+
+it('bounds a stalled placed service call without spending a counter', async () => {
+  let aborted = false;
+  const platform = { fetch: (req: Request) => new Promise((_resolve, reject) => {
+    req.signal.addEventListener('abort', () => {
+      aborted = true;
+      reject(req.signal.reason);
+    }, { once: true });
+  }) } as unknown as Fetcher;
+  await expect(placedAuthLimit(platform, secret, 'bounded-call')).rejects.toThrow();
+  expect(aborted).toBe(true);
+}, 7500);
