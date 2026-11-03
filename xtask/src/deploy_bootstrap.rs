@@ -72,13 +72,34 @@ pub(crate) fn configuration(config: &Value, missing: &BTreeSet<String>) -> Resul
     Ok(copy)
 }
 
+fn stage_worker(
+    out: &mut Vec<Step>,
+    workers: &[Deployable],
+    worker: usize,
+    config: Value,
+    prod: bool,
+) {
+    if prod && workers[worker].has_containers {
+        out.push(Step::ActiveGate { worker });
+    }
+    out.push(Step::RolloutGate);
+    out.push(Step::Bootstrap { worker, config });
+    if !(workers[worker].secrets.is_empty() && workers[worker].optional_secrets.is_empty()) {
+        out.push(Step::Secrets { worker });
+    }
+    if workers[worker].health.is_some() {
+        out.push(Step::Health { worker });
+    }
+}
+
 /// The ordinary plan retains its guards/builds/migrations and final bound deployment.
 pub(crate) fn insert(
     plan: Vec<Step>,
     workers: &[Deployable],
     missing: &BTreeSet<String>,
 ) -> Result<Vec<Step>> {
-    if missing.is_empty()
+    let regional = workers.iter().any(|w| w.role.starts_with("api-"));
+    if (missing.is_empty() && !regional)
         || plan
             .iter()
             .any(|s| matches!(s, Step::Deploy { dry_run: true, .. }))
@@ -105,22 +126,22 @@ pub(crate) fn insert(
     for step in plan {
         if matches!(step, Step::Deploy{worker,..} if worker==primary) && !inserted {
             for worker in stage.iter().copied() {
-                if prod && workers[worker].has_containers {
-                    out.push(Step::ActiveGate { worker });
-                }
-                out.push(Step::RolloutGate);
-                out.push(Step::Bootstrap {
+                stage_worker(
+                    &mut out,
+                    workers,
                     worker,
-                    config: configuration(&workers[worker].config, missing)?,
-                });
-                if !(workers[worker].secrets.is_empty()
-                    && workers[worker].optional_secrets.is_empty())
-                {
-                    out.push(Step::Secrets { worker });
-                }
-                if workers[worker].health.is_some() {
-                    out.push(Step::Health { worker });
-                }
+                    configuration(&workers[worker].config, missing)?,
+                    prod,
+                );
+            }
+            // Every receiver must stop forwarding to the unbound primary before that
+            // primary starts global dispatch. This includes already-existing EU handlers.
+            for (worker, receiver) in workers
+                .iter()
+                .enumerate()
+                .filter(|(_, w)| w.role == "platform-weur" || w.role.starts_with("api-"))
+            {
+                stage_worker(&mut out, workers, worker, receiver.config.clone(), prod);
             }
             // Recheck after a possibly slow bootstrap: work may have started meanwhile.
             if prod {
@@ -306,12 +327,15 @@ mod tests {
     }
 
     #[test]
-    fn existing_regions_and_dry_runs_have_no_bootstrap_or_extra_mutations() {
+    fn existing_regional_handlers_rebind_but_dry_runs_have_no_extra_mutations() {
         let workers = workers(false);
         let ordinary = steps(&Env::Dev, &workers, false, &Source::Dockerfile);
-        assert_eq!(
-            insert(ordinary.clone(), &workers, &BTreeSet::new()).unwrap(),
-            ordinary
+        let prepared = insert(ordinary, &workers, &BTreeSet::new()).unwrap();
+        assert!(
+            prepared
+                .iter()
+                .any(|step| matches!(step, Step::Bootstrap { worker, config }
+            if workers[*worker].role == "platform" && config["vars"]["REGIONAL_API"] == "off"))
         );
         let region = workers.iter().find(|w| w.role == "platform-weur").unwrap();
         let dry = steps(&Env::Dev, &workers, true, &Source::Dockerfile);
