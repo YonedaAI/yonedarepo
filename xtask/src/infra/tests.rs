@@ -110,8 +110,8 @@ fn dev_spec_regenerates_the_committed_dev_configs() {
         files,
         [
             "wrangler.dev-superfan.jsonc",
-            "wrangler.dev-platform-weur.jsonc",
             "wrangler.dev-platform.jsonc",
+            "wrangler.dev-platform-weur.jsonc",
             "wrangler.dev-edge.jsonc",
             "wrangler.dev-agents-managed.jsonc",
             "wrangler.dev-agents.jsonc",
@@ -869,10 +869,29 @@ mod cells {
         };
         let mut expected = roles(&without);
         let at = expected.iter().position(|r| r == "platform").unwrap();
-        expected.insert(at, "platform-weur".into());
+        expected.insert(at + 1, "platform-weur".into());
         assert_eq!(roles(&with), expected);
         for old in &without.workers {
             assert_eq!(worker(&with, &old.role), &old.config, "{}", old.role);
+        }
+    }
+
+    #[test]
+    fn shared_class_provider_deploys_before_regional_consumers() {
+        for spec in [Spec::parse(DEV).unwrap(), bound()] {
+            let pos = |role: &str| spec.workers.iter().position(|w| w.role == role).unwrap();
+            assert!(pos("superfan") < pos("platform"));
+            assert!(
+                pos("platform") < pos("platform-weur"),
+                "primary exports must exist before a regional cross-script class binding"
+            );
+            assert!(pos("platform-weur") < pos("edge"));
+            let reverse: Vec<_> = spec.workers.iter().rev().map(|w| w.role.as_str()).collect();
+            assert!(
+                reverse.iter().position(|r| *r == "platform-weur").unwrap()
+                    < reverse.iter().position(|r| *r == "platform").unwrap(),
+                "rollback consumers before their shared-class provider"
+            );
         }
     }
 

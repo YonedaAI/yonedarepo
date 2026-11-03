@@ -62,3 +62,9 @@ authorization and race behavior, not physical placement: Cloudflare's location
 are best effort and count only when a new object is first reached. HTTP/API
 request location is covered; SSH gateway-origin requests do not identify the
 end client here and retain their existing path.
+
+The primary Worker deploys before regional Workers, which bind its shared class
+exports. Bootstrap a new regional Worker with `cells[].bound=false` and run the
+normal environment deploy. Only then set `bound=true` and redeploy; bound targets
+are verified before migrations or deployment. Edge/frontend Workers follow the
+regional Workers. Rollback proceeds in reverse, consumers before their provider.
