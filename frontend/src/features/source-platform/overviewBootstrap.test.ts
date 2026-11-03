@@ -7,6 +7,7 @@ import {
   type OverviewData,
   type OverviewHandoff,
   type OverviewStatus,
+  overviewActivityPath,
   overviewForNavigation,
 } from './overviewBootstrap';
 import type { SourceRoute } from './sourceRoute';
@@ -211,4 +212,20 @@ describe('overview bootstrap', () => {
     expect(html).not.toContain('Loading the latest commit');
     expect(html).not.toContain('Loading README');
   });
+});
+
+it('anchors deferred activity to the captured commit and version rather than moving main', () => {
+  const path = overviewActivityPath('r0123456789abcdef0123', 'main', {
+    ref: 'topic/name',
+    from: commit,
+    at: 7,
+  });
+  const url = new URL(path, 'https://example.test');
+  expect(url.searchParams.get('ref')).toBe('topic/name');
+  expect(url.searchParams.get('from')).toBe(commit);
+  expect(url.searchParams.get('at')).toBe('7');
+  expect(url.searchParams.get('limit')).toBe('200');
+  expect(overviewActivityPath('r0123456789abcdef0123', 'main')).toBe(
+    '/repos/r0123456789abcdef0123/log?ref=main&limit=200',
+  );
 });

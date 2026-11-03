@@ -298,6 +298,7 @@
           "SHARED_READ_TREES": "on",
           "JOINED_REPO_PATH": "on",
           "OVERVIEW_BOOTSTRAP": "on",
+          "OVERVIEW_DEFER_ACTIVITY": "on",
           "EDGE_FIRST_READS": "on",
           "SEARCH_CODE_MEMO": "on",
           "RECENT_VERSIONS": "on",

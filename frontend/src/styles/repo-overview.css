@@ -47,8 +47,16 @@
   align-items: start;
   gap: 24px;
 }
-/* Reserve chart space while loading, not after an empty activity result. */
-.overview-numbers:has([aria-busy="true"]) {
+/* The deferred chart and six contributors keep their space after loading, too. */
+.overview-numbers.is-deferred {
+  min-height: 250px;
+  align-content: start;
+}
+.overview-numbers > :is(.source-error, .source-empty, .source-meta) {
+  grid-column: 1 / -1;
+}
+/* Legacy readers also reserve chart space while loading. */
+.overview-numbers:not(.is-deferred):has([aria-busy="true"]) {
   min-height: 190px;
 }
 .overview-people {
@@ -76,5 +84,8 @@
 @media (max-width: 800px) {
   .overview-numbers {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .overview-numbers.is-deferred {
+    min-height: 460px;
   }
 }
