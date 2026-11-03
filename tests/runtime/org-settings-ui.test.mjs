@@ -44,8 +44,12 @@ test('organization layout, recovery focus and permission states in the served ap
         let body={};
         if(path==='/api/auth/session')body={authenticated:true,username:'fixture',handle:'fixture'};
         else if(path==='/api/v1/repos')body={repos:[]};
-        else if(path==='/api/v1/orgs')body={orgs:[{org:org.org,role:mode==='member'?'member':'owner'}]};
+        else if(path==='/api/v1/orgs')body={orgs:[{org:org.org,role:mode==='member'?'member':'owner'},{org:'other_demo',role:'owner'}]};
         else if(path==='/api/v1/favorites')body={favorites:[]};
+        else if(path==='/api/v1/orgs/other_demo')body={...org,org:'other_demo',members:[],teams:[]};
+        else if(path==='/api/v1/orgs/other_demo/repos')body={repos:[]};
+        else if(path==='/api/v1/orgs/other_demo/hold')body={org:null,repos:{}};
+        else if(path==='/api/v1/orgs/other_demo/repos/deleted')body={window_days:30,repos:[]};
         else if(path==='/api/v1/orgs/ui_demo'){
           if(mode==='loading')await new Promise(resolve=>{release=resolve;});
           if(mode==='error')return route.fulfill({status:400,json:{error:{code:'INVALID_INPUT',message:'Could not load the organization.'}}});
@@ -63,9 +67,9 @@ test('organization layout, recovery focus and permission states in the served ap
           body={candidates:q==='@ali'?[{identifier:'alice',handle:'alice',member:false}]:q==='friend@example.com'?[{identifier:q,handle:'friend',member:false}]:q==='@owner'?[{identifier:'owner',handle:'owner',member:true}]:q==='@bob'?[{identifier:'bob',handle:'bob',member:false}]:q==='@retry'?[{identifier:'retry_user',handle:'retry_user',member:false}]:q==='legacy@example.com'?[{identifier:q,handle:null,member:false}]:[]};
         }
         else if(path==='/api/v1/orgs/ui_demo/members'){
-          const added=route.request().postDataJSON();grants.push(added);members.push({account:added.account,role:added.role,added_at:stamp,added_by:`user:${owner}`});body={added:true};
+          const added=route.request().postDataJSON();grants.push(added);const existing=members.findIndex(member=>member.account===added.account);if(existing>=0)members[existing]={...members[existing],role:added.role};else members.push({account:added.account,role:added.role,added_at:stamp,added_by:`user:${owner}`});body={added:true};
         }
-        else if(path==='/api/v1/orgs/ui_demo/members/alice'){members=members.filter(m=>m.account!=='alice');body={removed:true};}
+        else if(path.startsWith('/api/v1/orgs/ui_demo/members/')){members=members.filter(m=>m.account!==decodeURIComponent(path.split('/').at(-1)));body={removed:true};}
         else if(path==='/api/v1/orgs/ui_demo/repos')body={repos:mode==='empty'?[]:[{id:`r${'2'.repeat(20)}`,name:'active-service',created_at:stamp,owner:'ui_demo'}]};
         else if(path==='/api/v1/orgs/ui_demo/hold')body={org:mode==='held'?{owner:{at:stamp,by:`user:${owner}`}}:null,repos:{}};
         else if(path==='/api/v1/orgs/ui_demo/repos/deleted'){
@@ -76,7 +80,7 @@ test('organization layout, recovery focus and permission states in the served ap
         return route.fulfill({json:body});
       });
       await page.route('**/health',route=>route.fulfill({json:{service:'simulated'}}));
-      const open=async(state)=>{mode=state;await page.goto(`${origin}/orgs/ui_demo`);};
+      const open=async(state)=>{mode=state;if(state==='multiowner')members=members.map((member,index)=>({...member,role:index<2?'owner':member.role}));await page.goto(`${origin}/orgs/ui_demo`);};
       const shot=async(name)=>{
         await page.evaluate(async()=>{await document.fonts.ready;window.scrollTo(0,0);});
         assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${width} ${colorScheme} ${name} must not scroll sideways`);
@@ -84,6 +88,10 @@ test('organization layout, recovery focus and permission states in the served ap
       };
       await open('full');
       await page.getByRole('heading',{name:'Members',exact:true}).waitFor();
+      const ownerRow=page.getByRole('row').filter({has:page.locator('.org-member-name').getByText(owner,{exact:true})});
+      assert.equal(await ownerRow.getByRole('combobox').count(),0,'the only owner cannot be demoted');
+      assert.equal(await ownerRow.getByRole('button',{name:'Remove',exact:true}).count(),0,'the only owner cannot be removed');
+      assert.equal(await ownerRow.locator('.chip').getByText('Owner',{exact:true}).count(),1);
       const accountInput=page.getByRole('combobox',{name:'Account',exact:true});
       assert.equal(await accountInput.count(),1,'Account must search for an existing user');
       const addMember=page.getByRole('button',{name:'Add member',exact:true});
@@ -114,7 +122,10 @@ test('organization layout, recovery focus and permission states in the served ap
       await accountInput.press('Escape');assert.equal(await accountInput.getAttribute('aria-expanded'),'false');
       await accountInput.fill('@ali');await page.getByRole('option',{name:'@alice',exact:true}).waitFor();await accountInput.press('Tab');assert.equal(await accountInput.getAttribute('aria-expanded'),'false','blur closes suggestions');
       await accountInput.fill('@retry');await page.getByText('Could not search accounts.',{exact:true}).waitFor();await shot('member-search-error');
-      await page.locator('.org-member-search-error').getByRole('button',{name:'Retry',exact:true}).click();await page.getByRole('option',{name:'@retry_user',exact:true}).waitFor();
+      await accountInput.press('Tab');
+      assert.equal(await page.locator('.org-member-search-error').getByRole('button',{name:'Retry',exact:true}).evaluate(button=>button===document.activeElement),true,'Tab must reach the search Retry button');
+      await page.keyboard.press('Enter');await page.getByRole('option',{name:'@retry_user',exact:true}).waitFor();
+      await accountInput.press('Tab');assert.equal(await accountInput.getAttribute('aria-expanded'),'false','Tab out of the picker closes suggestions');
       assert.equal(searches.filter(q=>q==='@retry').length,2,'failed searches retry only after the explicit Retry action');
       const slowFinished=new Promise(resolve=>{searchFinished=resolve;});
       await accountInput.fill('@slow');await page.waitForRequest(request=>new URL(request.url()).searchParams.get('q')==='@slow');await page.getByText('Searching accounts…',{exact:true}).waitFor();await shot('member-search-loading');
@@ -124,6 +135,13 @@ test('organization layout, recovery focus and permission states in the served ap
       await accountInput.fill('absent@example.com');await page.getByText('No matching account.',{exact:true}).waitFor();assert.equal(await addMember.isDisabled(),true);await shot('member-search-empty');
       await accountInput.fill('');
       await shot('full');
+      await accountInput.fill('friend@example.com');await page.getByRole('option',{name:'@friend',exact:true}).click();assert.equal(await addMember.isEnabled(),true);
+      if(width===375)await page.getByRole('button',{name:'Open navigation',exact:true}).click();
+      await page.locator('.rail-repo-name').getByText('other_demo',{exact:true}).click();
+      await page.getByRole('heading',{level:1,name:'other_demo',exact:true}).waitFor();
+      assert.equal(await addMember.isDisabled(),true,'a selected account from another organization cannot enable Add');
+      assert.equal(await accountInput.inputValue(),'','the account query belongs to the organization');
+      await open('full');await page.getByRole('heading',{name:'Members',exact:true}).waitFor();
       const disclosure=page.locator('.org-deleted > summary');
       await disclosure.focus(); await page.keyboard.press('Enter');
       const restore=page.getByRole('button',{name:`Restore ${removed.name}`,exact:true});
@@ -141,6 +159,16 @@ test('organization layout, recovery focus and permission states in the served ap
       await confirm.fill('wrong_name');assert.equal(await deleteButton.isDisabled(),true);
       await confirm.fill('ui_demo');assert.equal(await deleteButton.isEnabled(),true);
       await open('held');await page.getByText('Under a legal hold: this cannot be deleted until the hold is released.',{exact:true}).waitFor();assert.equal(await confirm.isDisabled(),true);assert.equal(await deleteButton.isDisabled(),true);await shot('held');
+      await open('multiowner');await page.getByRole('heading',{name:'Members',exact:true}).waitFor();
+      assert.equal(await ownerRow.getByRole('combobox',{name:`Role of ${owner}`,exact:true}).count(),1,'another owner allows role changes');
+      assert.equal(await ownerRow.getByRole('button',{name:'Remove',exact:true}).count(),1,'another owner allows removal with confirmation');await shot('multiowner');
+      await ownerRow.getByRole('combobox',{name:`Role of ${owner}`,exact:true}).selectOption('member');
+      await page.waitForFunction(()=>Array.from(document.querySelectorAll('.org-member-name')).some(name=>name.textContent==='teammate.with.a.long.address@example.com'&&name.closest('tr').querySelector('.chip')?.textContent==='Owner'));
+      assert.equal(members.find(member=>member.account===owner).role,'member','role changes reach the membership API');
+      await ownerRow.getByRole('combobox',{name:`Role of ${owner}`,exact:true}).selectOption('owner');
+      await page.getByRole('combobox',{name:'Role of teammate.with.a.long.address@example.com',exact:true}).waitFor();
+      page.once('dialog',dialog=>dialog.accept());await ownerRow.getByRole('button',{name:'Remove',exact:true}).click();await ownerRow.waitFor({state:'detached'});
+      assert.equal(await page.getByRole('combobox',{name:'Role of teammate.with.a.long.address@example.com',exact:true}).count(),0,'after removal the remaining owner loses refused controls');
       await open('member');await page.getByRole('heading',{name:'Members',exact:true}).waitFor();
       assert.equal(await page.getByRole('button',{name:'Add member',exact:true}).count(),0);
       assert.equal(await deleteButton.count(),0);await shot('member');

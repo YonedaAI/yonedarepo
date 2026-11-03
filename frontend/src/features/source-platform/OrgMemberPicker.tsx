@@ -1,5 +1,5 @@
 // Search suggestions are owner-scoped; choosing one does not grant membership.
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { normalizeAccountIdentifier, normalizeHandle } from '../../../../shared/account';
 import { sourceApi } from './sourceApi';
 
@@ -26,6 +26,7 @@ export function OrgMemberPicker({
   onSelect: (candidate: OrgMemberCandidate) => void;
 }) {
   const listId = useId();
+  const input = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const [retry, setRetry] = useState(0);
@@ -90,9 +91,18 @@ export function OrgMemberPicker({
   }
 
   return (
-    <div className="source-field org-member-picker">
+    // biome-ignore lint/a11y/noStaticElementInteractions: close only when focus leaves the composite search.
+    <div
+      className="source-field org-member-picker"
+      onBlur={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget)) return;
+        setOpen(false);
+        setActive(-1);
+      }}
+    >
       <label htmlFor={`${listId}-input`}>Account</label>
       <input
+        ref={input}
         id={`${listId}-input`}
         role="combobox"
         value={value}
@@ -110,10 +120,6 @@ export function OrgMemberPicker({
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
-        onBlur={() => {
-          setOpen(false);
-          setActive(-1);
-        }}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
           if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -172,7 +178,10 @@ export function OrgMemberPicker({
                 type="button"
                 className="quiet"
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={() => setRetry((value) => value + 1)}
+                onClick={() => {
+                  input.current?.focus();
+                  setRetry((value) => value + 1);
+                }}
               >
                 Retry
               </button>

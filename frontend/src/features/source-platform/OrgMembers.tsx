@@ -17,10 +17,16 @@ function MemberRows({
   onRole: (account: string, role: OrgRole) => void;
   onRemove: (account: string) => void;
 }) {
+  const owners = members.filter((member) => member.role === 'owner').length;
   return (
     <div className="source-table-wrap org-member-table">
       <table className="source-table">
-        <thead>
+        <colgroup>
+          <col />
+          <col className="org-member-role-column" />
+          <col className="org-member-actions-column" />
+        </colgroup>
+        <thead className="sr-only">
           <tr>
             <th>Member</th>
             <th>Role</th>
@@ -30,43 +36,55 @@ function MemberRows({
           </tr>
         </thead>
         <tbody>
-          {members.map((m) => (
-            <tr key={m.account}>
-              <td>
-                <span className="org-member-name">{m.account}</span>
-                <span
-                  className="source-meta org-member-added"
-                  title={`Added by ${m.added_by.replace(/^user:/, '')}`}
-                >
-                  Added {when(m.added_at)}
-                </span>
-              </td>
-              <td>
-                {manages ? (
-                  <select
-                    aria-label={`Role of ${m.account}`}
-                    value={m.role}
-                    onChange={(e) => onRole(m.account, e.target.value as OrgRole)}
+          {members.map((m) => {
+            const lastOwner = m.role === 'owner' && owners === 1;
+            return (
+              <tr key={m.account}>
+                <td>
+                  <span className="org-member-name">{m.account}</span>
+                  <span
+                    className="source-meta org-member-added"
+                    title={`Added ${when(m.added_at)} by ${m.added_by.replace(/^user:/, '')}`}
                   >
-                    {ORG_ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {r === 'owner' ? 'Owner' : 'Member'}
-                      </option>
-                    ))}
-                  </select>
+                    Added{' '}
+                    {new Date(m.added_at).toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                  </span>
+                </td>
+                {lastOwner || !manages ? (
+                  <td colSpan={2} className="org-member-static-role">
+                    <span className={lastOwner ? 'chip' : 'source-meta'}>
+                      {m.role === 'owner' ? 'Owner' : 'Member'}
+                    </span>
+                  </td>
                 ) : (
-                  m.role
+                  <>
+                    <td>
+                      <select
+                        aria-label={`Role of ${m.account}`}
+                        value={m.role}
+                        onChange={(e) => onRole(m.account, e.target.value as OrgRole)}
+                      >
+                        {ORG_ROLES.map((r) => (
+                          <option key={r} value={r}>
+                            {r === 'owner' ? 'Owner' : 'Member'}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <button type="button" className="quiet" onClick={() => onRemove(m.account)}>
+                        Remove
+                      </button>
+                    </td>
+                  </>
                 )}
-              </td>
-              <td>
-                {manages && (
-                  <button type="button" className="quiet" onClick={() => onRemove(m.account)}>
-                    Remove
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
