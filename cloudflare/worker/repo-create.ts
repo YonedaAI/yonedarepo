@@ -15,6 +15,7 @@ import { auditRepo, auditRepoForget } from './repo-audit';
 import { commit } from './repo-commit';
 import { refreshHead } from './repo-head';
 import { startWorkflow } from './repo-import-start';
+import { localityRegion } from './repo-locality';
 import { type ObjectStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
@@ -153,8 +154,11 @@ async function takeBack(
 export async function createRepository(env: Env, requester: Credentials, body: Json) {
   const cell = await cellForNew(env, body);
   if (cell !== thisCell(env))
-    return askCell(env, cell, '/api/v1/repos', { method: 'POST', body: JSON.stringify(body) });
-  const hint = regionHint(env, body);
+    return askCell(env, cell, '/api/v1/repos', {
+      method: 'POST',
+      body: JSON.stringify({ ...body, region: cell }),
+    });
+  const hint = regionHint(env, body) ?? localityRegion(env);
   if (!hint) {
     const created = await create(env, requester, body);
     return cellsOn(env) ? { ...created, region: cell } : created;
@@ -232,8 +236,10 @@ export async function importRepository(env: Env, requester: Credentials, body: J
   if (cell !== thisCell(env))
     return askCell(env, cell, '/api/v1/repos/import', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, region: cell }),
     });
+  const hint = localityRegion(env);
+  if (hint) env = hintedEnv(env, hint);
   const auth = await timed('import.owner', () => owning(env, requester, body));
   const asked_at = Date.now();
   const { url, github, hidden } = await timed('import.source', () =>
@@ -262,6 +268,10 @@ export async function importRepository(env: Env, requester: Credentials, body: J
         throw e;
       }),
   );
+  if (hint) {
+    await shardOutboxes(env, id);
+    await placeCombiners(env, id);
+  }
   await timed('import.list', () => listRepository(env, id, owner, name, visibility));
   await noteOwnerCell(env, owner);
   const tokens = await timed('import.tokens', () => issueTokens(ctx, body.tokens));

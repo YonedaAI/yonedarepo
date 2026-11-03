@@ -14,6 +14,7 @@ import { deletedOf, forgetDeleted, parkDeleted } from './repo-deleted';
 import { forgetFork } from './repo-forks';
 import { dropDeletedHead } from './repo-head';
 import { dispatchHooks } from './repo-hooks';
+import { fenceReadCopies } from './repo-locality';
 import { ApiError, type Credentials, caller, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
 import { releaseNames, withPaths } from './repo-paths';
@@ -170,6 +171,7 @@ export async function purgeObjects(env: Env, repo: string, skipWindow = false) {
   const auth = skipWindow ? { _system: 'purge', _undo_ms: 0 } : { _system: 'purge' };
   // Refused until the undo window has passed.
   await caller(env, repo, auth as Credentials)({ op: 'repo_purge_target' });
+  await fenceReadCopies(env, repo, [], true);
   await purgePrefix(env, `platform/v1/${repo}/`);
   // Search segments, packs, symbols and facts hold file content.
   await purgePrefix(env, derivedPrefix(repo));

@@ -13,11 +13,13 @@ import { enumerate, rawObjects, waves } from './repo-git-objects';
 import { UploadSession } from './repo-git-sessions';
 import { refreshHead } from './repo-head';
 import { isLarge, putLarge } from './repo-large-files';
+import { localityRegion } from './repo-locality';
 import { parseStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
 import { holdName } from './repo-paths';
 import { PlatformStore } from './repo-platform-store';
 import { visibilityOf } from './repo-public';
+import { hintedEnv, placeCombiners } from './repo-region-hint';
 import { markFork } from './repo-search-directory';
 import { shardOutboxes } from './repo-shards';
 import { FORK_DEPTH, forkDepth, forkSpec, putRawBytes } from './repo-stores';
@@ -33,7 +35,8 @@ const credentialsOf = (ctx: RepoContext) => ctx.call.sign({}) as Credentials;
  * only once its history and refs are in place, so a failed attempt leaves nothing visible.
  */
 export async function forkRepository(ctx: RepoContext, args: Json) {
-  const { env } = ctx;
+  const hint = localityRegion(ctx.env);
+  const env = hint ? hintedEnv(ctx.env, hint) : ctx.env;
   // Forking into an organization (`owner`) needs an owner of it, as creating there does.
   if (args.region !== undefined && args.region !== thisCell(env))
     throw new ApiError('INVALID_INPUT', "A fork stays in its parent's region");
@@ -72,6 +75,7 @@ export async function forkRepository(ctx: RepoContext, args: Json) {
   await platform({ op: 'repo_fork_refs', refs: source.refs });
   await caller(env, ctx.repo, { _system: 'fork' })({ op: 'repo_fork_register', fork: id });
   await shardOutboxes(env, id);
+  if (hint) await placeCombiners(env, id);
   await listRepository(env, id, auth._session.workspace, name, visibility);
   await markFork(env, auth._session.workspace, id);
   await noteOwnerCell(env, auth._session.workspace);
