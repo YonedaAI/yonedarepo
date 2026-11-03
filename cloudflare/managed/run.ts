@@ -230,7 +230,7 @@ async function attempt(
   });
 }
 
-/** A failed run is already recorded: a Landing that couldn't be told is no second failure. */
+/** Settle the failed reading's check before making the run retryable; notification failure is logged. */
 const tellLanding = (p: RunParams, agent: ManagedAgentDefinition, env: ManagedEnv, step: Steps) =>
   step
     .do('no-reading', () => postNoReading(env, p, agent))
