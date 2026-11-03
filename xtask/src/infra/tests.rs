@@ -764,7 +764,7 @@ fn production_import_app_has_its_own_identity_and_key_binding() {
 /// Prod runs what dev runs. A variable may differ only for the reason given here.
 #[test]
 fn prod_has_every_switch_dev_has() {
-    const OWN: [(&str, &str); 15] = [
+    const OWN: [(&str, &str); 16] = [
         ("EMAIL_FROM", "its own sender"),
         ("ADMIN_NOTIFY_EMAIL", "dev mails nobody"),
         ("ADMIN_ACCOUNTS", "its own operators"),
@@ -778,6 +778,10 @@ fn prod_has_every_switch_dev_has() {
         ("REGION_HINT_TEST", "a dev test"),
         ("REGION_SIGNALS", "dev first: prod with its first cell"),
         ("CELLS", "dev first: prod with its first cell"),
+        (
+            "AUTOMATIC_LOCALITY",
+            "dev first: prove regional copies before prod",
+        ),
         ("GITHUB_APP_ID", "its own import App"),
         ("GITHUB_APP_SLUG", "its own import App"),
     ];

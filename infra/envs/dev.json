@@ -295,7 +295,7 @@
           "SPAN_SAMPLE": "off",
           "SERVICE_LEVELS": "on",
           "REQUEST_IDS": "off",
-          "AUTOMATIC_LOCALITY": "off",
+          "AUTOMATIC_LOCALITY": "on",
           "CELLS": "on"
         },
         "secrets_store_secrets": [
