@@ -129,7 +129,7 @@
         "GITHUB_APP_ID, GITHUB_APP_SLUG and the optional secret GITHUB_APP_PRIVATE_KEY (the App's PEM): the production GitHub App for private repository imports. Setup URL: https://yonedarepo.com/github/connected. Dev uses a separate App and key.",
         "WEB_ORIGIN is where people approve device logins (/device). Secrets, set from stdin:",
         "OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)",
-        "Placed next to the data (aws:us-east-1, R2 and CheckContainer in ENAM), batched landing.",
+        "The global entry dispatches default fetch to regional API aliases; authorities and storage stay in place.",
         "PUSH_BUNDLES=on writes a large push's objects as bundles (one R2 object per batch, indexed by the repository authority); dev measured a 12,000-file push at 4.9 s (489 s without). Turn it off before rolling back below the bundle reader.",
         "ACCOUNT_SEARCH=on keeps a search summary per repository in its owner's directory (search:<owner> instances of WorkspaceAuthority) and serves GET /api/v1/search, the search_repos MCP tool and the CLI's search --all; off writes none and the route answers 404, so the website asks each repository itself as before.",
         "AUDIT_LOG=on keeps organizations' audit logs (audit:<org> instances of WorkspaceAuthority) and people's sign-in events; off writes neither and /orgs/:org/audit answers 404. Set it on this Worker and the front Worker together: sign-ins go through both.",
@@ -265,7 +265,8 @@
           "OVERVIEW_BOOTSTRAP": "on",
           "EDGE_FIRST_READS": "on",
           "SEARCH_CODE_MEMO": "on",
-          "RECENT_VERSIONS": "on"
+          "RECENT_VERSIONS": "on",
+          "REGIONAL_API": "on"
         },
         "secrets_store_secrets": [
           {
@@ -534,10 +535,6 @@
           "crons": [
             "* * * * *"
           ]
-        },
-        "placement": {
-          "mode": "targeted",
-          "region": "aws:us-east-1"
         }
       }
     },
@@ -836,7 +833,8 @@
           "GLOBAL_AUTH_LIMITS": "on",
           "STATIC_ASSET_CACHE": "on",
           "FAST_APP_HEAD": "on",
-          "OVERVIEW_MARKDOWN_PRELOAD": "on"
+          "OVERVIEW_MARKDOWN_PRELOAD": "on",
+          "REGIONAL_API": "on"
         },
         "services": [
           {
@@ -1034,6 +1032,32 @@
       "public_ratelimit": "1004",
       "bound": true,
       "placement": "aws:eu-central-1"
+    }
+  ],
+  "api_regions": [
+    {
+      "code": "enam",
+      "placement": "aws:us-east-1"
+    },
+    {
+      "code": "weur",
+      "placement": "aws:eu-central-1"
+    },
+    {
+      "code": "apac",
+      "placement": "aws:ap-southeast-1"
+    },
+    {
+      "code": "oc",
+      "placement": "aws:ap-southeast-2"
+    },
+    {
+      "code": "sam",
+      "placement": "aws:sa-east-1"
+    },
+    {
+      "code": "afr",
+      "placement": "aws:af-south-1"
     }
   ]
 }

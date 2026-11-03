@@ -6,9 +6,9 @@
 // (yonedarepo-prod-*). Browsers reach it through the dev front Worker's
 // /api/v1 proxy (PLATFORM service binding); workers.dev stays on for direct API benches.
 // OWNER_TOKEN  dev-only owner credential (~/.config/yonedarepo/staging.env, name kept)
-// Run next to the data: a commit makes about ten round trips to its repository's
-// Durable Object and R2 (ENAM), so each costs a hop to the client's colo
-// otherwise. New repository objects are created near the placed Worker.
+// The global entry dispatches default fetch to the API region nearest the caller.
+// Fetch-only regional aliases share these original authorities and storage bindings.
+// Repository data and queue ownership stay with the platform authorities.
 // The dev superfan (wrangler.dev-superfan.jsonc) receives this Worker's tail
 // events: outcomes, logs, exceptions and CPU/wall time, with no API token.
 // Batched landing, with commits beginning from and main reads served by the published
@@ -271,10 +271,6 @@
       "stream": "4ff4b2c0c4ec4234934fa94498ab73c5"
     }
   ],
-  "placement": {
-    "mode": "targeted",
-    "region": "aws:us-east-1"
-  },
   "preview_urls": false,
   "queues": {
     "consumers": [
@@ -363,6 +359,34 @@
     {
       "binding": "CELL_WEUR",
       "service": "yonedarepo-dev-platform-weur"
+    },
+    {
+      "binding": "CELL_ENAM",
+      "service": "yonedarepo-dev-api-enam"
+    },
+    {
+      "binding": "API_ENAM",
+      "service": "yonedarepo-dev-api-enam"
+    },
+    {
+      "binding": "API_WEUR",
+      "service": "yonedarepo-dev-api-weur"
+    },
+    {
+      "binding": "API_APAC",
+      "service": "yonedarepo-dev-api-apac"
+    },
+    {
+      "binding": "API_OC",
+      "service": "yonedarepo-dev-api-oc"
+    },
+    {
+      "binding": "API_SAM",
+      "service": "yonedarepo-dev-api-sam"
+    },
+    {
+      "binding": "API_AFR",
+      "service": "yonedarepo-dev-api-afr"
     }
   ],
   "tail_consumers": [
@@ -404,6 +428,7 @@
     "PACK_CACHE": "on",
     "PUSH_BUNDLES": "on",
     "RECENT_VERSIONS": "on",
+    "REGIONAL_API": "on",
     "REGION_HINT_TEST": "on",
     "REGION_SIGNALS": "on",
     "REPO_ERASE": "on",

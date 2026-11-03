@@ -11,9 +11,38 @@ use std::io::Write;
 /// Only missing cross-script services are removed; all durable identities remain.
 pub(crate) fn configuration(config: &Value, missing: &BTreeSet<String>) -> Result<Value> {
     let mut copy = config.clone();
+    let authority = copy["durable_objects"]["bindings"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|b| b["class_name"] == "WorkspaceAuthority")
+        .and_then(|b| b.get("script_name"))
+        .cloned()
+        .or_else(|| {
+            copy["services"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|s| s["binding"] == "SELF" || s["binding"] == "PLATFORM")
+                .and_then(|s| s.get("service"))
+                .cloned()
+        });
     let services = copy["services"]
         .as_array_mut()
         .ok_or("Bootstrap Worker has no services")?;
+    // The staged primary has dispatch off: retain its legacy authority path until
+    // api-enam exists, instead of dropping cross-cell reads during bootstrap.
+    for service in services.iter_mut() {
+        if service["binding"] == "CELL_ENAM"
+            && service["service"]
+                .as_str()
+                .is_some_and(|name| missing.contains(name))
+        {
+            service["service"] = authority
+                .clone()
+                .ok_or("Missing ENAM alias needs its original authority binding")?;
+        }
+    }
     services.retain(|s| {
         s["binding"] == "SELF"
             || !s["service"]
@@ -22,6 +51,10 @@ pub(crate) fn configuration(config: &Value, missing: &BTreeSet<String>) -> Resul
     });
     // Do not advertise automatic placement until the desired bound rollout finishes.
     copy["vars"]["AUTOMATIC_LOCALITY"] = json!("off");
+    // Missing aliases cannot receive public traffic until all desired bindings exist.
+    if copy["vars"].get("REGIONAL_API").is_some() {
+        copy["vars"]["REGIONAL_API"] = json!("off");
+    }
     Ok(copy)
 }
 
@@ -58,7 +91,7 @@ pub(crate) fn insert(
     for step in plan {
         if matches!(step, Step::Deploy{worker,..} if worker==primary) && !inserted {
             for worker in stage.iter().copied() {
-                if prod {
+                if prod && workers[worker].has_containers {
                     out.push(Step::ActiveGate { worker });
                 }
                 out.push(Step::RolloutGate);
@@ -248,6 +281,7 @@ mod tests {
                     .all(|s| s["service"] != region.name || s["binding"] == "SELF")
             );
             c["vars"]["AUTOMATIC_LOCALITY"] = worker.config["vars"]["AUTOMATIC_LOCALITY"].clone();
+            c["vars"]["REGIONAL_API"] = worker.config["vars"]["REGIONAL_API"].clone();
             let mut expected = worker.config.clone();
             expected["services"]
                 .as_array_mut()

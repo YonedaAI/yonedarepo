@@ -12,6 +12,11 @@ fn targets(spec: &Spec) -> Vec<String> {
         .iter()
         .filter(|cell| cell.bound)
         .map(|cell| format!("{}-platform-{}", spec.prefix, cell.code))
+        .chain(
+            spec.api_regions
+                .iter()
+                .map(|region| format!("{}-api-{}", spec.prefix, region.code)),
+        )
         .collect()
 }
 
@@ -101,11 +106,27 @@ mod tests {
     fn only_bound_regions_require_existing_targets() {
         let text = include_str!("../../infra/envs/dev.json");
         let mut value: Value = serde_json::from_str(text).unwrap();
+        value["api_regions"] = json!([]);
         value["cells"][0]["bound"] = json!(false);
         let unbound = Spec::parse(&value.to_string()).unwrap();
         assert!(targets(&unbound).is_empty());
         value["cells"][0]["bound"] = json!(true);
         let bound = Spec::parse(&value.to_string()).unwrap();
         assert_eq!(targets(&bound), ["yonedarepo-dev-platform-weur"]);
+    }
+}
+
+#[cfg(test)]
+mod api_target_tests {
+    use super::*;
+    #[test]
+    fn every_api_alias_is_checked_before_any_remote_mutation() {
+        let spec = Spec::parse(include_str!("../../infra/envs/dev.json")).unwrap();
+        let names = targets(&spec);
+        for code in ["enam", "weur", "apac", "oc", "sam", "afr"] {
+            assert!(names.contains(&format!("yonedarepo-dev-api-{code}")));
+        }
+        assert!(names.contains(&"yonedarepo-dev-platform-weur".into()));
+        assert_eq!(names.len(), 7);
     }
 }

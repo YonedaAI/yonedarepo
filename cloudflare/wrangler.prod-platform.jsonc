@@ -7,7 +7,7 @@
 // GITHUB_APP_ID, GITHUB_APP_SLUG and the optional secret GITHUB_APP_PRIVATE_KEY (the App's PEM): the production GitHub App for private repository imports. Setup URL: https://yonedarepo.com/github/connected. Dev uses a separate App and key.
 // WEB_ORIGIN is where people approve device logins (/device). Secrets, set from stdin:
 // OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)
-// Placed next to the data (aws:us-east-1, R2 and CheckContainer in ENAM), batched landing.
+// The global entry dispatches default fetch to regional API aliases; authorities and storage stay in place.
 // PUSH_BUNDLES=on writes a large push's objects as bundles (one R2 object per batch, indexed by the repository authority); dev measured a 12,000-file push at 4.9 s (489 s without). Turn it off before rolling back below the bundle reader.
 // ACCOUNT_SEARCH=on keeps a search summary per repository in its owner's directory (search:<owner> instances of WorkspaceAuthority) and serves GET /api/v1/search, the search_repos MCP tool and the CLI's search --all; off writes none and the route answers 404, so the website asks each repository itself as before.
 // AUDIT_LOG=on keeps organizations' audit logs (audit:<org> instances of WorkspaceAuthority) and people's sign-in events; off writes neither and /orgs/:org/audit answers 404. Set it on this Worker and the front Worker together: sign-ins go through both.
@@ -251,10 +251,6 @@
   "observability": {
     "enabled": true
   },
-  "placement": {
-    "mode": "targeted",
-    "region": "aws:us-east-1"
-  },
   "preview_urls": false,
   "queues": {
     "consumers": [
@@ -343,6 +339,34 @@
     {
       "binding": "CELL_WEUR",
       "service": "yonedarepo-prod-platform-weur"
+    },
+    {
+      "binding": "CELL_ENAM",
+      "service": "yonedarepo-prod-api-enam"
+    },
+    {
+      "binding": "API_ENAM",
+      "service": "yonedarepo-prod-api-enam"
+    },
+    {
+      "binding": "API_WEUR",
+      "service": "yonedarepo-prod-api-weur"
+    },
+    {
+      "binding": "API_APAC",
+      "service": "yonedarepo-prod-api-apac"
+    },
+    {
+      "binding": "API_OC",
+      "service": "yonedarepo-prod-api-oc"
+    },
+    {
+      "binding": "API_SAM",
+      "service": "yonedarepo-prod-api-sam"
+    },
+    {
+      "binding": "API_AFR",
+      "service": "yonedarepo-prod-api-afr"
     }
   ],
   "tail_consumers": [
@@ -384,6 +408,7 @@
     "PACK_CACHE": "on",
     "PUSH_BUNDLES": "on",
     "RECENT_VERSIONS": "on",
+    "REGIONAL_API": "on",
     "REGION_SIGNALS": "on",
     "REPO_ERASE": "on",
     "REPO_SIZE_GUARD": "on",

@@ -147,9 +147,9 @@
         "(yonedarepo-prod-*). Browsers reach it through the dev front Worker's",
         "/api/v1 proxy (PLATFORM service binding); workers.dev stays on for direct API benches.",
         "OWNER_TOKEN  dev-only owner credential (~/.config/yonedarepo/staging.env, name kept)",
-        "Run next to the data: a commit makes about ten round trips to its repository's",
-        "Durable Object and R2 (ENAM), so each costs a hop to the client's colo",
-        "otherwise. New repository objects are created near the placed Worker.",
+        "The global entry dispatches default fetch to the API region nearest the caller.",
+        "Fetch-only regional aliases share these original authorities and storage bindings.",
+        "Repository data and queue ownership stay with the platform authorities.",
         "The dev superfan (wrangler.dev-superfan.jsonc) receives this Worker's tail",
         "events: outcomes, logs, exceptions and CPU/wall time, with no API token.",
         "Batched landing, with commits beginning from and main reads served by the published",
@@ -299,7 +299,8 @@
           "OVERVIEW_BOOTSTRAP": "on",
           "EDGE_FIRST_READS": "on",
           "SEARCH_CODE_MEMO": "on",
-          "RECENT_VERSIONS": "on"
+          "RECENT_VERSIONS": "on",
+          "REGIONAL_API": "on"
         },
         "secrets_store_secrets": [
           {
@@ -574,10 +575,6 @@
           "crons": [
             "* * * * *"
           ]
-        },
-        "placement": {
-          "mode": "targeted",
-          "region": "aws:us-east-1"
         }
       }
     },
@@ -619,7 +616,8 @@
         ],
         "vars": {
           "CELLS": "on",
-          "AUTOMATIC_LOCALITY": "on"
+          "AUTOMATIC_LOCALITY": "on",
+          "REGIONAL_API": "on"
         },
         "services": [
           {
@@ -938,7 +936,8 @@
           "GLOBAL_AUTH_LIMITS": "on",
           "STATIC_ASSET_CACHE": "on",
           "FAST_APP_HEAD": "on",
-          "OVERVIEW_MARKDOWN_PRELOAD": "on"
+          "OVERVIEW_MARKDOWN_PRELOAD": "on",
+          "REGIONAL_API": "on"
         },
         "services": [
           {
@@ -1502,5 +1501,31 @@
     "artifacts": [
       "yoneda-platform-dev"
     ]
-  }
+  },
+  "api_regions": [
+    {
+      "code": "enam",
+      "placement": "aws:us-east-1"
+    },
+    {
+      "code": "weur",
+      "placement": "aws:eu-central-1"
+    },
+    {
+      "code": "apac",
+      "placement": "aws:ap-southeast-1"
+    },
+    {
+      "code": "oc",
+      "placement": "aws:ap-southeast-2"
+    },
+    {
+      "code": "sam",
+      "placement": "aws:sa-east-1"
+    },
+    {
+      "code": "afr",
+      "placement": "aws:af-south-1"
+    }
+  ]
 }

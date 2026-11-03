@@ -89,6 +89,42 @@ fn committed(file: &str) -> Value {
         "wrangler.prod-deadman.jsonc" => {
             include_str!("../../../cloudflare/wrangler.prod-deadman.jsonc")
         }
+        "wrangler.dev-api-enam.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-api-enam.jsonc")
+        }
+        "wrangler.dev-api-weur.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-api-weur.jsonc")
+        }
+        "wrangler.dev-api-apac.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-api-apac.jsonc")
+        }
+        "wrangler.dev-api-oc.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-api-oc.jsonc")
+        }
+        "wrangler.dev-api-sam.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-api-sam.jsonc")
+        }
+        "wrangler.dev-api-afr.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-api-afr.jsonc")
+        }
+        "wrangler.prod-api-enam.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-api-enam.jsonc")
+        }
+        "wrangler.prod-api-weur.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-api-weur.jsonc")
+        }
+        "wrangler.prod-api-apac.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-api-apac.jsonc")
+        }
+        "wrangler.prod-api-oc.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-api-oc.jsonc")
+        }
+        "wrangler.prod-api-sam.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-api-sam.jsonc")
+        }
+        "wrangler.prod-api-afr.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-api-afr.jsonc")
+        }
         other => panic!("no golden for {other}"),
     };
     jsonc::parse(text).unwrap()
@@ -115,6 +151,12 @@ fn dev_spec_regenerates_the_committed_dev_configs() {
             "wrangler.dev-superfan.jsonc",
             "wrangler.dev-platform.jsonc",
             "wrangler.dev-platform-weur.jsonc",
+            "wrangler.dev-api-enam.jsonc",
+            "wrangler.dev-api-weur.jsonc",
+            "wrangler.dev-api-apac.jsonc",
+            "wrangler.dev-api-oc.jsonc",
+            "wrangler.dev-api-sam.jsonc",
+            "wrangler.dev-api-afr.jsonc",
             "wrangler.dev-edge.jsonc",
             "wrangler.dev-agents-managed.jsonc",
             "wrangler.dev-agents.jsonc",
@@ -155,6 +197,12 @@ fn prod_spec_regenerates_the_committed_prod_configs() {
             "yonedarepo-prod-superfan",
             "yonedarepo-prod-platform",
             "yonedarepo-prod-platform-weur",
+            "yonedarepo-prod-api-enam",
+            "yonedarepo-prod-api-weur",
+            "yonedarepo-prod-api-apac",
+            "yonedarepo-prod-api-oc",
+            "yonedarepo-prod-api-sam",
+            "yonedarepo-prod-api-afr",
             "yonedarepo-prod-agents-managed",
             "yonedarepo-prod-agents",
             "yonedarepo-prod-deadman"
@@ -864,7 +912,7 @@ fn dev_and_prod_share_edge_and_regional_backend_topology() {
             assert_eq!(config["vars"]["REGION_SIGNALS"], "on");
         }
         for (name, region) in [
-            ("platform", "aws:us-east-1"),
+            ("api-enam", "aws:us-east-1"),
             ("platform-weur", "aws:eu-central-1"),
         ] {
             assert_eq!(
