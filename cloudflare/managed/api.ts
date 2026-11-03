@@ -6,37 +6,24 @@
 
 import { isCanonicalAccountIdentifier } from '../../shared/account';
 import {
-  type AgentState,
   MANAGED_AGENTS,
   type ManagedAgentDefinition,
   type ManagedAgentId,
 } from '../../shared/managed-agents';
-import {
-  customizedFields,
-  resolveSettings,
-  SettingsError,
-  validateOverrides,
-} from '../../shared/managed-settings';
+import { resolveSettings, SettingsError, validateOverrides } from '../../shared/managed-settings';
 import { principalName, repoAgents, runNow } from './agent-actions';
 import { setRepos, sync } from './agent-repos';
-import { billingState, credit, removeCard, setAutoTopUp, setupCard } from './billing';
-import { type ManagedEnv, REPO_ID, TOKEN_NAME } from './config';
+import { ApiRefusal } from './api-refusal';
+import { billingState, removeCard, setAutoTopUp, setupCard } from './billing';
+import { type ManagedEnv, REPO_ID } from './config';
 import { runExact } from './exact-run';
 import { ledgerStub } from './ledger';
 import { type Json, Platform } from './platform';
 import { repoStub } from './repo-agents';
-import { stripeEnabled } from './stripe';
 import { WORKSPACE_SCOPE, workspaceStub } from './workspace-agents';
+import { access, agentState, runsOf, workspaceRead } from './workspace-read';
 
-export class ApiRefusal extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-    readonly status: number,
-  ) {
-    super(message);
-  }
-}
+export { ApiRefusal } from './api-refusal';
 
 /**
  * The workspace a path segment names: decoded once, and accepted only when it is a canonical
@@ -53,67 +40,6 @@ export function workspaceName(segment: string | undefined): string | null {
     return null;
   }
   return isCanonicalAccountIdentifier(name) ? name : null;
-}
-
-/** The caller's standing in `workspace`: whether they own it, and its repositories they own. A
- * personal workspace belongs to its account from sign-up, before it has any repository. */
-async function access(caller: Platform, workspace: string) {
-  const [listed, orgs, session] = await Promise.all([
-    caller.repos(),
-    caller.orgs().catch(() => ({ orgs: [] as Json[] })),
-    caller.session().catch(() => null),
-  ]);
-  const repos = ((listed.repos ?? []) as Json[])
-    .filter((r) => r.owner === workspace && r.role === 'owner')
-    .map((r) => ({ id: String(r.id), name: String(r.name) }));
-  const orgOwner = ((orgs.orgs ?? []) as Json[]).some(
-    (o) => o.org === workspace && o.role === 'owner',
-  );
-  const personal = session?.authenticated === true && session.username === workspace;
-  if (!personal && !orgOwner && repos.length === 0)
-    throw new ApiRefusal('FORBIDDEN', 'Only a workspace owner can manage its agents', 403);
-  return repos;
-}
-
-async function runsOf(env: ManagedEnv, repos: string[], agent: string | null, limit: number) {
-  const lists = await Promise.all(repos.map((r) => repoStub(env, r).runs(agent, limit)));
-  return lists.flat().sort((a, b) => b.created_at - a.created_at);
-}
-
-async function agentState(
-  env: ManagedEnv,
-  workspace: string,
-  agent: ManagedAgentDefinition,
-  owned: { id: string }[],
-): Promise<AgentState> {
-  const ws = workspaceStub(env, workspace);
-  const [stored, meta] = await Promise.all([ws.settings(agent.id), ws.meta(agent.id)]);
-  const runs = await runsOf(env, stored.enabled, agent.id, 200);
-  return {
-    ...agent,
-    created_by: meta?.created_by ?? null,
-    created_at: meta?.created_at ?? null,
-    active: meta?.active ?? true,
-    all_repos: meta?.all_repos ?? false,
-    settings: resolveSettings(agent, stored.workspace),
-    customized: customizedFields(stored.workspace),
-    repo_overrides: Object.fromEntries(
-      Object.entries(stored.repos)
-        .map(([r, o]) => [r, customizedFields(o)] as const)
-        .filter(([, fields]) => fields.length > 0),
-    ),
-    // A deleted repository stays stored until the next save, which a form must be able to send.
-    enabled_repos: stored.enabled.filter((r) => owned.some((o) => o.id === r)),
-    history: runs.slice(0, 6).map(({ id, repo, change, value, status, created_at }) => ({
-      id,
-      repo,
-      change,
-      value,
-      status,
-      created_at,
-    })),
-    runs: runs.length,
-  };
 }
 
 async function update(
@@ -195,19 +121,10 @@ export async function managedApi(req: Request, env: ManagedEnv, parts: string[])
   const workspace = workspaceName(segment);
   if (scope !== 'workspaces' || !workspace)
     throw new ApiRefusal('NOT_FOUND', 'Unknown managed API path', 404);
-  const owned = await access(new Platform(env, { forward: req }), workspace);
   const url = new URL(req.url);
   const get = req.method === 'GET';
-  if (!resource && get)
-    return {
-      workspace,
-      capabilities: ['exact_head_review'],
-      agents: await Promise.all(MANAGED_AGENTS.map((a) => agentState(env, workspace, a, owned))),
-      credit: await credit(env, workspace),
-      billing: stripeEnabled(env) ? 'stripe' : 'coming',
-      repos: owned,
-      token_name: TOKEN_NAME,
-    };
+  if (!resource && get) return workspaceRead(req, env, workspace);
+  const owned = await access(new Platform(env, { forward: req }), workspace);
   if (resource === 'agents' && id) {
     const agent = MANAGED_AGENTS.find((a) => a.id === id);
     if (!agent) throw new ApiRefusal('NOT_FOUND', 'Unknown agent', 404);
