@@ -12,8 +12,10 @@ export type LogCommit = {
 };
 
 /** When the commit was written, or landed if it records neither. */
-export const commitTime = (commit: LogCommit) =>
-  commit.authored_at ?? commit.landed?.landed_at ?? undefined;
+export const commitTime = (commit: {
+  authored_at?: number | null;
+  landed?: { landed_at: number } | null;
+}) => commit.authored_at ?? commit.landed?.landed_at ?? undefined;
 
 /** The log stops counting a commit's files here (`repo_store/reads.rs`). */
 const FILES_COUNTED = 1_001;

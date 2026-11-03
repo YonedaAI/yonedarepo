@@ -26,6 +26,9 @@ export function WorkspaceContent({ shell }: { shell: AppShell }) {
     notice,
     setNotice,
     tick,
+    overviewInitial,
+    overviewViewerKey,
+    overviewPrincipal,
     onLoaded,
     setMissing,
     platform,
@@ -118,6 +121,7 @@ export function WorkspaceContent({ shell }: { shell: AppShell }) {
           )}
           {(route.view === 'profile' || route.view === 'repo-name') && (
             <ReadablePage
+              key={overviewViewerKey}
               route={route}
               tick={tick}
               navigate={navigate}
@@ -168,8 +172,9 @@ export function WorkspaceContent({ shell }: { shell: AppShell }) {
           {'repo' in route && (
             <RepoPage
               // A sign-in or sign-out changes who is asking: read the status again.
-              key={`${route.repo}:${tick}:${session.identity?.username ?? ''}`}
+              key={`${route.repo}:${tick}:${overviewPrincipal ?? 'pending'}`}
               route={route}
+              initialStatus={overviewInitial}
               name={row?.name}
               authenticated={session.authenticated}
               username={session.identity?.username}

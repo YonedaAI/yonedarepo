@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { isEmailLink } from '../account-settings/emailLinkRoute';
+import type { NavigationOverview } from '../source-platform/overviewBootstrap';
 import {
   formatSourceRoute,
   parseSourceRoute,
@@ -11,7 +12,10 @@ const current = (): SourceRoute =>
     ? { view: 'home' }
     : parseSourceRoute(window.location.pathname, window.location.search, window.location.hash);
 
-export type Navigate = (next: SourceRoute, options?: { replace?: boolean }) => void;
+export type Navigate = (
+  next: SourceRoute,
+  options?: { replace?: boolean; overview?: NavigationOverview },
+) => void;
 
 /**
  * The shell's address: parsed from the URL, pushed on navigation and followed on back and

@@ -10,6 +10,7 @@ import { CommitView } from './CommitView';
 import { HistoryTab } from './HistoryTab';
 import { ImportStatus } from './ImportStatus';
 import { RepoHoldBanner } from './LegalHold';
+import { type OverviewStatus, overviewStatusPath } from './overviewBootstrap';
 import { ShowEmailsContext } from './people';
 import { ReleaseView } from './ReleaseView';
 import { RepoAgents } from './RepoAgents';
@@ -26,7 +27,6 @@ import { RepoSearch } from './RepoSearch';
 import { ReadOnlyContext, repoAccess, type Visibility } from './repoAccess';
 import { chosenBranch } from './repoBranch';
 import { rememberRepoName, repoNameOf } from './repoNames';
-import type { RepoStatus } from './repoStatus';
 import { SessionView } from './SessionView';
 import { Failure, Loading } from './SourceStatus';
 import { formatSourceRoute, type SourceRoute } from './sourceRoute';
@@ -48,6 +48,7 @@ export function RepoPage({
   onMissing,
   onSignIn,
   onLoaded,
+  initialStatus,
 }: {
   route: RepoRoute;
   /** The name the sidebar shows, until the repository's own status loads. */
@@ -64,10 +65,15 @@ export function RepoPage({
   /** The loaded name and visibility, and whether the viewer may change settings, for the
    * shell's header and sidebar. */
   onLoaded?: (repo: ShownRepo & { visibility: Visibility }) => void;
+  /** The fresh response from this exact named-route navigation, never a stored cache. */
+  initialStatus?: OverviewStatus;
 }) {
   const repo = route.repo;
-  const status = useSource<RepoStatus & { owner_handle?: string | null; insights?: boolean }>(
-    `/repos/${repo}?summary=true`,
+  const refName = route.view === 'overview' ? (route.ref ?? chosenBranch(repo)) : undefined;
+  const status = useSource<OverviewStatus>(
+    refName === undefined ? `/repos/${repo}?summary=true` : overviewStatusPath(repo, refName),
+    undefined,
+    initialStatus,
   );
   // Its readable address (`/<handle>/<name>`): the status names the owner's handle (null
   // while an email-named owner has none: the id address keeps working).
@@ -122,6 +128,9 @@ export function RepoPage({
                   repo={repo}
                   refName={route.ref ?? chosenBranch(repo)}
                   status={data}
+                  bootstrap={data.overview?.ref === refName ? data.overview : undefined}
+                  waiting={!!data.overview && data.overview.ref !== refName}
+                  onRetry={status.reload}
                   facts={
                     <RepoFacts
                       repo={repo}

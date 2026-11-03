@@ -136,13 +136,13 @@ export function CloneButton({
   );
 }
 
-type Detail = {
+export type Detail = {
   commit: string;
   message: string;
   principal: string;
   author_name?: string | null;
   authored_at?: number | null;
-  landings: { refname: string; landed_at: number }[];
+  landings: { landed_at: number }[];
   checks: { name: string; status: string }[];
   gates?: { missing_checks: string[]; failing_checks: string[] };
 };
@@ -177,16 +177,19 @@ export function LatestCommit({
   commit,
   now = Date.now(),
   commitLink,
+  preloaded,
 }: {
   repo: string;
   commit: string;
   now?: number;
   commitLink: (commit: string, children: ReactNode) => ReactNode;
+  /** Fresh detail already included in this page's authorized Overview response. */
+  preloaded?: Detail;
 }) {
   const people = usePeople();
-  const detail = useSource<Detail>(`/repos/${repo}/commits/${commit}`);
+  const detail = useSource<Detail>(preloaded ? null : `/repos/${repo}/commits/${commit}`);
   if (detail.error) return <Failure error={detail.error} onRetry={detail.reload} />;
-  const d = detail.data;
+  const d = preloaded ?? detail.data;
   const written = d?.authored_at ?? d?.landings[0]?.landed_at;
   return (
     <div className="latest-commit" aria-busy={!d || undefined}>

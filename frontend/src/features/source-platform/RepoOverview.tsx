@@ -8,8 +8,8 @@ import { Avatar, avatarOf } from '../shell/Avatar';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { BranchPicker, CloneButton, LatestCommit } from './CodeParts';
 import { useListing } from './codeData';
-import type { LogCommit } from './commitLog';
 import { currentApiOrigin } from './connect';
+import type { OverviewData } from './overviewBootstrap';
 import {
   activityBars,
   type Contributor,
@@ -17,6 +17,7 @@ import {
   logCut,
   MONTH_DAYS,
   OVERVIEW_COMMITS,
+  type OverviewCommit,
 } from './overviewModel';
 import { PageToolbar } from './PageToolbar';
 import { usePeople } from './people';
@@ -57,7 +58,7 @@ function Contributors({ people, cut }: { people: Contributor[]; cut: boolean }) 
   );
 }
 
-function Activity({ commits }: { commits: LogCommit[] }) {
+function Activity({ commits }: { commits: OverviewCommit[] }) {
   const bars = activityBars(commits);
   if (bars.every((bar) => bar.value === 0))
     return (
@@ -84,18 +85,26 @@ function Activity({ commits }: { commits: LogCommit[] }) {
   );
 }
 
-function OverviewActivity({ repo, refName }: { repo: string; refName: string }) {
+function OverviewActivity({
+  repo,
+  refName,
+  preloaded,
+}: {
+  repo: string;
+  refName: string;
+  preloaded?: { commits: OverviewCommit[] };
+}) {
   const activity = useNearViewport<HTMLDivElement>();
-  const log = useSource<{ commits: LogCommit[] }>(
-    activity.near
+  const log = useSource<{ commits: OverviewCommit[] }>(
+    !preloaded && activity.near
       ? `/repos/${repo}/log?ref=${encodeURIComponent(refName)}&limit=${OVERVIEW_COMMITS}`
       : null,
   );
-  const commits = log.data?.commits;
+  const commits = preloaded?.commits ?? log.data?.commits;
   return (
     <div className="overview-numbers" ref={activity.ref}>
       {log.error && <Failure error={log.error} what="activity" onRetry={log.reload} />}
-      {!log.data && !log.error && <Loading what="activity" />}
+      {!commits && !log.error && <Loading what="activity" />}
       {commits && <Activity commits={commits} />}
       {commits && <Contributors people={contributors(commits)} cut={logCut(commits)} />}
     </div>
@@ -109,6 +118,9 @@ export function RepoOverview({
   facts,
   navigate,
   account,
+  bootstrap,
+  waiting = false,
+  onRetry,
 }: {
   repo: string;
   /** The branch on show. */
@@ -118,14 +130,33 @@ export function RepoOverview({
   facts: ReactNode;
   navigate: Navigate;
   account?: string;
+  bootstrap?: OverviewData;
+  waiting?: boolean;
+  onRetry?: () => void;
 }) {
-  const listing = useListing(repo, refName, '');
+  const ordinary = useListing(repo, bootstrap || waiting ? undefined : refName, '');
+  const listing = bootstrap
+    ? {
+        value: bootstrap.tree ? { kind: 'tree' as const, ...bootstrap.tree } : undefined,
+        empty: bootstrap.empty,
+        error: bootstrap.errors?.tree?.message,
+        reload: onRetry,
+      }
+    : waiting
+      ? {}
+      : ordinary;
   const files = { view: 'files', repo, path: '', ref: refName } as const;
   if (listing.empty)
     return (
       <>
         {facts}
-        <RepoFiles route={files} status={status} navigate={navigate} account={account} />
+        <RepoFiles
+          route={files}
+          status={status}
+          navigate={navigate}
+          account={account}
+          initialEmpty={bootstrap?.empty}
+        />
       </>
     );
   const tree = listing.value?.kind === 'tree' ? listing.value : undefined;
@@ -157,21 +188,53 @@ export function RepoOverview({
       {!listing.value && !listing.error && <Loading what="files" />}
       {listing.value && (
         <div className="overview-latest">
-          <LatestCommit
-            repo={repo}
-            commit={listing.value.commit}
-            commitLink={(commit, children) => (
-              <a {...linkTo({ view: 'commit', repo, commit }, navigate)}>{children}</a>
-            )}
-          />
+          {bootstrap?.errors?.latest ? (
+            <Failure
+              error={bootstrap.errors.latest.message}
+              what="the latest commit"
+              onRetry={onRetry}
+            />
+          ) : (
+            <LatestCommit
+              repo={repo}
+              commit={listing.value.commit}
+              preloaded={bootstrap?.latest ?? undefined}
+              commitLink={(commit, children) => (
+                <a {...linkTo({ view: 'commit', repo, commit }, navigate)}>{children}</a>
+              )}
+            />
+          )}
           <a className="overview-all-files" {...linkTo(files, navigate)}>
             View all files
             <ChevronRight size={16} aria-hidden="true" />
           </a>
         </div>
       )}
-      {tree && <OverviewActivity key={`${repo}:${refName}`} repo={repo} refName={refName} />}
-      {readme && <Readme repo={repo} ref={refName} path={readme.name} />}
+      {tree &&
+        (bootstrap?.errors?.activity ? (
+          <Failure error={bootstrap.errors.activity.message} what="activity" onRetry={onRetry} />
+        ) : (
+          <OverviewActivity
+            key={`${repo}:${refName}`}
+            repo={repo}
+            refName={refName}
+            preloaded={bootstrap?.activity ?? undefined}
+          />
+        ))}
+      {bootstrap?.errors?.readme ? (
+        <Failure error={bootstrap.errors.readme.message} what="README" onRetry={onRetry} />
+      ) : bootstrap ? (
+        bootstrap.readme && (
+          <Readme
+            repo={repo}
+            ref={bootstrap.readme.commit}
+            path={bootstrap.readme.path}
+            preloaded={bootstrap.readme}
+          />
+        )
+      ) : (
+        readme && <Readme repo={repo} ref={refName} path={readme.name} />
+      )}
     </section>
   );
 }

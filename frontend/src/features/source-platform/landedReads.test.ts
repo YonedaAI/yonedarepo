@@ -44,6 +44,23 @@ describe('reads after a landing', () => {
     expect(lastUrl()).toBe(`/api/v1/repos/${repo}/refs?min_version=7`);
   });
 
+  it('names the landing on a combined Overview, retaining ordinary summary semantics', async () => {
+    const repo = repoId();
+    await land(repo, 7);
+    await sourceApi(`/repos/${repo}?summary=true&overview=true&ref=main`);
+    expect(lastUrl()).toBe(
+      `/api/v1/repos/${repo}?summary=true&overview=true&ref=main&min_version=7`,
+    );
+    for (const query of [
+      'summary=true',
+      'summary=true&overview=true&ref=topic',
+      'summary=true&overview=true&at=3',
+    ]) {
+      await sourceApi(`/repos/${repo}?${query}`);
+      expect(lastUrl()).toBe(`/api/v1/repos/${repo}?${query}`);
+    }
+  });
+
   it('leaves alone a read that is not of main now', async () => {
     const repo = repoId();
     await land(repo, 7);
