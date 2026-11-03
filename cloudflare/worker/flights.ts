@@ -1,20 +1,28 @@
-// Work in flight in this isolate, joined by requests that want the same answer. The request that
-// starts it can be cancelled, and Workers then drops its continuations: the work never settles
-// and its cleanup never runs. So an entry only counts for a while; a later request starts afresh
-// rather than wait on it for the life of the isolate.
+// Only the owning request may join its unfinished work. Completed data is cached by
+// callers separately; cancelled request I/O must never hold a different request open.
+import { currentScope } from './request-scope';
+
 const STALE_MS = 30_000;
+type Flight<T> = { at: number; work: Promise<T> };
 
 export class Flights<T> {
-  readonly #flying = new Map<string, { at: number; work: Promise<T> }>();
+  readonly #requests = new WeakMap<object, Map<string, Flight<T>>>();
 
-  /** The work in flight for `key`, or `load`'s; `joined` says which. */
+  /** The work in flight for `key` in this request; absent scope always starts afresh. */
   join(key: string, load: () => Promise<T>): { work: Promise<T>; joined: boolean } {
-    const flight = this.#flying.get(key);
+    const scope = currentScope();
+    if (!scope) return { work: load(), joined: false };
+    let flying = this.#requests.get(scope);
+    if (!flying) {
+      flying = new Map();
+      this.#requests.set(scope, flying);
+    }
+    const flight = flying.get(key);
     if (flight && Date.now() - flight.at < STALE_MS) return { work: flight.work, joined: true };
     const work = load().finally(() => {
-      if (this.#flying.get(key)?.work === work) this.#flying.delete(key);
+      if (flying.get(key)?.work === work) flying.delete(key);
     });
-    this.#flying.set(key, { at: Date.now(), work });
+    flying.set(key, { at: Date.now(), work });
     return { work, joined: false };
   }
 }

@@ -1,7 +1,7 @@
 // Accounts that are ours (D1 `platform_accounts.internal`, migration 0013) stay out of every
 // figure. A point holds no account, so the choice is made when it is written: the request's
 // account is noted as its credentials are checked, with no read of its own, and looked up in a
-// list each isolate keeps for five minutes. Budget: docs/load-testing.md. The platform Worker
+// completed list each isolate keeps for five minutes. Budget: docs/load-testing.md. The platform Worker
 // reads the list from D1. The front Worker has no D1, so it asks the platform (RPC, on no HTTP
 // route). A flag therefore reaches every isolate within ten minutes.
 //
