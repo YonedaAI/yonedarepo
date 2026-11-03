@@ -53,6 +53,13 @@ export const REPO_SCHEMA: string[] = [
   // v3 (2026-10-30): a connection whose token was revoked when its last agent was disabled,
   // kept (with a repo-only hook) so the repository's deletion still clears its reviews.
   `ALTER TABLE connection ADD COLUMN revoked_at INTEGER;`,
+  // v4 (2026-11-03): retrying a failed reading retains its previous result and findings.
+  `CREATE TABLE run_attempts (
+     run TEXT NOT NULL,
+     attempt INTEGER NOT NULL,
+     result_json TEXT NOT NULL,
+     PRIMARY KEY (run, attempt)
+   );`,
 ];
 
 /** CreditLedger: append-only credit entries and runs waiting for credit. */

@@ -25,6 +25,7 @@ import {
   clearRepository,
   listRuns,
   OPEN_SQL,
+  previousAttempts,
   runById,
   runFindings,
 } from './repo-runs';
@@ -125,8 +126,9 @@ export class RepoAgents extends DurableObject<ManagedEnv> {
     change: number,
     head: string,
     choice: { harness: string; provider: string; model: string },
+    retryFailed = false,
   ): Claim | null {
-    return this.#tx((sql) => claimRun(sql, repo, agent, change, head, choice));
+    return this.#tx((sql) => claimRun(sql, repo, agent, change, head, choice, retryFailed));
   }
 
   /** Why a workflow attempt must stop, or null while it is the run's current attempt. */
@@ -258,6 +260,10 @@ export class RepoAgents extends DurableObject<ManagedEnv> {
 
   run(id: string): ManagedRun | null {
     return runById(this.#sql, id);
+  }
+
+  previousAttempts(id: string) {
+    return previousAttempts(this.#sql, id);
   }
 
   runs(agent: string | null, limit: number): ManagedRun[] {

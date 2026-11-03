@@ -204,6 +204,7 @@ export async function reviewChanges(
   changes: Record<string, any>[],
   opened: boolean,
   limit = Number.POSITIVE_INFINITY,
+  retryFailed = false,
 ) {
   const repo = repoStub(env, repoId);
   const workspace = workspaceStub(env, ctx.account);
@@ -229,15 +230,22 @@ export async function reviewChanges(
           }[]
         ).map((f) => String(f.path));
       if (!triggerMatches(s.trigger, String(change.branch), paths ?? [])) continue;
-      const claim = await repo.claim(repoId, id, change.number, String(change.head), {
-        harness: s.harness,
-        provider: s.provider,
-        model: s.model,
-      });
+      const claim = await repo.claim(
+        repoId,
+        id,
+        change.number,
+        String(change.head),
+        {
+          harness: s.harness,
+          provider: s.provider,
+          model: s.model,
+        },
+        retryFailed,
+      );
       if (!claim) continue;
-      if (!claim.created) counts.already++;
-      // A head claimed before is started again only while it waits for its instance (a lost
-      // start); the instance id makes that a no-op otherwise.
+      if (!claim.created && !(retryFailed && claim.restarted)) counts.already++;
+      // A previous head starts only while queued: a lost start or an explicitly authorized
+      // new attempt. The run-and-attempt Workflow identity makes repeated starts a no-op.
       if (!claim.created && !claim.queued) continue;
       await startInstance(env, {
         repo: repoId,
@@ -249,7 +257,7 @@ export async function reviewChanges(
         head: String(change.head),
       });
       if (claim.created || claim.restarted) counts.begun++;
-      if (claim.created) counts.started++;
+      if (claim.created || (retryFailed && claim.restarted)) counts.started++;
     }
   }
   return counts;

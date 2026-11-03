@@ -93,6 +93,7 @@ export async function postNoPlan(env: ManagedEnv, p: RunParams, agent: ManagedAg
  * silent: with Land when cleared any failed check goes around, and an outage is no fault of the
  * work. Why the run failed stays on the run, for the owner: this comment is on the change. */
 export async function postNoReading(env: ManagedEnv, p: RunParams, agent: ManagedAgentDefinition) {
+  if (await repoStub(env, p.repo).stopReason(p.run, p.attempt)) return;
   const connection = await repoStub(env, p.repo).connection();
   if (!connection || connection.revoked) return;
   const platform = new Platform(env, { token: connection.token });
@@ -102,7 +103,7 @@ export async function postNoReading(env: ManagedEnv, p: RunParams, agent: Manage
   if (change.status !== 'open' || change.head !== p.head) return;
   const ref = reference(p, 'summary');
   if (!hasRef((change.comments ?? []) as { body?: string }[], ref)) {
-    const line = `**${agent.defaults.name}** could not finish on \`${p.head.slice(0, 10)}\`, so this head has no reading. Push again to run it.`;
+    const line = `**${agent.defaults.name}** could not finish on \`${p.head.slice(0, 10)}\`, so this head has no reading. Agents → ${agent.defaults.name}: choose Run now to retry.`;
     await platform.comment(p.repo, p.change, `${line}${footer(agent, ref)}`).catch((e) => {
       if (!commentRefused(e)) throw e;
     });
