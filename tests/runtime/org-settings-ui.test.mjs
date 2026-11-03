@@ -34,7 +34,7 @@ test('organization layout, recovery focus and permission states in the served ap
     for(const width of [1440,375]) for(const colorScheme of ['light','dark']) {
       const context=await browser.newContext({viewport:{width,height:900},colorScheme});
       const page=await context.newPage();
-      let mode='full', deleted=[removed], release;
+      let mode='full', deleted=[removed], members=[...org.members], release;
       const errors=[];
       page.on('pageerror',error=>errors.push(error.message));
       await page.route('**/api/**',async route=>{
@@ -47,8 +47,16 @@ test('organization layout, recovery focus and permission states in the served ap
         else if(path==='/api/v1/orgs/ui_demo'){
           if(mode==='loading')await new Promise(resolve=>{release=resolve;});
           if(mode==='error')return route.fulfill({status:400,json:{error:{code:'INVALID_INPUT',message:'Could not load the organization.'}}});
-          body={...org,role:mode==='member'?'member':'owner',teams:mode==='empty'?[]:org.teams};
+          body={...org,members,role:mode==='member'?'member':'owner',teams:mode==='empty'?[]:org.teams};
         }
+        else if(path==='/api/v1/orgs/ui_demo/member-candidates'){
+          const q=new URL(route.request().url()).searchParams.get('q');
+          body={candidates:q==='@ali'?[{identifier:'alice',handle:'alice',member:false}]:q==='friend@example.com'?[{identifier:q,handle:'friend',member:false}]:q==='@owner'?[{identifier:'owner',handle:'owner',member:true}]:[]};
+        }
+        else if(path==='/api/v1/orgs/ui_demo/members'){
+          const added=route.request().postDataJSON();members.push({account:added.account,role:added.role,added_at:stamp,added_by:`user:${owner}`});body={added:true};
+        }
+        else if(path==='/api/v1/orgs/ui_demo/members/alice'){members=members.filter(m=>m.account!=='alice');body={removed:true};}
         else if(path==='/api/v1/orgs/ui_demo/repos')body={repos:mode==='empty'?[]:[{id:`r${'2'.repeat(20)}`,name:'active-service',created_at:stamp,owner:'ui_demo'}]};
         else if(path==='/api/v1/orgs/ui_demo/hold')body={org:mode==='held'?{owner:{at:stamp,by:`user:${owner}`}}:null,repos:{}};
         else if(path==='/api/v1/orgs/ui_demo/repos/deleted'){
@@ -67,6 +75,23 @@ test('organization layout, recovery focus and permission states in the served ap
       };
       await open('full');
       await page.getByRole('heading',{name:'Members',exact:true}).waitFor();
+      const accountInput=page.getByRole('combobox',{name:'Account',exact:true});
+      assert.equal(await accountInput.count(),1,'Account must search for an existing user');
+      const addMember=page.getByRole('button',{name:'Add member',exact:true});
+      await accountInput.fill('@ali');
+      await page.getByRole('option',{name:'@alice',exact:true}).waitFor();
+      assert.equal(await addMember.isDisabled(),true,'typing must not select or add an account');
+      await accountInput.press('ArrowDown');await accountInput.press('Enter');
+      assert.equal(await addMember.isEnabled(),true);
+      await addMember.click();
+      const alice=page.getByRole('row').filter({has:page.getByText('alice',{exact:true})});
+      await alice.waitFor();assert.equal(await accountInput.inputValue(),'');
+      page.once('dialog',dialog=>dialog.accept());await alice.getByRole('button',{name:'Remove',exact:true}).click();await alice.waitFor({state:'detached'});
+      await accountInput.fill('friend@example.com');await page.getByRole('option',{name:'@friend',exact:true}).click();assert.equal(await addMember.isEnabled(),true);
+      await accountInput.fill('@al');assert.equal(await addMember.isDisabled(),true,'editing clears the selected identity');
+      await accountInput.fill('@owner');await page.getByRole('option',{name:/@owner.*Already a member/}).waitFor();assert.equal(await addMember.isDisabled(),true);
+      await accountInput.fill('absent@example.com');await page.getByText('No matching account.',{exact:true}).waitFor();assert.equal(await addMember.isDisabled(),true);await shot('member-search-empty');
+      await accountInput.fill('');
       await shot('full');
       const disclosure=page.locator('.org-deleted > summary');
       await disclosure.focus(); await page.keyboard.press('Enter');
