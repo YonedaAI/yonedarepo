@@ -5,6 +5,7 @@ import { homeCell, otherCells, placed } from './account-place';
 import { cellFetcher, cellOfRepo, cellsOn, repoInPath, thisCell } from './cells';
 import { forwardRequest } from './forward-request';
 import { log } from './log';
+import { API_DISPATCH_HEADER } from './regional-api';
 import { ApiError, type Json } from './repo-ops';
 import { currentScope } from './request-scope';
 import type { Env } from './types';
@@ -13,7 +14,14 @@ import type { Env } from './types';
 export const HERE_HEADER = 'x-yoneda-cell';
 const HERE = 'here';
 /** The caller's, carried to a request made here for it. */
-const CARRIED = ['authorization', 'cookie', 'origin', 'cf-connecting-ip', 'user-agent'];
+const CARRIED = [
+  'authorization',
+  'cookie',
+  'origin',
+  'cf-connecting-ip',
+  'user-agent',
+  API_DISPATCH_HEADER,
+];
 const CELL_MS = 8_000;
 
 export const askedHere = (req: Request) => req.headers.get(HERE_HEADER) === HERE;

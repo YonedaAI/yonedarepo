@@ -71,7 +71,7 @@ export function carriedHeaders(): Record<string, string> | undefined {
 export function carriedRequest(req: Request): Request {
   const headers = carriedHeaders();
   if (!headers) return req;
-  const forwarded = new Request(req);
+  const forwarded = new Request(req, { cf: req.cf });
   forwarded.headers.set(REQUEST_ID_HEADER, headers[REQUEST_ID_HEADER]);
   return forwarded;
 }

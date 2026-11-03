@@ -50,6 +50,8 @@ const neutral = new Set([
   './internal-accounts',
   // Continent and region codes from `request.cf`; imports only types.
   './region',
+  // Deterministic geography-to-binding dispatch; neutral HTTP transport, no domain rules.
+  './regional-api',
   // Which cell a repository, a region or a token belongs to; imports only types.
   './cells',
   './cell-names',

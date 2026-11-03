@@ -49,6 +49,7 @@ export class Platform {
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
         redirect: 'manual',
+        cf: 'forward' in this.credential ? this.credential.forward.cf : undefined,
       }),
     );
     const answer = (await res.json().catch(() => null)) as Json | null;

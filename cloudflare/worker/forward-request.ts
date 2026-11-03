@@ -9,7 +9,7 @@ export async function forwardRequest(service: Fetcher, req: Request): Promise<Re
     // A network client can attach bytes to a read, but Fetch forbids constructing such a
     // Request with a replacement body. Our read routes use the URL, never that input.
     await req.body.cancel().catch(() => undefined);
-    return service.fetch(new Request(req, { body: null }));
+    return service.fetch(new Request(req, { body: null, cf: req.cf }));
   }
   const input = req.body.getReader();
   let stopped: Promise<void> | undefined;
@@ -24,7 +24,7 @@ export async function forwardRequest(service: Fetcher, req: Request): Promise<Re
   });
   let response: Response;
   try {
-    response = await service.fetch(new Request(req, { body }));
+    response = await service.fetch(new Request(req, { body, cf: req.cf }));
   } catch (e) {
     await stop(e);
     throw e;

@@ -17,6 +17,7 @@ import { forwardRequest } from './forward-request';
 import { error, response } from './http';
 import { GIT_PATH } from './readable-paths';
 import { regionOfRequest } from './region';
+import { regionalDispatch } from './regional-api';
 import { carriedRequest } from './request-scope';
 import type { Env } from './types';
 
@@ -51,6 +52,8 @@ export async function cellOfRequest(req: Request, env: Env, url: URL): Promise<s
 
 /** `req` passed to the cell it belongs in. */
 export async function toCell(req: Request, env: Env, url = new URL(req.url)) {
+  const regional = regionalDispatch(req, env);
+  if (regional) return regional;
   const cell = await cellOfRequest(req, env, url);
   const fetcher = cellFetcher(env, cell) ?? cellFetcher(env, FIRST_CELL);
   if (!fetcher) return error('NOT_FOUND', 'The source platform is not bound', 404);
@@ -88,7 +91,8 @@ export function frontEnv(env: Env): Env {
  * request landed. */
 export function signInEnv(req: Request, env: Env): Env {
   if (!cellsOn(env)) return env;
-  const hint = cellOfRegion(env, regionOfRequest(req));
+  const origin = regionOfRequest(req);
+  const hint = env.REGIONAL_API === 'on' && origin ? origin : cellOfRegion(env, origin);
   return { ...env, WORKSPACES: hinted(env.WORKSPACES, hint) };
 }
 
