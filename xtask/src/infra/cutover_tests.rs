@@ -319,7 +319,11 @@ fn dev_and_prod_never_share_a_rate_limit_namespace() {
 fn read_performance_switches_have_dev_prod_parity() {
     for (_, workers) in [dev(), prod()] {
         for name in ["platform", "platform-weur"] {
-            for flag in ["SHARED_READ_TREES", "JOINED_REPO_PATH"] {
+            for flag in [
+                "SHARED_READ_TREES",
+                "JOINED_REPO_PATH",
+                "OVERVIEW_BOOTSTRAP",
+            ] {
                 assert_eq!(
                     role(&workers, name).config["vars"][flag],
                     "on",
