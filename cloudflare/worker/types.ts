@@ -223,6 +223,8 @@ export interface Env {
   REGION_HINT_TEST?: string;
   /** Cloudflare Web Analytics site token (front Worker); set, public pages carry its beacon. */
   WEB_ANALYTICS_TOKEN?: string;
+  /** Immutable browser cache for fingerprinted public build assets only. */
+  STATIC_ASSET_CACHE?: string;
   /** Site traffic reports (platform Worker, platform-site-traffic.ts): the account and dataset the
    * Analytics Engine SQL API reads, with an Account Analytics Read token; any unset, none. The
    * same token reads Web Analytics for WEB_ORIGIN's host (platform-web-analytics.ts). */
