@@ -1,0 +1,53 @@
+# Public-site entry split budget
+
+The first-load f87 trace downloaded 336,264 wire bytes of app JavaScript before
+rendering a repository. Its entry statically includes SiteRoot and every public
+page; useAppShell also imports signedInHint from SiteRoot. SiteRoot's SEO import
+pulls 31 eager docs and 15 blog posts into that same entry despite lazy SiteDocs.
+The source content is 249,349 bytes; that is attribution, not a wire saving.
+
+The current fb4 build entry is 1,083,759 bytes, gzip 334,789, Brotli 272,899 and
+local zstd 335,464 bytes. Record exact after-build entry/public chunks using the
+same compressors; local compression does not promise Cloudflare's wire result.
+
+Repository and Agents entry must not fetch public-site chunks. Extract only the
+browser's sign-in hint into a small module, and load SiteRoot on public routes.
+No API request, private data cache or session reuse is added. Keep the static
+public prerender and SEO generation direct. On an initial public document, keep
+its prerendered HTML until its client component is ready; SPA public navigation
+uses the existing loading/error pattern. The initial root route's signed-in hint
+continues to choose the workspace until fresh session discovery answers.
+
+Validate Overview, Agents, public home/docs/deep links/sign-in, navigation back,
+chunk failure and wide/375px/light/dark/keyboard behavior in the served app.
+The f87 cold core was 1,587 ms while resolve took 1,180 ms (838 ms server): a
+smaller bundle alone does not remove that backend wait. Claim bytes and requests
+from the build/served proof, not a latency improvement before live measurement.
+
+## Same-base build result
+
+Both builds include dev `2ce41ce7` (notification and Overview spacing fixes).
+All compressed columns use the same local gzip settings, not mixed wire codecs.
+
+| JavaScript | Before | After | Change |
+|---|---:|---:|---:|
+| Initial static dependency closure, raw | 1,085,764 B | 752,225 B | −333,539 B |
+| Initial static dependency closure, gzip | 335,613 B | 226,070 B | −109,543 B (32.6%) |
+| Entry file alone, gzip | 335,184 B | 206,431 B | −128,753 B |
+| Public initial dependency closure, gzip | 335,613 B | 339,387 B | +3,774 B |
+
+The public chunk is 336,961 B raw / 113,317 B gzip. Docs UI remains another
+15,682 B raw (about 6 KB gzip) when opened. The shared chunk costs are included
+in the closure above. The app entry contains no eager docs/blog content paths.
+
+Public HTML preloads its immutable client chunk and its 303 B stylesheet. The
+blank app HTML adds only an exact `/signin` or `/signup` head guard (optional
+trailing slash) to preload those same assets; repository/Agents paths do not
+request them. Initial public HTML stays visible until the loaded component can
+mount. Later client navigation uses the shared loading state and existing error
+boundary/reload path. Static public prerender and SEO generation remain direct.
+
+A later quiet dev baseline measured cold core around 1,008 ms median, with the
+rich parser adding about 300 ms in two fresh samples. That is separate from this
+payload reduction; its head preload is deferred to a focused follow-up. No live
+latency gain is claimed by the local served route tests.

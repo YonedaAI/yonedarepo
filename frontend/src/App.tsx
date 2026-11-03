@@ -9,7 +9,7 @@ import { CrumbSwitcher } from './features/shell/RepoPicker';
 import { saveCollapsed } from './features/shell/theme';
 import { useAppShell } from './features/shell/useAppShell';
 import { WorkspaceContent } from './features/shell/WorkspaceContent';
-import { SiteRoot } from './features/site/SiteRoot';
+import { SiteEntry } from './features/site/SiteEntry';
 import { DevicePage } from './features/source-platform/DevicePage';
 import { repoNameOf } from './features/source-platform/repoNames';
 import { breadcrumbs } from './features/workspace/breadcrumbs';
@@ -58,7 +58,7 @@ export function App() {
   } = shell;
   if (site)
     return (
-      <SiteRoot
+      <SiteEntry
         // A refused provider sign-in that landed on the public home shows the sign-in page.
         site={signInError && site.page === 'home' ? { page: 'signin', mode: 'login' } : site}
         session={session}

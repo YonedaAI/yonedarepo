@@ -7,6 +7,7 @@
 import react from '@vitejs/plugin-react';
 import { createServer, type Plugin } from 'vite';
 import type { SeoManifest } from './src/features/site/seo';
+import { publicEntryTemplates } from './vite-public-entry';
 
 type Prerender = {
   seoManifest(): SeoManifest;
@@ -38,6 +39,15 @@ export function prerenderSite(): Plugin {
       const index = bundle['index.html'];
       const template = index?.type === 'asset' ? String(index.source) : '';
       if (!template.includes(ROOT)) this.error('index.html has no empty #root to prerender into');
+      const client = Object.values(bundle).find((item) =>
+        item.type === 'chunk' && item.facadeModuleId?.endsWith('/src/features/site/SiteRoot.tsx'));
+      const metadata = client && 'viteMetadata' in client
+        ? client.viteMetadata as { importedCss?: Set<string> }
+        : undefined;
+      const templates = client
+        ? publicEntryTemplates(template, client.fileName, [...(metadata?.importedCss ?? [])])
+        : { app: template, site: template };
+      if (index?.type === 'asset') index.source = templates.app;
       const server = await createServer({
         configFile: false,
         root,
@@ -55,7 +65,7 @@ export function prerenderSite(): Plugin {
           this.emitFile({
             type: 'asset',
             fileName: prerenderedFile(route.path),
-            source: template.replace(ROOT, `<div id="root">${markup}</div>${guard}`),
+            source: templates.site.replace(ROOT, `<div id="root">${markup}</div>${guard}`),
           });
         }
         this.emitFile({

@@ -6,6 +6,8 @@ import { applyTheme, readTheme } from './features/shell/theme';
 import { reportClientError } from './features/site/clientErrors';
 import { rememberLanding, tabStorage } from './features/site/landingSource';
 import { sendPagePing } from './features/site/pagePing';
+import { prepareSiteEntry } from './features/site/SiteEntry';
+import { signedInHint } from './features/site/signedInHint';
 import './styles.css';
 
 // How the reader last moved: base.css keeps a select's focus ring for the keyboard only.
@@ -43,13 +45,18 @@ applyTheme(readTheme());
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Application root is missing');
-createRoot(root).render(
-  <StrictMode>
-    <AppErrorBoundary>
-      <App />
-    </AppErrorBoundary>
-  </StrictMode>,
-);
+const mount = () =>
+  createRoot(root).render(
+    <StrictMode>
+      <AppErrorBoundary>
+        <App />
+      </AppErrorBoundary>
+    </StrictMode>,
+  );
+const publicEntry = prepareSiteEntry(window.location.pathname, signedInHint());
+// Rejected chunks enter the same reload/error boundary as later client navigation.
+if (publicEntry) void publicEntry.then(mount, mount);
+else mount();
 
 // Once per page load, after it: a scanner that never runs JavaScript sends nothing.
 const ping = () =>
