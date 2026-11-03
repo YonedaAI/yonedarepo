@@ -49,12 +49,12 @@ export async function api<T>(
       reject(timeoutError);
     }, options?.timeout ?? 20_000);
   });
+  const early =
+    body === undefined && !options?.method
+      ? takeEarlyResponse(`/api/${path}`, controller.signal)
+      : undefined;
   const request = (async () => {
-    const early =
-      body === undefined && !options?.method
-        ? takeEarlyResponse(`/api/${path}`, controller.signal)
-        : undefined;
-    const response = await (early ??
+    const response = await (early?.response ??
       fetch(`/api/${path}`, {
         method: options?.method ?? (body === undefined ? 'GET' : 'POST'),
         headers,
@@ -80,6 +80,7 @@ export async function api<T>(
     if (controller.signal.aborted) throw controller.signal.reason;
     throw error;
   } finally {
+    early?.release();
     clearTimeout(timer);
     readSignal?.removeEventListener('abort', cancelRead);
   }

@@ -1,6 +1,7 @@
+type EarlyRead = { response: Promise<Response>; release: () => void };
 type EarlyHandoff = {
-  version: 1;
-  take: (url: string, signal?: AbortSignal) => Promise<Response> | undefined;
+  version: 2;
+  take: (url: string, signal?: AbortSignal) => EarlyRead | undefined;
   clear: () => void;
 };
 
@@ -54,7 +55,7 @@ export function beginEarlyReads(target: Window, reservedRoots: readonly string[]
     entries.set(url, { response, controller });
   };
   target.__yonedaEarlyReads = {
-    version: 1,
+    version: 2,
     clear,
     take(url, signal) {
       if (cleared || Date.now() > deadline || locationKey() !== documentKey) {
@@ -70,15 +71,17 @@ export function beginEarlyReads(target: Window, reservedRoots: readonly string[]
       const cancel = () => entry.controller.abort(signal?.reason);
       if (signal?.aborted) cancel();
       else signal?.addEventListener('abort', cancel, { once: true });
-      return entry.response
-        .then((response) => {
+      return {
+        // Headers are not completion: the caller owns cancellation through body parsing.
+        response: entry.response.then((response) => {
           if (entry.controller.signal.aborted)
             throw (
               entry.controller.signal.reason ?? new DOMException('Read cancelled', 'AbortError')
             );
           return response;
-        })
-        .finally(() => signal?.removeEventListener('abort', cancel));
+        }),
+        release: () => signal?.removeEventListener('abort', cancel),
+      };
     },
   };
   timer = setTimeout(clear, 30_000);
@@ -101,7 +104,7 @@ export function beginEarlyReads(target: Window, reservedRoots: readonly string[]
 /** Only the exact initial document can donate a response; subsequent reads stay fresh. */
 export function takeEarlyResponse(url: string, signal?: AbortSignal) {
   const handoff = typeof window === 'undefined' ? undefined : window.__yonedaEarlyReads;
-  return handoff?.version === 1 ? handoff.take(url, signal) : undefined;
+  return handoff?.version === 2 ? handoff.take(url, signal) : undefined;
 }
 
 export function clearEarlyReads() {

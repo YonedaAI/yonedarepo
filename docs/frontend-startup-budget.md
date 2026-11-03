@@ -29,6 +29,13 @@ is an attempted request, not permission for an uncounted duplicate. Existing vie
 generation/principal checks continue to decide what can render. StrictMode remount
 and superseded initial requests must not replay responses for a new viewer.
 
+The versioned handoff explicitly transfers a response and a release function. Its
+cancellation bridge remains installed until the consumer finishes reading the
+body or its deadline/cancellation settles, rather than ending when headers arrive.
+Consumers release the bridge in finally; an aborted JSON body cannot become a
+successful empty source response. Document-navigation cancellation still owns
+only unconsumed handoffs, not an independently adopted session request.
+
 Validate with targeted contract and API integration tests, including failure,
 abort, refresh, changed URL/viewer, switch off, reserved roots and exact resolver
 paths. Check served production-build HTML with a held main bundle to prove early
@@ -39,7 +46,7 @@ and live no-interception comparison after integration.
 
 ## Local implementation evidence
 
-The standalone production-build head script is 3,297 bytes and starts requests before React loads.
+The standalone production-build head script is 3,326 bytes and starts requests before React loads.
 A controlled 800 ms hold on the main bundle moved first-request start from
 840 to 5 ms for Overview and 839 to 6 ms for Agents. Those single controlled
 samples prove overlap, not typical deployment latency. Three normal-cache local
