@@ -1,8 +1,15 @@
 // What tail events cannot show, read from Cloudflare's GraphQL Analytics API: queue backlog,
 // lag and dead-lettering per queue, Durable Object resource kills, and check container disk. One
-// request per run keeps within the API's query budget. Errors carry only status codes and
+// GraphQL request per declared authority keeps the query budget explicit. Errors carry only status codes and
 // Cloudflare's error messages, never request headers.
-import type { WatchIds, WatchSite, WatchTarget } from './config';
+
+import { resolveIds } from './analytics-resources';
+import type { WatchSite, WatchTarget } from './config';
+import { TelemetryError } from './telemetry-error';
+
+export { resolveIds } from './analytics-resources';
+export { TelemetryError } from './telemetry-error';
+
 import { DELIVERY_QUERY, type QueueMinutes, queueMinutes } from './delivery';
 
 export const API_URL = 'https://api.cloudflare.com/client/v4';
@@ -18,31 +25,24 @@ export interface QueueStats {
   retries: number | null;
   deadLettered: number;
 }
-export interface Analytics {
-  window: { start: string; end: string };
+export interface AuthorityAnalytics {
   /** Platform-side CPU, memory and fatal kills per Durable Object class. */
   objectKills: Record<keyof WatchTarget['namespaces'], number>;
   /** The platform's jobs queue, and the dead letter queue it shares with checks. */
   queue: QueueStats & { deadLetterBacklog: number };
   /** On the wide watch. */
   checks: QueueStats | null;
-  managed: (QueueStats & { deadLetterBacklog: number }) | null;
   containers: { maxDiskPercent: number | null };
+}
+export interface Analytics extends AuthorityAnalytics {
+  window: { start: string; end: string };
+  managed: (QueueStats & { deadLetterBacklog: number }) | null;
+  regional?: Record<string, AuthorityAnalytics>;
 }
 export interface AnalyticsSource {
   collect(now: number): Promise<Analytics>;
   /** The jobs queue by the minute over a window; a source that can't has no such method. */
   delivery?(start: string, end: string): Promise<QueueMinutes>;
-}
-
-/** A telemetry source could not be read; `reason` is safe to store and show. */
-export class TelemetryError extends Error {
-  constructor(
-    readonly reason: 'config' | 'disabled' | 'token_missing' | 'fetch_failed' | 'tail_silent',
-    detail: string,
-  ) {
-    super(detail);
-  }
 }
 
 const QUERY = `query Superfan($account: string!, $start: Time!, $end: Time!,
@@ -110,87 +110,32 @@ export function parseAccount(
   };
 }
 
-/**
- * The watched Worker's ids by name: its Durable Object namespaces by class (script settings),
- * its `<script>-jobs` and `<script>-dead-letter` queues and its `<script>-checkcontainer`
- * application. Three read-only REST calls; a failure is a configuration finding.
- */
-export async function resolveIds(site: WatchSite, token: string): Promise<WatchIds> {
-  const account = `/accounts/${site.account}`;
-  const get = async (path: string): Promise<Row[] | Row> => {
-    const res = await fetch(`${API_URL}${account}${path}`, {
-      headers: { authorization: `Bearer ${token}` },
-      redirect: 'manual',
-      signal: AbortSignal.timeout(10_000),
-    }).catch(() => null);
-    const body = (await res?.json().catch(() => null)) as Row | null;
-    if (!res?.ok || body?.success !== true)
-      throw new TelemetryError(
-        'config',
-        `Cannot look up watch ids: GET ${path.split('?')[0]} HTTP ${res?.status ?? 'none'} (the analytics token also needs Workers Scripts Read, Queues Read and Containers Read)`,
-      );
-    return body.result;
-  };
-  const [settings, queues, apps] = await Promise.all([
-    get(`/workers/scripts/${site.script}/settings`) as Promise<Row>,
-    get('/queues?per_page=100') as Promise<Row[]>,
-    get('/containers/applications') as Promise<Row[]>,
-  ]);
-  const namespace = (cls: string) =>
-    (settings?.bindings as Row[] | undefined)?.find(
-      (b) => b.type === 'durable_object_namespace' && b.class_name === cls && !b.script_name,
-    )?.namespace_id;
-  const queue = (name: string) => queues?.find?.((q) => q.queue_name === name)?.queue_id;
-  const prefix = site.script.replace(/-platform$/, '');
-  const named = (name: string) => [name, queue(name)];
-  const wideQueues = site.wide
-    ? [
-        named(`${site.script}-checks`),
-        named(`${prefix}-managed-runs`),
-        named(`${prefix}-managed-dead-letter`),
-      ]
-    : [];
-  const found = {
-    SourceRepository: namespace('SourceRepository'),
-    CheckContainer: namespace('CheckContainer'),
-    [`${site.script}-jobs`]: queue(`${site.script}-jobs`),
-    [`${site.script}-dead-letter`]: queue(`${site.script}-dead-letter`),
-    [`${site.script}-checkcontainer`]: apps?.find?.(
-      (a) => a.name === `${site.script}-checkcontainer`,
-    )?.id,
-    ...Object.fromEntries(wideQueues),
-  };
-  const missing = Object.entries(found).filter(([, value]) => typeof value !== 'string');
-  if (missing.length)
-    throw new TelemetryError(
-      'config',
-      `Cannot look up watch ids: ${missing.map(([name]) => name).join(', ')} not found`,
-    );
-  const v = Object.values(found) as string[];
-  return {
-    namespaces: { source_repository: v[0], check_runs: v[1] },
-    queues: {
-      jobs: v[2],
-      deadLetter: v[3],
-      ...(site.wide ? { checks: v[5], managedRuns: v[6], managedDeadLetter: v[7] } : {}),
-    },
-    checkApp: v[4],
-  };
-}
-
 export class CloudflareAnalytics implements AnalyticsSource {
   private resolved: WatchTarget | null = null;
+  private resolving: Promise<WatchTarget> | null = null;
   constructor(
     private readonly site: WatchSite,
     private readonly token: string,
   ) {}
 
   /** The configured ids, else the ones looked up by name (once per instance, so per run). */
-  async target(): Promise<WatchTarget> {
-    if (!this.resolved) {
-      const { ids, ...site } = this.site;
-      this.resolved = { ...site, ...(ids ?? (await resolveIds(this.site, this.token))) };
-    }
+  target(): Promise<WatchTarget> {
+    if (this.resolved) return Promise.resolve(this.resolved);
+    // One source instance belongs to one watch pass: collect/delivery may overlap.
+    this.resolving ??= this.loadTarget().finally(() => {
+      this.resolving = null;
+    });
+    return this.resolving;
+  }
+
+  private async loadTarget(): Promise<WatchTarget> {
+    const { ids, ...site } = this.site;
+    this.resolved = {
+      ...site,
+      ...(ids && !site.backendScripts?.includes(`${site.script}-weur`)
+        ? ids
+        : await resolveIds(this.site, this.token)),
+    };
     return this.resolved;
   }
 
@@ -201,14 +146,29 @@ export class CloudflareAnalytics implements AnalyticsSource {
       end: end.toISOString(),
     };
     const t = await this.target();
-    const variables = {
-      account: t.account,
-      ...window,
-      namespaces: Object.values(t.namespaces),
-      queues: Object.values(t.queues),
-      app: t.checkApp,
+    const read = async (target: WatchTarget) =>
+      parseAccount(
+        await this.ask(QUERY, {
+          account: target.account,
+          ...window,
+          namespaces: Object.values(target.namespaces),
+          queues: Object.values(target.queues),
+          app: target.checkApp,
+        }),
+        target,
+        window,
+      );
+    const regions = Object.entries(t.regional ?? {});
+    const [primary, ...regional] = await Promise.all([
+      read(t),
+      ...regions.map(([, ids]) => read({ ...t, ...ids })),
+    ]);
+    return {
+      ...primary,
+      ...(regions.length && {
+        regional: Object.fromEntries(regions.map(([region], i) => [region, regional[i]])),
+      }),
     };
-    return parseAccount(await this.ask(QUERY, variables), t, window);
   }
 
   async delivery(start: string, end: string) {

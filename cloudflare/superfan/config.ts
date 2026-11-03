@@ -1,6 +1,6 @@
 // Superfan configuration. WATCH_SCRIPT is an environment's platform-only Worker; a config that
 // names any other script is refused, not watched. Tail events are read from that Worker and, on
-// the wide watch, from its environment's front and managed Workers; any other script's are dropped.
+// the wide watch, from its front, managed and explicitly declared backend Workers.
 import type { SuperfanLedger } from './ledger';
 
 /** The scripts this watcher may read: the dev and production platform Workers. */
@@ -21,6 +21,8 @@ export interface SuperfanEnv {
   WATCH_URL: string;
   /** `on`: the wide watch (`wideOn`). */
   WATCH_WIDE?: string;
+  /** Generated regional backend roles, not arbitrary Worker names. */
+  WATCH_BACKENDS?: string;
   /** The site as people reach it: what the wide watch and the synthetic checks probe. */
   WATCH_FRONT_URL?: string;
   /** `on`: synthetic checks every five minutes. */
@@ -67,7 +69,7 @@ export interface SuperfanEnv {
   RESEND_API_KEY?: SecretsStoreSecret;
 }
 
-export interface WatchIds {
+export interface ResourceIds {
   namespaces: { source_repository: string; check_runs: string };
   queues: {
     jobs: string;
@@ -79,7 +81,11 @@ export interface WatchIds {
   };
   checkApp: string;
 }
+export interface WatchIds extends ResourceIds {
+  regional?: Record<string, ResourceIds>;
+}
 export interface WatchSite {
+  backendScripts?: string[];
   account: string;
   script: string;
   healthUrl: string;
@@ -114,14 +120,27 @@ function httpsUrl(name: string, value: string | undefined) {
   return value as string;
 }
 
-/** Validates the watch target; throws a configuration error that names the bad variable. Ids
- * are all configured or all looked up: a partial set is an error. */
+/** Only generated roles in this watch environment can add native diagnostics. */
+export function backendScripts(env: SuperfanEnv): string[] {
+  const roles = env.WATCH_BACKENDS ? env.WATCH_BACKENDS.split(',') : [];
+  if (
+    new Set(roles).size !== roles.length ||
+    roles.some((role) => !/^(api-(enam|weur|apac|oc|sam|afr)|platform-weur)$/.test(role))
+  )
+    throw new Error('WATCH_BACKENDS contains an invalid or duplicate backend role');
+  if (!isWatchable(env.WATCH_SCRIPT)) throw new Error('Invalid watch environment');
+  const prefix = env.WATCH_SCRIPT.replace(/-platform$/, '');
+  return roles.map((role) => `${prefix}-${role}`);
+}
+
+/** Primary ids are configured together or discovered; regional ids are discovered. */
 export function watchSite(env: SuperfanEnv): WatchSite {
   if (!WATCHABLE.has(env.WATCH_SCRIPT))
     throw new Error('WATCH_SCRIPT must name the isolated platform-only Worker');
   const url = new URL(env.WATCH_URL);
   // The script is checked above; its URL may be a custom host, as `api.dev.yonedarepo.com` is.
   if (url.protocol !== 'https:') throw new Error('WATCH_URL must be the watched Worker over HTTPS');
+  backendScripts(env);
   const wide = wideOn(env);
   const front = wide || probesOn(env) ? httpsUrl('WATCH_FRONT_URL', env.WATCH_FRONT_URL) : null;
   const deadman = wide && env.DEADMAN_URL ? httpsUrl('DEADMAN_URL', env.DEADMAN_URL) : null;
@@ -132,6 +151,7 @@ export function watchSite(env: SuperfanEnv): WatchSite {
     frontHealthUrl: front && new URL('/health', front).toString(),
     deadmanHealthUrl: deadman && new URL('/health', deadman).toString(),
     wide,
+    ...(wide && env.WATCH_BACKENDS && { backendScripts: backendScripts(env) }),
   };
   if (ID_VARS.every((name) => !env[name])) return { ...site, ids: null };
   const ids: WatchIds = {

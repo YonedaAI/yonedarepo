@@ -8,7 +8,7 @@ import type { ProbeResult } from './synthetic-checks';
 
 const OWN_TRAFFIC_HEADER = 'x-yoneda-own-traffic';
 /** Answered, or the client went away: neither is a death. */
-const NOT_DEAD = new Set(['ok', 'canceled', 'responseStreamDisconnected', 'unknown']);
+export const NOT_DEAD = new Set(['ok', 'canceled', 'responseStreamDisconnected', 'unknown']);
 
 export const serviceOn = (env: SuperfanEnv) => env.SERVICE_LEVELS === 'on';
 

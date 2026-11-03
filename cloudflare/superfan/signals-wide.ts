@@ -1,5 +1,7 @@
 // What the wide watch adds to the platform's reports: the rest of the platform, the other
 // Workers, money and storage. Levels are set in signals.ts.
+
+import type { AuthorityAnalytics } from './analytics';
 import {
   type Baselines,
   backlogSignals,
@@ -7,6 +9,7 @@ import {
   healthSignal,
   invocationSignals,
   marked,
+  queueSignals,
   report,
   type Snapshot,
   threshold,
@@ -31,6 +34,24 @@ export function wideReports(s: Snapshot, baselines: Baselines): ComponentReport[
   const a = s.analytics;
   const cronRuns = s.tail.cron?.invocations ?? 0;
   return [
+    report(
+      'backend_execution',
+      s,
+      [
+        ...invocationSignals('backend_execution', s, baselines).filter(
+          (signal) => signal.name === 'exceptions' || signal.name === 'error_logs',
+        ),
+        threshold('resource_kills', s.tail.backend_execution?.resourceKills ?? 0, 'count', 0),
+        marked(s, 'backend_deaths'),
+      ],
+      Boolean(s.tail.backend_execution),
+    ),
+    report(
+      'regional_resources',
+      s,
+      a?.regional?.weur ? regionalSignals(a.regional.weur) : [],
+      Boolean(a?.regional?.weur),
+    ),
     objectReport('commit_shards', s, baselines),
     objectReport('workspace_authority', s, baselines),
     objectReport('pack_builder', s, baselines),
@@ -97,4 +118,31 @@ export function landQueue(s: Snapshot, baselines: Baselines, wide: boolean) {
     threshold('land_failures', s.marks.land_failures ?? 0, 'count', MAX_LAND_FAILURES),
     threshold('land_timeouts', s.marks.land_timeouts ?? 0, 'count', MAX_LAND_TIMEOUTS),
   ]);
+}
+
+/** Regional jobs/checks share one DLQ; combine their work, not US resource samples. */
+function regionalSignals(a: AuthorityAnalytics) {
+  const checks = a.checks;
+  const maximum = (values: (number | null)[]) => {
+    const present = values.filter((v): v is number => v !== null);
+    return present.length ? Math.max(...present) : null;
+  };
+  const queue = {
+    ...a.queue,
+    backlogLatest: a.queue.backlogLatest + (checks?.backlogLatest ?? 0),
+    backlogEarliest: a.queue.backlogEarliest + (checks?.backlogEarliest ?? 0),
+    deadLettered: a.queue.deadLettered + (checks?.deadLettered ?? 0),
+    lagMs: maximum([a.queue.lagMs, checks?.lagMs ?? null]),
+    retries: maximum([a.queue.retries, checks?.retries ?? null]),
+  };
+  return [
+    ...queueSignals({ queue }),
+    threshold(
+      'resource_kills',
+      a.objectKills.source_repository + a.objectKills.check_runs,
+      'count',
+      0,
+    ),
+    threshold('container_disk_percent', a.containers.maxDiskPercent, 'percent', 85),
+  ];
 }
