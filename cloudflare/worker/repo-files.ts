@@ -2,6 +2,8 @@
 // main) at main's published head, which serves landed changesets before their Git commit
 // is projected. Every read is checked against the caller's directory grant first, and
 // resolved without the authority where published or immutable data answers (repo-snapshots).
+
+import type { RepoSnapshot } from '../../shared/contracts/repo-status';
 import { decide, outside, requirePath } from './repo-grants';
 import type { RepoObjects } from './repo-objects';
 import { ApiError, type Json, type RepoContext, walk } from './repo-ops';
@@ -20,13 +22,13 @@ function text(bytes: Uint8Array) {
   }
 }
 
-export async function listTree(ctx: RepoContext, args: Json) {
+export async function listTree(ctx: RepoContext, args: Json, admitted?: RepoSnapshot) {
   const path = String(args.path ?? '').replace(/\/$/, '');
   // Main's latest tree is the published head's (read at least at `min_version`).
-  const head = await authorizeRead(ctx, Number(args.min_version ?? 0));
+  const head = admitted ? null : await authorizeRead(ctx, Number(args.min_version ?? 0));
   const view = await decide(ctx, [path], [path]);
   if (!view.paths[0] && !view.dirs[0]) throw outside();
-  const where = await readTarget(ctx, head, args.commit ?? args.ref, args.at);
+  const where = admitted ?? (await readTarget(ctx, head, args.commit ?? args.ref, args.at));
   const objects = await ctx.objects();
   await warmReadTrees(objects, where.tree, path, where.commit, true);
   const entry = await walk(objects, where.tree, path);

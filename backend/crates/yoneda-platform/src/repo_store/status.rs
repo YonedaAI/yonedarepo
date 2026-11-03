@@ -44,6 +44,20 @@ pub struct RepoStatus {
     pub quarantined: Vec<Withheld>,
     /// Changes whenever `quarantined` does: caches derived from content are keyed by it.
     pub quarantine_epoch: u64,
+    /// Optional internal read selection, requested with status and stripped by the adapter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<RepoSnapshot>,
+}
+
+/// A current branch selection made in the same transaction as fresh read admission.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct RepoSnapshot {
+    pub version: u64,
+    #[serde(rename = "ref")]
+    pub refname: String,
+    pub commit: String,
+    pub tree: String,
+    pub parents: Vec<String>,
 }
 
 /// What `GET /repos/:id` answers: the repository's status with its readable path. The Worker
@@ -97,7 +111,12 @@ fn typed<T: serde::de::DeserializeOwned>(rows: Vec<Value>, table: &str) -> Resul
 }
 
 /// The repository's status, with who is asking (`viewer`).
-pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result<RepoStatus> {
+pub fn status<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    settings: &Settings,
+    actor: &Actor,
+) -> Result<RepoStatus> {
     let history = db.query(
         "SELECT version,chain FROM txlog ORDER BY version DESC LIMIT 1",
         &[],
@@ -106,7 +125,7 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result
         "SELECT name,commit_id AS commit_id,version FROM refs ORDER BY name",
         &[],
     )?;
-    Ok(RepoStatus {
+    let mut status = RepoStatus {
         name: settings.name.clone(),
         version: history
             .first()
@@ -152,5 +171,28 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result
             })
             .collect(),
         quarantine_epoch: super::quarantine::epoch(db)?,
-    })
+        snapshot: None,
+    };
+    status.snapshot = selected_snapshot(db, c, &status);
+    Ok(status)
+}
+
+fn selected_snapshot<S: SqlStore>(db: &S, c: &Value, status: &RepoStatus) -> Option<RepoSnapshot> {
+    let request = c.get("snapshot").filter(|v| v.is_object())?;
+    if status.parent.is_some()
+        || status.grant.is_some()
+        || request.get("at").is_some()
+        || c.get("at").is_some()
+        || request
+            .get("min_version")
+            .is_some_and(|v| v.as_u64().is_none_or(|minimum| minimum > status.version))
+    {
+        return None;
+    }
+    // Reuse snapshot's current-ref rules, including PROJECTION_PENDING. A hint is
+    // best effort: an absent/failed selection leaves the adapter's existing read and
+    // retry/archive behavior in charge, without changing the successful status reply.
+    let value = super::reads::snapshot(db, &serde_json::json!({"ref": request["ref"]})).ok()?;
+    let selected: RepoSnapshot = serde_json::from_value(value).ok()?;
+    (selected.version == status.version).then_some(selected)
 }

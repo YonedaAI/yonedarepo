@@ -299,6 +299,7 @@
           "JOINED_REPO_PATH": "on",
           "OVERVIEW_BOOTSTRAP": "on",
           "OVERVIEW_DEFER_ACTIVITY": "on",
+          "OVERVIEW_ADMITTED_SNAPSHOT": "on",
           "REPO_IMAGE_REVALIDATION": "on",
           "EDGE_FIRST_READS": "on",
           "SEARCH_CODE_MEMO": "on",
