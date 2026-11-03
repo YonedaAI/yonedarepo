@@ -41,6 +41,14 @@ After future validated performance runs, publish a new dated snapshot with
 its source measurements, sample sizes and deployed revision. Retain previous
 JSON/SVG/PNG snapshots and their limitations; do not silently overwrite old
 results. Reuse the renderer with the new snapshot's data and output paths.
+For example, after saving that validated JSON beside its dated outputs:
+
+```sh
+node tools/render-performance-infographics.mjs --data docs/performance/YYYY-MM-DD/dev-performance-data.json --out-dir docs/performance/YYYY-MM-DD
+```
+
+The renderer expects this three-condition, three-burst comparison format.
+Review narrative observations and scope against each new run before publishing.
 
 Account names, emails, repository identifiers, tokens and private logs are
 excluded. No application source, deployment or additional live test is part

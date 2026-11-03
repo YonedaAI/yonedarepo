@@ -6,8 +6,14 @@ import path from 'node:path';
 import { chromium } from 'playwright-core';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const out = path.join(root, 'docs/performance');
-const data = JSON.parse(await readFile(path.join(out, 'dev-performance-data.json'), 'utf8'));
+const option = (name, fallback) => {
+  const index = process.argv.indexOf(name);
+  if (index < 0) return path.resolve(root, fallback);
+  assert(process.argv[index + 1] && !process.argv[index + 1].startsWith('--'), `${name} needs a path`);
+  return path.resolve(root, process.argv[index + 1]);
+};
+const out = option('--out-dir', 'docs/performance');
+const data = JSON.parse(await readFile(option('--data', 'docs/performance/dev-performance-data.json'), 'utf8'));
 const check = process.argv.includes('--check');
 const previewAt = process.argv.indexOf('--preview-dir');
 const preview = previewAt < 0 ? null : path.resolve(root, process.argv[previewAt + 1]);
@@ -68,7 +74,7 @@ function loading() {
   body += text(72, 1070, 'Selected API: IAD near IAD data. Smart comparison: BOM against IAD.', 26, C.muted);
   body += text(72, 1116, 'Dev only · one retained repository · no worldwide or production proof.', 26, C.muted);
   body += text(72, 1160, `Baseline ${data.revisions.baseline} · selected ${data.revisions.selected} · rejected ${data.revisions.rejected}`, 23, C.muted);
-  return { name: 'dev-loading-placement', metrics, svg: frame('Keep API compute close to data.', 'Repeat Overview: 551 → 424 ms median. Other paths still need work.', body, 'Three browser runs per condition. Medians are shown; full minimum, median and maximum values are in dev-performance-data.json. Slower reload and image results are retained.') };
+  return { name: 'dev-loading-placement', metrics, svg: frame('Keep API compute close to data.', `Repeat Overview: ${number(median('baseline', 'repeat'))} → ${number(median('selected', 'repeat'))} ms median. Other paths still need work.`, body, 'Three browser runs per condition. Medians are shown; full minimum, median and maximum values are in dev-performance-data.json. Slower reload and image results are retained.') };
 }
 
 function bursts() {
@@ -101,23 +107,23 @@ function bursts() {
 }
 
 assert.equal(data.environment, 'dev'); assert.equal(B.samples_per_condition, 3);
-assert.equal(data.revisions.selected, 'b38706d6');
+for (const revision of Object.values(data.revisions)) assert.match(revision, /^[0-9a-f]{8}$/);
 for (const condition of ['baseline', 'selected', 'rejected']) {
   const series = [...Object.values(B[condition].overview).flatMap(Object.values), B[condition].agentsCardsMs];
   for (const s of series) assert(s.min <= s.median && s.median <= s.max);
 }
-assert.deepEqual([median('baseline', 'repeat'), median('selected', 'repeat'), median('rejected', 'repeat')], [551, 424, 3672]);
 assert.equal(data.concurrency.independent_runs, 3);
 for (const r of data.concurrency.runs) for (const n of [r.writers, r.commits_ok, r.landings_ok, r.readbacks_correct, r.client_read.samples]) assert.equal(n, 1000);
 for (const [key, value] of Object.entries(data.concurrency.totals)) {
   assert.equal(value, 3000); assert.equal(value, data.concurrency.runs.reduce((sum, run) => sum + run[key], 0));
 }
-assert.deepEqual(data.concurrency.runs.map((r) => r.client_read.p95_ms), [2796, 2644, 1732]);
-assert.deepEqual(data.concurrency.run_read_p95_ms, { min: 1732, median: 2644, max: 2796 });
+const p95 = data.concurrency.runs.map((r) => r.client_read.p95_ms).sort((a, b) => a - b);
+assert.deepEqual(data.concurrency.run_read_p95_ms, { min: p95[0], median: p95[1], max: p95[2] });
 assert.equal(data.concurrency.temporary_writer_tokens_revoked, true);
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
+  if (!check) await mkdir(out, { recursive: true });
   const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
   for (const figure of [loading(), bursts()]) {
     const svgPath = path.join(out, `${figure.name}.svg`), pngPath = path.join(out, `${figure.name}.png`);
