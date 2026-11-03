@@ -84,6 +84,8 @@ export interface Env {
   AUTOMATIC_LOCALITY?: string;
   /** Off by default: authorized same-cell file walks reuse the existing tree holder. */
   SHARED_READ_TREES?: string;
+  /** Off by default: status owner/path decoration uses one local joined projection read. */
+  JOINED_REPO_PATH?: string;
   /** R2's S3 API for Git LFS presigned URLs (repo-lfs.ts): `https://<account>.r2.cloudflarestorage.com`,
    * the OBJECTS bucket's name, and an R2 API token's S3 key pair (secrets). LFS answers 501
    * where any is missing. */
