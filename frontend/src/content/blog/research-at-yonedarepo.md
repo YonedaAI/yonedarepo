@@ -18,7 +18,7 @@ The papers are long and formal. The posts below explain each one in plain terms:
 1. **[Repositories are becoming databases](/blog/source-code-as-a-transactional-abstraction)**, the overview. Data lakes moved from directories of files to transactional tables; the overview argues source control is making the same move, and shows how the parts compose.
 2. **[What a repository looks like when you run it like a database](/blog/a-transaction-log-for-source-control)**, Part I. The transaction model: an append-only log, compare-and-swap refs, server-side commits, and validation of declared reads.
 3. **[When is a cached index still correct?](/blog/partitioned-derived-data)**, Part II. Search indexes, symbols, blame and Git itself as views of the log, rebuilt only for the partitions a change touched.
-4. **[What serverless Git costs, measured on Cloudflare](/blog/serverless-git-on-cloud-primitives)**, Part III. The architecture on cloud primitives, with Cloudflare as the reference realization, and where its serialized authority saturates.
+4. **[What serverless Git costs](/blog/serverless-git-on-cloud-primitives)**, Part III. The architecture on cloud primitives, with one cloud deployment as the reference realization, and where its serialized authority saturates.
 5. **[Proving that a batch of landings is serial, in Lean](/blog/machine-checked-batch-landing)**, Part IV. A machine-checked Lean 4 development of 180 theorems: an accepted batch, merges included, gives the same result as landing its changes one at a time.
 
 ## How to read it
