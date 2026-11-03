@@ -4,7 +4,7 @@ import { useSession } from '../../hooks/useSession';
 import { emailLinkTitle, isEmailLink } from '../account-settings/emailLinkRoute';
 import { useSignups } from '../admin/useSignups';
 import { syncAgents } from '../agents/agentsModel';
-import { signedInHint } from '../site/SiteRoot';
+import { signedInHint } from '../site/signedInHint';
 import { siteView } from '../site/siteRoute';
 import type { OrgSummary } from '../source-platform/orgModel';
 import {
