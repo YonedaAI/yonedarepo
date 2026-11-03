@@ -1,0 +1,224 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-03",
+  "environment": "dev",
+  "revisions": {
+    "baseline": "d70b0a6c",
+    "rejected": "d9d3f693",
+    "selected": "b38706d6"
+  },
+  "browser": {
+    "samples_per_condition": 3,
+    "units": "ms",
+    "readiness": "Completed repository sections and Markdown; visible images measured separately",
+    "baseline": {
+      "overview": {
+        "cold": {
+          "completeMs": {
+            "min": 671,
+            "median": 891,
+            "max": 2290
+          },
+          "visibleImagesMs": {
+            "min": 950,
+            "median": 1118,
+            "max": 2737
+          }
+        },
+        "reload": {
+          "completeMs": {
+            "min": 538,
+            "median": 562,
+            "max": 642
+          },
+          "visibleImagesMs": {
+            "min": 827,
+            "median": 858,
+            "max": 939
+          }
+        },
+        "repeat": {
+          "completeMs": {
+            "min": 548,
+            "median": 551,
+            "max": 558
+          },
+          "visibleImagesMs": {
+            "min": 894,
+            "median": 910,
+            "max": 915
+          }
+        }
+      },
+      "agentsCardsMs": {
+        "min": 565,
+        "median": 629,
+        "max": 813
+      }
+    },
+    "rejected": {
+      "overview": {
+        "cold": {
+          "completeMs": {
+            "min": 2713,
+            "median": 3335,
+            "max": 5505
+          },
+          "visibleImagesMs": {
+            "min": 5598,
+            "median": 6448,
+            "max": 11886
+          }
+        },
+        "reload": {
+          "completeMs": {
+            "min": 2771,
+            "median": 3782,
+            "max": 6982
+          },
+          "visibleImagesMs": {
+            "min": 5892,
+            "median": 7541,
+            "max": 14536
+          }
+        },
+        "repeat": {
+          "completeMs": {
+            "min": 2896,
+            "median": 3672,
+            "max": 3710
+          },
+          "visibleImagesMs": {
+            "min": 6639,
+            "median": 7906,
+            "max": 8028
+          }
+        }
+      },
+      "agentsCardsMs": {
+        "min": 1893,
+        "median": 1909,
+        "max": 1915
+      }
+    },
+    "selected": {
+      "overview": {
+        "cold": {
+          "completeMs": {
+            "min": 686,
+            "median": 692,
+            "max": 835
+          },
+          "visibleImagesMs": {
+            "min": 1198,
+            "median": 1515,
+            "max": 2154
+          }
+        },
+        "reload": {
+          "completeMs": {
+            "min": 490,
+            "median": 607,
+            "max": 790
+          },
+          "visibleImagesMs": {
+            "min": 1009,
+            "median": 1225,
+            "max": 1259
+          }
+        },
+        "repeat": {
+          "completeMs": {
+            "min": 409,
+            "median": 424,
+            "max": 513
+          },
+          "visibleImagesMs": {
+            "min": 793,
+            "median": 1126,
+            "max": 1226
+          }
+        }
+      },
+      "agentsCardsMs": {
+        "min": 552,
+        "median": 681,
+        "max": 683
+      }
+    },
+    "placement": {
+      "rejected": {
+        "api": "BOM",
+        "repository": "IAD"
+      },
+      "selected": {
+        "api": "IAD",
+        "repository": "IAD"
+      },
+      "europe_observation": {
+        "api": "FRA",
+        "authority": "MXP"
+      }
+    },
+    "scope": "One retained large-history repository; three fresh browser contexts, each with cold, reload and repeat views. No worldwide or production proof."
+  },
+  "concurrency": {
+    "independent_runs": 3,
+    "writers_per_run": 1000,
+    "principals": "repository tokens",
+    "runs": [
+      {
+        "run": 1,
+        "writers": 1000,
+        "commits_ok": 1000,
+        "landings_ok": 1000,
+        "readbacks_correct": 1000,
+        "client_read": {
+          "samples": 1000,
+          "p50_ms": 2111,
+          "p95_ms": 2796,
+          "max_ms": 7098
+        }
+      },
+      {
+        "run": 2,
+        "writers": 1000,
+        "commits_ok": 1000,
+        "landings_ok": 1000,
+        "readbacks_correct": 1000,
+        "client_read": {
+          "samples": 1000,
+          "p50_ms": 1972,
+          "p95_ms": 2644,
+          "max_ms": 6339
+        }
+      },
+      {
+        "run": 3,
+        "writers": 1000,
+        "commits_ok": 1000,
+        "landings_ok": 1000,
+        "readbacks_correct": 1000,
+        "client_read": {
+          "samples": 1000,
+          "p50_ms": 1581,
+          "p95_ms": 1732,
+          "max_ms": 4556
+        }
+      }
+    ],
+    "totals": {
+      "commits_ok": 3000,
+      "landings_ok": 3000,
+      "readbacks_correct": 3000
+    },
+    "run_read_p95_ms": {
+      "min": 1732,
+      "median": 2644,
+      "max": 2796
+    },
+    "temporary_writer_tokens_revoked": true,
+    "dedicated_fixtures_retained": true,
+    "scope": "Three independent 1,000-writer bursts, not 3,000 simultaneous writers. No subsecond-under-load, real-agent, native-Git or production acceptance claim."
+  }
+}
