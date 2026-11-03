@@ -64,10 +64,11 @@ it('quarantine purge fences enrolled copies and rejects a fill captured before t
 });
 
 it('repository purge seals every enrolled copy even with the read switch off',async()=>{
- const r=await setup('local_copy_delete');await read(r.id,r.cookie);await read(r.id,r.cookie,'NA');
+ const r=await setup('local_copy_delete');
+ for(const continent of ['NA','EU','AS','OC','SA','AF']) await read(r.id,r.cookie,continent);
  expect((await api(`/repos/${r.id}?confirm=local_copy_delete`,{cookie:r.cookie},{method:'DELETE'},on)).status).toBe(200);
  await purgeObjects({...on,AUTOMATIC_LOCALITY:'off'},r.id,true);
- for(const region of ['enam','weur']){
+ for(const region of ['enam','weur','apac','oc','sam','afr']){
   const late=await copy(r.id,region,{op:'copy_put',epoch:1,object:{id:r.blob,kind:'blob',data_b64:btoa(CONTENT)}});
   expect(late.error.code).toBe('COPY_FENCED');
  }
@@ -117,12 +118,57 @@ it('a fill paused after enrollment cannot publish into a region first created by
  expect((await copy(r.id,'weur',{op:'copy_get',epoch:permit.epoch,id:r.blob,kind:'blob'})).object).toBeNull();
 });
 
-it('revoking an agent token refuses its warm-copy read',async()=>{
+it.each(['EU','AS','OC','SA','AF'])('revoking an agent token refuses its warm-copy read from %s',async(continent)=>{
  const r=await setup('local_copy_revoke');
  const made=await api(`/repos/${r.id}/tokens`,{cookie:r.cookie},{body:{name:'reader',scopes:['read']}},on);
  expect(made.status).toBe(200);
- const ask=()=>platformFetch(new Request(`https://yoneda/api/v1/repos/${r.id}/blob?path=a.txt`,{headers:{authorization:`Bearer ${made.body.token}`},cf:{continent:'EU'}}),on);
+ const ask=()=>platformFetch(new Request(`https://yoneda/api/v1/repos/${r.id}/blob?path=a.txt`,{headers:{authorization:`Bearer ${made.body.token}`},cf:{continent}}),on);
  expect((await ask()).status).toBe(200);
  expect((await api(`/repos/${r.id}/tokens/reader`,{cookie:r.cookie},{method:'DELETE'},on)).status).toBe(200);
  expect((await ask()).status).toBe(401);
+});
+
+it('all six origins enroll independent warm copies and purge fences every enrolled region',async()=>{
+ const r=await setup('local_copy_worldwide');const names=new Map<string,string>();const seen:{name:string;hint:unknown}[]=[];const ns=bindings.READ_COPIES!;
+ const watched={idFromName:(name:string)=>{const id=ns.idFromName(name);names.set(String(id),name);return id;},get:(id:DurableObjectId,options?:DurableObjectNamespaceGetDurableObjectOptions)=>{seen.push({name:names.get(String(id))??'',hint:options?.locationHint});return ns.get(id,options);}} as DurableObjectNamespace;
+ for(const [continent,region] of [['NA','enam'],['EU','weur'],['AS','apac'],['OC','oc'],['SA','sam'],['AF','afr']]){
+  expect((await read(r.id,r.cookie,continent,{...on,READ_COPIES:watched})).body.content).toBe(CONTENT);
+  expect(seen.find((get)=>get.name===`${r.id}:read:${region}`)?.hint).toBe(region);
+  const got=await copy(r.id,region,{op:'copy_get',epoch:1,id:r.blob,kind:'blob'});
+  expect(got.error,JSON.stringify(got)).toBeUndefined();
+  expect(got.object?.data_b64).toBe(btoa(CONTENT));
+ }
+ expect(seen.filter((get)=>get.name===`${r.id}:read:registry`).every((get)=>get.hint==='enam')).toBe(true);
+ const permit=await copy(r.id,'registry',{op:'registry_permit',region:'apac'});
+ expect(permit.regions).toEqual(['afr','apac','enam','oc','sam','weur']);
+ await fenceReadCopies({...on,AUTOMATIC_LOCALITY:'off'},r.id,[r.blob],true);
+ for(const region of permit.regions){
+  expect((await copy(r.id,region,{op:'copy_put',epoch:1,object:{id:r.blob,kind:'blob',data_b64:btoa(CONTENT)}})).error.code).toBe('COPY_FENCED');
+ }
+});
+
+it('an EU-jurisdiction request neither reads nor fills a foreign regional copy',async()=>{
+ const r=await setup('local_copy_eu_boundary');let calls=0;const ns=bindings.READ_COPIES!;
+ const watched={idFromName:(n:string)=>ns.idFromName(n),get:(id:DurableObjectId,options?:DurableObjectNamespaceGetDurableObjectOptions)=>{calls++;return ns.get(id,options);}} as DurableObjectNamespace;
+ const eu={...on,CELL_JURISDICTION:'eu',READ_COPIES:watched};
+ for(const continent of ['NA','AS','OC','SA','AF']) expect((await read(r.id,r.cookie,continent,eu)).body.content).toBe(CONTENT);
+ expect(calls).toBe(0);
+ expect((await read(r.id,r.cookie,'EU',eu)).body.content).toBe(CONTENT);
+ expect(calls).toBeGreaterThan(0);
+ expect((await copy(r.id,'registry',{op:'registry_permit',region:'weur'})).regions).toEqual(['weur']);
+});
+
+it('forged geography headers do not enroll copies without trusted runtime metadata',async()=>{
+ const r=await setup('local_copy_headers');let calls=0;const ns=bindings.READ_COPIES!;
+ const watched={idFromName:(n:string)=>ns.idFromName(n),get:(id:DurableObjectId,options?:DurableObjectNamespaceGetDurableObjectOptions)=>{calls++;return ns.get(id,options);}} as DurableObjectNamespace;
+ const res=await platformFetch(new Request(`https://yoneda/api/v1/repos/${r.id}/blob?path=a.txt`,{headers:{cookie:r.cookie,'cf-continent':'AS','cf-ipcountry':'JP','x-yoneda-region':'apac'}}),{...on,READ_COPIES:watched});
+ expect(res.status).toBe(200);expect((await res.json<any>()).content).toBe(CONTENT);expect(calls).toBe(0);
+});
+
+it.each(['INVALID_INPUT','SCHEMA_TOO_NEW'])('a copy provider refusing with %s is a miss, never a failed admitted read',async(code)=>{
+ const r=await setup('local_copy_old_provider');let calls=0;const ns=bindings.READ_COPIES!;
+ const old={idFromName:(n:string)=>ns.idFromName(n),get:()=>({fetch:async()=>{calls++;return Response.json({error:{code,message:'Simulated previous-version copy provider'}},{status:409});}})} as unknown as DurableObjectNamespace;
+ await caches.default.delete(new Request(`https://objects.yoneda.internal/${r.id}/${r.blob}`));
+ expect((await read(r.id,r.cookie,'AS',{...on,READ_COPIES:old})).body.content).toBe(CONTENT);
+ expect(calls).toBeGreaterThan(0);
 });

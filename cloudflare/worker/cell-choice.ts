@@ -16,7 +16,9 @@ export async function cellForNew(env: Env, body: Json): Promise<string> {
     throw new ApiError('INVALID_INPUT', `region must be one of ${allCells(env).join(', ')}`);
   }
   const region = localityRegion(env);
-  if (region) return cellOfRegion(env, region);
+  // Only the EU authority has a distinct storage jurisdiction. Other physical
+  // origins retain the default authority's names and use their own first-get hint.
+  if (region) return cellOfRegion(env, region === 'weur' ? 'weur' : 'enam');
   if (typeof body.owner === 'string' && body.owner) {
     const place = await workspace(env, body.owner, { op: 'account_place' });
     return cellOfRegion(env, place.region);

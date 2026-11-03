@@ -11,8 +11,13 @@ use yoneda_core::{
     git_object::{ObjectId, ObjectKind, hash_object},
 };
 
-pub(crate) const MIGRATIONS: [(i64, &str); 1] =
-    [(1, include_str!("migrations/read_copy/0001_copy.sql"))];
+pub(crate) const MIGRATIONS: [(i64, &str); 2] = [
+    (1, include_str!("migrations/read_copy/0001_copy.sql")),
+    (
+        2,
+        include_str!("migrations/read_copy/0002_world_regions.sql"),
+    ),
+];
 /// A copy is optional. Larger objects and full copies continue through the authority.
 const OBJECT_BYTES: usize = 1_048_576;
 const STORE_BYTES: u64 = 512 * 1024 * 1024;
@@ -55,7 +60,7 @@ fn execute<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         return Err(bad("Invalid repository id"));
     }
     let region = string(c, "region")?;
-    if !["enam", "weur"].contains(&region.as_str()) {
+    if !yoneda_core::account::ACCOUNT_REGIONS.contains(&region.as_str()) {
         return Err(bad("Unsupported copy region"));
     }
     let epoch = number(c, "epoch")?;
@@ -336,5 +341,135 @@ mod tests {
             put(&db, 1, &"x".repeat(1_048_577)).unwrap_err().code,
             "COPY_TOO_LARGE"
         );
+    }
+
+    #[test]
+    fn each_supported_region_enrolls_and_keeps_its_durable_identity() {
+        for region in yoneda_core::account::ACCOUNT_REGIONS {
+            let registry = NativeStore::memory().unwrap();
+            migrate_read_copy(&registry).unwrap();
+            let permit = json!({"op":"registry_permit","repo":"r01234567890123456789","region":region,"_system":"local-copy"});
+            assert_eq!(
+                execute_read_copy(&registry, permit).unwrap()["regions"],
+                json!([region])
+            );
+            let path = std::env::temp_dir().join(format!(
+                "yoneda-copy-{}-{}-{region}.sqlite",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            let copy = NativeStore::open(&path).unwrap();
+            migrate_read_copy(&copy).unwrap();
+            let mut put = command("copy_put", 1);
+            put["region"] = json!(region);
+            put["object"] = blob("regional");
+            execute_read_copy(&copy, put.clone()).unwrap();
+            drop(copy);
+            let copy = NativeStore::open(&path).unwrap();
+            migrate_read_copy(&copy).unwrap();
+            let mut get = command("copy_get", 1);
+            get["region"] = json!(region);
+            get["id"] = blob("regional")["id"].clone();
+            get["kind"] = json!("blob");
+            assert_eq!(
+                execute_read_copy(&copy, get.clone()).unwrap()["object"],
+                blob("regional")
+            );
+            get["region"] = json!(if *region == "weur" { "enam" } else { "weur" });
+            assert_eq!(
+                execute_read_copy(&copy, get).unwrap_err().code,
+                "COPY_FENCED"
+            );
+            let fence = json!({"op":"registry_fence","repo":"r01234567890123456789","ids":[],"seal":true,"_system":"local-copy"});
+            let sealed = execute_read_copy(&registry, fence).unwrap();
+            let mut fence = command("copy_fence", 2);
+            fence["region"] = json!(region);
+            fence["seal"] = json!(true);
+            execute_read_copy(&copy, fence).unwrap();
+            put["epoch"] = sealed["epoch"].clone();
+            assert_eq!(
+                execute_read_copy(&copy, put).unwrap_err().code,
+                "COPY_FENCED"
+            );
+            drop(copy);
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+    #[test]
+    fn upgrading_copy_v1_keeps_identity_regions_objects_and_fences_on_repeat() {
+        const PREVIOUS: &[(i64, &str)] = &[(1, include_str!("migrations/read_copy/0001_copy.sql"))];
+        for (region, sealed) in [("registry", 1), ("weur", 0)] {
+            let db = NativeStore::memory().unwrap();
+            migrate_with(&db, "read_copy_migrations", PREVIOUS).unwrap();
+            db.query(
+                "INSERT INTO copy_identity VALUES(1,? ,?,7,?)",
+                &[json!("r01234567890123456789"), json!(region), json!(sealed)],
+            )
+            .unwrap();
+            db.query("INSERT INTO copy_regions VALUES('enam'),('weur')", &[])
+                .unwrap();
+            let held = blob("preserved");
+            db.query(
+                "INSERT INTO copy_objects VALUES(?,'blob',?)",
+                &[held["id"].clone(), json!(held.to_string())],
+            )
+            .unwrap();
+            db.query(
+                "INSERT INTO copy_blocked VALUES(?)",
+                &[blob("withheld")["id"].clone()],
+            )
+            .unwrap();
+            let tables = [
+                "copy_identity",
+                "copy_regions",
+                "copy_objects",
+                "copy_blocked",
+            ];
+            let before: Vec<_> = tables
+                .iter()
+                .map(|table| db.query(&format!("SELECT * FROM {table}"), &[]).unwrap())
+                .collect();
+            migrate_read_copy(&db).unwrap();
+            migrate_read_copy(&db).unwrap();
+            for (table, rows) in tables.into_iter().zip(before) {
+                assert_eq!(
+                    db.query(&format!("SELECT * FROM {table}"), &[]).unwrap(),
+                    rows
+                );
+            }
+            assert_eq!(
+                db.query("SELECT MAX(version) AS v FROM read_copy_migrations", &[])
+                    .unwrap()[0]["v"],
+                2
+            );
+            assert_eq!(
+                migrate_with(&db, "read_copy_migrations", PREVIOUS)
+                    .unwrap_err()
+                    .code,
+                "SCHEMA_TOO_NEW"
+            );
+            if sealed == 1 {
+                let mut permit = command("registry_permit", 7);
+                permit["region"] = json!("apac");
+                assert_eq!(
+                    execute_read_copy(&db, permit).unwrap_err().code,
+                    "COPY_FENCED"
+                );
+            } else {
+                let mut get = command("copy_get", 7);
+                get["id"] = held["id"].clone();
+                get["kind"] = json!("blob");
+                assert_eq!(execute_read_copy(&db, get).unwrap()["object"], held);
+                let mut withheld = command("copy_put", 7);
+                withheld["object"] = blob("withheld");
+                assert_eq!(
+                    execute_read_copy(&db, withheld).unwrap_err().code,
+                    "COPY_FENCED"
+                );
+            }
+        }
     }
 }

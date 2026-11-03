@@ -9,11 +9,11 @@ import { newRepoId, thisCell } from './cells';
 import { auditRepo } from './repo-audit';
 import { dispatchRuns } from './repo-checks';
 import { listRepository, owning, takeBack } from './repo-create';
+import { creationOrigin } from './repo-creation-origin';
 import { enumerate, rawObjects, waves } from './repo-git-objects';
 import { UploadSession } from './repo-git-sessions';
 import { refreshHead } from './repo-head';
 import { isLarge, putLarge } from './repo-large-files';
-import { localityRegion } from './repo-locality';
 import { parseStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { holdName } from './repo-paths';
@@ -35,7 +35,7 @@ const credentialsOf = (ctx: RepoContext) => ctx.call.sign({}) as Credentials;
  * only once its history and refs are in place, so a failed attempt leaves nothing visible.
  */
 export async function forkRepository(ctx: RepoContext, args: Json) {
-  const hint = localityRegion(ctx.env);
+  const hint = creationOrigin(ctx.env, thisCell(ctx.env));
   const env = hint ? hintedEnv(ctx.env, hint) : ctx.env;
   // Forking into an organization (`owner`) needs an owner of it, as creating there does.
   if (args.region !== undefined && args.region !== thisCell(env))

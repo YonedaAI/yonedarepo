@@ -8,7 +8,8 @@ import { record, timed } from './repo-timing';
 import { currentScope } from './request-scope';
 import type { Env } from './types';
 
-type Region = 'enam' | 'weur';
+const REGIONS = ['enam', 'weur', 'apac', 'oc', 'sam', 'afr'] as const;
+type Region = (typeof REGIONS)[number];
 type Permit = { epoch: number; regions: Region[]; blocked: string[]; disabled: boolean };
 type Copies = { permits: Map<string, Promise<Permit>>; fills: number; bytes: number };
 const requests = new WeakMap<object, Copies>();
@@ -18,14 +19,13 @@ const REQUEST_FILLS = 16;
 
 export const automaticLocality = (env: Env) => env.AUTOMATIC_LOCALITY === 'on';
 
-/** The actual client signal, never an account preference or a request header. Other
- * continents retain their existing path until a corresponding copy is available. */
+/** The actual client signal, independent of API execution and authority ownership. */
 export function localityRegion(env: Env): Region | null {
   const req = currentScope()?.req;
   if (!automaticLocality(env) || !req || new URL(req.url).pathname.startsWith('/internal/ssh/'))
     return null;
   const region = regionOfRequest(req);
-  return region === 'enam' || region === 'weur' ? region : null;
+  return REGIONS.find((known) => known === region) ?? null;
 }
 
 function requestCopies(): Copies | null {
@@ -64,7 +64,13 @@ async function command(env: Env, repo: string, region: Region | 'registry', body
 async function permission(env: Env, repo: string) {
   const region = localityRegion(env);
   const request = requestCopies();
-  if (!region || !request || !env.READ_COPIES) return null;
+  if (
+    !region ||
+    !request ||
+    !env.READ_COPIES ||
+    (env.CELL_JURISDICTION === 'eu' && region !== 'weur')
+  )
+    return null;
   let permit = request.permits.get(repo);
   if (!permit) {
     permit = command(env, repo, 'registry', { op: 'registry_permit', region }) as Promise<Permit>;
