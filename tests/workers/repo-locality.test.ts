@@ -9,7 +9,7 @@ import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, drainObjects, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
-const on={...scoped,AUTOMATIC_LOCALITY:'on'} as Env;
+const on={...scoped,AUTOMATIC_LOCALITY:'on',EDGE_FIRST_READS:'on'} as Env;
 const CONTENT='A local file copy\n';
 async function setup(name:string){
  const cookie=await signup(name);

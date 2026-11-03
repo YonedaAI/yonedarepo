@@ -362,6 +362,7 @@
     "BLOB_WRITE_THROUGH": "off",
     "CELLS": "on",
     "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
+    "EDGE_FIRST_READS": "on",
     "EMAIL_CONTACT": "hello@yonedarepo.com",
     "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
     "GITHUB_APP_ID": "5583304",
