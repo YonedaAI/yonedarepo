@@ -36,7 +36,7 @@ The architecture is written against contracts, not products. The paper names six
 
 Table 1 also names another documented product per contract (S3, a Spanner row, SQS, Lambda, Fargate) but makes no performance claim about them. Every measurement comes from that same cloud deployment.
 
-The primitive that decides capacity is the authority. Each repository has exactly one `SourceRepository` Durable Object holding the log, refs, checkpoints, landing queue and lease in its SQLite database. A ref's compare-and-swap, its log entry and the landing record are **one SQLite transaction**. The price is that the authority is a serial resource for the whole repository: two branches of one repository queue behind each other, while two repositories never interact.
+The authority decides capacity. Each repository has exactly one `SourceRepository` Durable Object holding the log, refs, checkpoints, landing queue and lease in its SQLite database. A ref's compare-and-swap, its log entry and the landing record are **one SQLite transaction**. The price is that the authority is a serial resource for the whole repository: two branches of one repository queue behind each other, while two repositories never interact.
 
 ## How YonedaRepo uses it
 
