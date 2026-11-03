@@ -5,6 +5,7 @@
 import { decide, outside, requirePath } from './repo-grants';
 import type { RepoObjects } from './repo-objects';
 import { ApiError, type Json, type RepoContext, walk } from './repo-ops';
+import { warmReadTrees } from './repo-read-trees';
 import { authorizeRead, headAccess, readTarget } from './repo-snapshots';
 import { type TreeEntry, toBase64 } from './repo-stores';
 
@@ -27,6 +28,7 @@ export async function listTree(ctx: RepoContext, args: Json) {
   if (!view.paths[0] && !view.dirs[0]) throw outside();
   const where = await readTarget(ctx, head, args.commit ?? args.ref, args.at);
   const objects = await ctx.objects();
+  await warmReadTrees(objects, where.tree, path, where.commit, true);
   const entry = await walk(objects, where.tree, path);
   if (entry.type !== 'tree') throw new ApiError('NOT_FOUND', `${path} is not a directory`);
   let entries = await objects.tree(entry.id);
@@ -55,12 +57,16 @@ async function publishedEntry(objects: RepoObjects, head: Json, path: string) {
   const changed = [...(head.overlay as Json[])]
     .reverse()
     .find((c) => c.paths.some((p: Json) => p.path === path));
-  if (!changed) return walk(objects, head.head.tree, path);
+  if (!changed) {
+    await warmReadTrees(objects, head.head.tree, path, head.head.id);
+    return walk(objects, head.head.tree, path);
+  }
   const touch = changed.paths.find((p: Json) => p.path === path);
   if (!touch.blob) throw new ApiError('NOT_FOUND', `${path} does not exist`);
   // The log recorded the mode: the blob is read by id, no tree walk.
   if (touch.mode)
     return { name: path.split('/').pop() ?? path, type: touch.mode, id: touch.blob } as TreeEntry;
+  await warmReadTrees(objects, changed.tree, path);
   return walk(objects, changed.tree, path);
 }
 
@@ -98,6 +104,7 @@ export async function readFile(ctx: RepoContext, args: Json) {
   }
   const where = await readTarget(ctx, fromHead?.head ?? null, args.commit ?? args.ref, args.at);
   const objects = await ctx.objects();
+  await warmReadTrees(objects, where.tree, path, where.commit);
   const entry = await walk(objects, where.tree, path);
   if (!['blob', 'exec'].includes(entry.type))
     throw new ApiError('NOT_FOUND', `${path} is not a file`);
