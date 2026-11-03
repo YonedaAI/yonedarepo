@@ -1,9 +1,11 @@
 # Explicit global API routing
 
-Status: implementation and validation in progress. Not a production result.
+Status: implemented with bounded dev routing, retained-state, shared-counter and
+three-burst validation at `c8d6d9ae`. Page-speed acceptance remains open. Not a
+production result. See [the dated report](global-routing-validation-20261103.md).
 
 The owner requires routing from the original human or agent's location. A global
-frontend alone does not provide this: the current request router largely chooses
+frontend alone does not provide this: the preceding request router largely chose
 between US/Europe authority cells, and Smart Placement is a per-Worker optimizer,
 not our deterministic regional router. The Smart experiment's Mumbai execution
 is corroborated by provider analytics; its precise optimizer reason is unproven.
