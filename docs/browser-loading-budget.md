@@ -63,3 +63,8 @@ Compare at least three cold/warm browser requests and real-history navigation ru
 network bytes/cache headers, TTFB, and API server timing separately from automation overhead.
 The three dedicated 1,000-writer runs are the existing write-path baseline; repeat if a change
 affects that path. Client-side caching must not broaden repository or account access.
+
+Native asset serving uses build-generated exact `_headers` entries for existing fingerprinted
+files. The deployment passes `STATIC_ASSET_CACHE` into `VITE_STATIC_ASSET_CACHE` for the build.
+There is no wildcard rule that could cache a missing chunk’s HTML fallback. Dev and prod
+serve assets directly; Worker response headers remain a fallback for proxied asset reads.
