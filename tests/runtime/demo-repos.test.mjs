@@ -96,3 +96,11 @@ test('retained results from a retired provider remain readable without enabling 
   assert.equal(report.agents.mimo.input_tokens, 12);
   assert.equal(AGENTS_BY_KIND.mimo, undefined);
 });
+
+test('historical client names never imply the model currently configured for that client', async () => {
+  const owner = { get: async () => ({ memories: [], sessions: [], releases: [], refs: {}, changes: [] }) };
+  const account = { get: async () => ({ runs: [] }) };
+  const report = await readBack({ owner, account, managed: '/managed', origin: 'http://fixture.invalid' }, { key: 'click', id: 'fixture' }, { flights: { config: { number: 1, outcome: 'landed', run: { kind: 'codex', usd: 0.01 } } } });
+  assert.equal(report.agents.codex.label, 'Codex');
+  assert.deepEqual(report.agents.codex.models, ['unrecorded']);
+});

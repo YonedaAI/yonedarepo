@@ -24,6 +24,7 @@ import { buildSandbox, dockerAvailable, hostState, modelCredential, startEgress 
 import { readEnvFile, Session } from './client.mjs';
 import { DemoTokens, finishDemoRun, removeOwnedContainer } from './demo-repos-acceptance.mjs';
 import { demoFlights } from './demo-repos-flights.mjs';
+import { DemoGuards } from './demo-repos-guards.mjs';
 import { AGENTS_BY_KIND, REPOS } from './demo-repos-plan.mjs';
 import { readBack } from './demo-repos-report.mjs';
 import { openWeb, setUpRepository, writeJson } from './demo-repos-web.mjs';
@@ -55,6 +56,7 @@ for (const key of keys) assert.ok(REPOS[key], `--only takes ${Object.keys(REPOS)
 for (const phase of phases) assert.ok(PHASES.includes(phase), `--phases takes ${PHASES.join(', ')}`);
 assert.ok(Number.isSafeInteger(Number(values['agent-timeout'])) && Number(values['agent-timeout']) > 0, '--agent-timeout must be a positive integer');
 assert.ok(Number.isFinite(Number(values['cap-usd'])) && Number(values['cap-usd']) > 0, '--cap-usd must be positive');
+assert.ok(Number(values['cap-usd']) <= 2.9, 'the original demo cap is $2.90');
 
 if (values['dry-run']) {
   console.log(JSON.stringify({ repositories: keys, phases, models: Object.fromEntries(Object.entries(AGENTS_BY_KIND).map(([kind, agent]) => [kind, agent.model])), managed_cap_usd: Number(values['cap-usd']), claude_cap_usd: CLAUDE_CAP_USD }));
@@ -118,6 +120,7 @@ const signedIn = (base) => {
 const owner = signedIn(`${origin}/api/v1`);
 const account = signedIn(origin);
 const ctx = { api: values.api, origin, owner, account, ws: null, evidence, containers: [], egress: {}, timeoutS: Number(values['agent-timeout']), sandboxOrigin: sandboxOrigin(values.api).origin };
+ctx.guards = new DemoGuards({ account, owner, managed: state.managed, baseline: state.credit_before, capUsd: Number(values['cap-usd']) });
 ctx.tokens = new DemoTokens(owner);
 ctx.claudeSpent = (usd) => {
   state.claude_usd = Number(((state.claude_usd ?? 0) + usd).toFixed(4));
@@ -223,7 +226,7 @@ async function modelCredentials(rows, agentPhases, also) {
   }
 }
 
-async function main() {
+async function run() {
   const agentPhases = phases.filter((p) => !['setup', 'memories', 'smoke', 'strict', 'relax', 'approvals', 'release', 'report'].includes(p));
   const web = phases.some((p) => ['setup', 'memories'].includes(p)) ? await openWeb({ origin, sessionFile }) : null;
   ctx.ws = new Workspace({ api: values.api, bin: join(root, 'target/release'), scrub });
@@ -231,6 +234,7 @@ async function main() {
     if (phases.includes('setup')) await setup(web);
     assert.ok(state.managed, 'run the setup phase first');
     ctx.managed = state.managed;
+    Object.assign(ctx.guards, { managed: state.managed, baseline: state.credit_before });
     const rows = keys.map((key) => ({ key, ...state.repos[key] }));
     const watched = [root, process.cwd(), process.env.PWD];
     let before = null;
@@ -252,16 +256,15 @@ async function main() {
           for (const kind of kindsOf(r)) await smoke(r, kind);
         });
         else if (phase === 'strict' || phase === 'relax') {
-          // Slop's reading of the same slop varies between high and medium, and only high blocks by
-          // default, so the go-around flight has the owner's level at medium for its one head.
-          const level = phase === 'strict' ? 'medium' : 'high';
-          await account.call('PUT', `${state.managed}/agents/slop-review`, { settings: { block_at: level } });
-          log(`Slop blocks at ${level}`);
+          for (const r of rows) {
+            if (phase === 'strict') await ctx.guards.slop(r.id, 'medium');
+            else await ctx.guards.relax(r.id);
+          }
         } else if (phase === 'approvals') {
           cookie = await savedCookie();
           const late = await openWeb({ origin, sessionFile });
           try {
-            for (const r of rows) await approvals(late, r);
+            for (const r of rows) await ctx.guards.approvals(r.id, () => approvals(late, r));
           } finally {
             await late.close();
           }
@@ -309,4 +312,4 @@ async function main() {
   }
 }
 
-await main();
+await ctx.guards.run(run);

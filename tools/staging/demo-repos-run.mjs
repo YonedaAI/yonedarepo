@@ -111,7 +111,7 @@ export async function flyAgent(ctx, r, name, kind, { dir, remote }, text) {
   const used = usageOf(kind, existsSync(events) ? readFileSync(events, 'utf8').split('\n') : []);
   if (kind === 'claude') ctx.claudeSpent(used.usd);
   assert.ok(!done.killed && done.code === 0, `${agent}: ${done.killed ?? `exit ${done.code}`} ${done.stderr.slice(-500)}`);
-  return { kind, ms: done.ms, ...used, hook_calls: hooks.split('\n').filter(Boolean).length };
+  return { kind, model: AGENTS_BY_KIND[kind].model, ms: done.ms, ...used, hook_calls: hooks.split('\n').filter(Boolean).length };
 }
 
 /** The Landing on `branch`, open or already landed. */

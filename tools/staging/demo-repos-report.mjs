@@ -1,6 +1,6 @@
 // What demo-repos.mjs reads back at the end: each repository's Landings, memories, sessions,
 // deliveries and releases as the API has them, and whether the parents moved.
-import { AGENTS_BY_KIND, REPOS } from './demo-repos-plan.mjs';
+import { REPOS } from './demo-repos-plan.mjs';
 
 const q = (params) => new URLSearchParams(params).toString();
 
@@ -90,8 +90,9 @@ export async function readBack(ctx, r, state) {
   for (const [id, flight] of Object.entries(state.flights ?? {})) {
     const kind = flight.run?.kind;
     if (!kind) continue;
-    byAgent[kind] ??= { label: AGENTS_BY_KIND[kind]?.label ?? `${kind} (historical)`, runs: 0, landings: [], input_tokens: 0, cached_tokens: 0, output_tokens: 0, usd: 0, seconds: 0 };
+    byAgent[kind] ??= { label: ({ codex: 'Codex', claude: 'Claude Code', glm: 'OpenCode' })[kind] ?? `${kind} (historical)`, models: [], runs: 0, landings: [], input_tokens: 0, cached_tokens: 0, output_tokens: 0, usd: 0, seconds: 0 };
     const row = byAgent[kind];
+    if (!row.models.includes(flight.run.model ?? 'unrecorded')) row.models.push(flight.run.model ?? 'unrecorded');
     row.runs++;
     row.landings.push(`${id} #${flight.number} ${flight.outcome}`);
     row.input_tokens += flight.run.input ?? 0;
@@ -117,5 +118,6 @@ export async function readBack(ctx, r, state) {
     releases: releases.map((x) => ({ tag: x.tag, title: x.title, assets: x.asset_count })),
     review_runs: runs.length,
     review_usd: Number(runs.reduce((sum, run) => sum + (run.cost_usd ?? 0), 0).toFixed(6)),
+    review_triggers: Object.fromEntries(Object.entries(state.flights ?? {}).map(([id, flight]) => [id, flight.review_trigger ?? 'historical_unrecorded'])),
   };
 }

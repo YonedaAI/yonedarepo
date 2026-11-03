@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { NO_SESSION } from './agent-hooks-flow.mjs';
 import { accountSession } from './client.mjs';
 import { assertFlight } from './demo-repos-acceptance.mjs';
-import { agentClone, flyAgent, settleLanding, usageOf } from './demo-repos-run.mjs';
+import { agentClone, flyAgent, landingOn, settleLanding, usageOf, verdictOn } from './demo-repos-run.mjs';
+import { approveHeldFlight } from './demo-repos-approval.mjs';
 import { AGENTS_BY_KIND, fixPrompt, REPOS, workPrompt } from './demo-repos-plan.mjs';
 import { memoryFromPage, writeJson } from './demo-repos-web.mjs';
 import { McpClient } from './mcp-client.mjs';
@@ -82,7 +83,7 @@ async function flight(r, id) {
   const plan = REPOS[r.key];
   const spec = specOf(r.key, id);
   const verify = () => assertFlight(record[id], { want, proof: Boolean(spec.oracle) });
-  if (record[id]?.outcome === want) { verify(); return log(`${r.key} ${id}: already ${want}`); }
+  if (record[id]?.outcome === want) { verify(); if (id === 'approval') await approve(r, record[id]); return log(`${r.key} ${id}: already ${want}`); }
   const kind = spec.agent ?? plan.agent;
   if (await pushedBefore(r, id, spec)) {
     const settled = await settleLanding(ctx, r, spec.branch, want);
@@ -90,20 +91,41 @@ async function flight(r, id) {
     record[id] = { ...settled, run: usageFromEvidence(r.key, id, kind), base: parents?.[0] ?? null, proof: spec.oracle ? await proofOf(r, spec, settled, parents[0]) : undefined };
     save();
     verify();
+    if (id === 'approval') await approve(r, record[id]);
     return log(`${r.key} ${id}: adopted #${settled.number} ${settled.outcome} (wanted ${want}); slop ${settled.slop.value}, drift ${settled.drift.value}; proof ${JSON.stringify(record[id].proof ?? null)}`);
   }
   const again = FIXES[id] || spec.continues || record[id]?.number;
   const prompt = FIXES[id] ? fixPrompt(plan, spec, record[FIXES[id]].number) : workPrompt(plan, spec);
+  const reserved = await ctx.guards.reserve(r.id);
+  await ctx.guards.suppress(r.id);
+  log(`${r.key} ${id}: reserving up to $${reserved.worst_usd.toFixed(4)} for reviews; $${reserved.remaining_usd.toFixed(4)} remains`);
   log(`${r.key} ${id}: ${AGENTS_BY_KIND[kind].label} starts on ${spec.branch}`);
   await ctx.egressFor(kind);
   const clone = await agentClone(ctx, r, id, { branch: spec.branch, start: again ? `origin/${spec.branch}` : 'origin/main' });
   const run = await flyAgent(ctx, r, id, kind, clone, prompt);
-  log(`${r.key} ${id}: done in ${Math.round(run.ms / 1000)} s, ${run.input} in, ${run.output} out, $${run.usd.toFixed(4)}`);
+  log(`${r.key} ${id}: done in ${Math.round(run.ms / 1000)} s, ${run.input} in, ${run.output} out, ${AGENTS_BY_KIND[kind].rates ? `$${run.usd.toFixed(4)} estimated` : 'coding plan; no dollar quote'}`);
+  const opened = await landingOn(ctx, r, spec.branch);
+  await ctx.guards.review(r.id, opened);
   const settled = await settleLanding(ctx, r, spec.branch, want);
   record[id] = { ...settled, run, base: clone.base, proof: spec.oracle ? await proofOf(r, spec, settled, clone.base) : undefined };
   save();
   verify();
+  await ctx.guards.complete(r.id, { ...settled, branch: spec.branch });
+  record[id].review_trigger = 'owner_exact_head';
+  record[id].review_reservation = reserved;
+  if (id === 'approval') {
+    await approve(r, record[id]);
+    await ctx.guards.complete(r.id, { ...record[id].approval.after, head: settled.head, branch: spec.branch });
+  }
+  save();
   log(`${r.key} ${id}: #${settled.number} ${settled.outcome} (wanted ${want}); slop ${settled.slop.value}, drift ${settled.drift.value}${record[id].proof ? `; proof ${JSON.stringify(record[id].proof)}` : ''}${settled.reasons.length ? `; ${settled.reasons.join(' | ').slice(0, 160)}` : ''}`);
+}
+
+async function approve(r, held) {
+  if (held.approval?.after?.status === 'landed') return;
+  held.approval = await approveHeldFlight({ owner, reviewer: await secondUser(), held, repo: r.id, origin,
+    wait: () => verdictOn(ctx, r, held.number, held.head, 'landed') });
+  save();
 }
 
 /** Each kind answers one word on a clone that pushes nothing, before any real work. */
@@ -171,9 +193,13 @@ async function release(r) {
   }
 }
 
-/** Runs `body` on every repository together; a repository's failure leaves the others flying. */
+/** One repository at a time, so review reservations never race the shared credit ledger. */
 async function eachRepo(rows, what, body) {
-  const done = await Promise.allSettled(rows.map(body));
+  const done = [];
+  for (const row of rows) {
+    try { done.push({ status: 'fulfilled', value: await body(row) }); }
+    catch (reason) { done.push({ status: 'rejected', reason }); }
+  }
   for (const [i, d] of done.entries())
     if (d.status === 'rejected') {
       const line = `${rows[i].key} ${what}: ${scrub(d.reason?.message ?? String(d.reason)).slice(0, 500)}`;
