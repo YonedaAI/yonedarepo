@@ -8,13 +8,13 @@ import { noteOwnerCell } from './account-place';
 import { newRepoId, thisCell } from './cells';
 import { auditRepo } from './repo-audit';
 import { dispatchRuns } from './repo-checks';
-import { listRepository, owning } from './repo-create';
+import { listRepository, owning, takeBack } from './repo-create';
 import { enumerate, rawObjects, waves } from './repo-git-objects';
 import { UploadSession } from './repo-git-sessions';
 import { refreshHead } from './repo-head';
 import { isLarge, putLarge } from './repo-large-files';
 import { parseStore, RepoObjects, toBase64 } from './repo-objects';
-import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
+import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { holdName } from './repo-paths';
 import { PlatformStore } from './repo-platform-store';
 import { visibilityOf } from './repo-public';
@@ -45,46 +45,50 @@ export async function forkRepository(ctx: RepoContext, args: Json) {
     throw new ApiError('NOT_SUPPORTED', `Forks of forks nest at most ${FORK_DEPTH} deep`);
   const id = newRepoId(env);
   const name = typeof args.name === 'string' && args.name ? args.name : source.name;
-  // The fork's name among its owner's (a failed fork leaves it held: released with the
-  // repository id it names, which never lists).
-  await holdName(env, auth._session.workspace, id, name);
-  await caller(
-    env,
-    id,
-    auth,
-  )({
-    op: 'repo_init',
-    name,
-    object_store: forkSpec(ctx.repo, source.object_store, new PlatformStore(env, id).spec),
-    parent: { repo: ctx.repo, version: source.version },
-    policy: args.policy ?? { required_checks: [], approvals: 1 },
-    visibility,
-  });
-  const platform = caller(env, id, { _system: 'import' });
-  let after: Json | null = null;
-  let commits = 0;
-  do {
-    const page: Json = await ctx.call({ op: 'repo_fork_export', version: source.version, after });
-    await platform({ op: 'repo_fork_record', commits: page.commits });
-    commits += page.commits.length;
-    after = page.next;
-  } while (after);
-  await platform({ op: 'repo_fork_refs', refs: source.refs });
-  await caller(env, ctx.repo, { _system: 'fork' })({ op: 'repo_fork_register', fork: id });
-  await shardOutboxes(env, id);
-  await listRepository(env, id, auth._session.workspace, name, visibility);
-  await markFork(env, auth._session.workspace, id);
-  await noteOwnerCell(env, auth._session.workspace);
-  await refreshHead(env, id);
-  await auditRepo(env, id);
-  return {
-    id,
-    name,
-    parent: ctx.repo,
-    parent_version: source.version,
-    refs: Object.keys(source.refs).length,
-    commits,
-  };
+  const owner = auth._session.workspace;
+  const fork = new RepoContext(env, id, caller(env, id, auth));
+  let accepted = false;
+  try {
+    await holdName(env, owner, id, name);
+    await fork.call({
+      op: 'repo_init',
+      name,
+      object_store: forkSpec(ctx.repo, source.object_store, new PlatformStore(env, id).spec),
+      parent: { repo: ctx.repo, version: source.version },
+      policy: args.policy ?? { required_checks: [], approvals: 1 },
+      visibility,
+    });
+    accepted = true;
+    const platform = caller(env, id, { _system: 'import' });
+    let after: Json | null = null;
+    let commits = 0;
+    do {
+      const page: Json = await ctx.call({ op: 'repo_fork_export', version: source.version, after });
+      await platform({ op: 'repo_fork_record', commits: page.commits });
+      commits += page.commits.length;
+      after = page.next;
+    } while (after);
+    await platform({ op: 'repo_fork_refs', refs: source.refs });
+    await caller(env, ctx.repo, { _system: 'fork' })({ op: 'repo_fork_register', fork: id });
+    await shardOutboxes(env, id);
+    await listRepository(env, id, auth._session.workspace, name, visibility);
+    await markFork(env, auth._session.workspace, id);
+    await noteOwnerCell(env, auth._session.workspace);
+    await refreshHead(env, id);
+    await auditRepo(env, id);
+    return {
+      id,
+      name,
+      parent: ctx.repo,
+      parent_version: source.version,
+      refs: Object.keys(source.refs).length,
+      commits,
+    };
+  } catch (error) {
+    // No id was returned: undo the owner claim, publication and parent dependency.
+    await takeBack(env, fork, owner, name, accepted, ctx.repo);
+    throw error;
+  }
 }
 
 /**
