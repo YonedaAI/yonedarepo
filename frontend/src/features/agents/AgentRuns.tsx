@@ -2,12 +2,13 @@
 // model, cost, duration and status, filtered by agent; and one run's detail
 // (`/agents/runs/<repo>/<run>`): its findings, the harness CLI's transcript and the cost
 // breakdown (model calls and container time).
-import type { ManagedRun, RunDetail, WorkspaceState } from '../../../../shared/managed-agents';
+import type { RunDetail, WorkspaceState } from '../../../../shared/managed-agents';
 import { MANAGED_AGENTS } from '../../../../shared/managed-agents';
-import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { shortSha, when } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
+import { AgentRunList } from './AgentRunList';
+import { AgentUsage } from './AgentUsage';
 import { loadState, StatusChip } from './agentParts';
 import {
   agentName,
@@ -16,94 +17,12 @@ import {
   formatCost,
   runDuration,
   runPath,
-  runsPath,
   tileTone,
   valueLabel,
   workspacePath,
 } from './agentsModel';
 
 type Space = { workspace?: string };
-
-function RunsTable({
-  runs,
-  names,
-  space,
-  navigate,
-}: {
-  runs: ManagedRun[];
-  names: Map<string, string>;
-  space: Space;
-  navigate: Navigate;
-}) {
-  if (!runs.length)
-    return (
-      <EmptyState title="No runs yet">An agent runs when a Landing opens or is pushed.</EmptyState>
-    );
-  return (
-    <div className="source-table-wrap">
-      <table className="source-table agent-runs-table">
-        <thead>
-          <tr>
-            <th>Agent</th>
-            <th>Repository</th>
-            <th>Change</th>
-            <th>Head</th>
-            <th>Result</th>
-            <th>Model</th>
-            <th className="num">Cost</th>
-            <th>Duration</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {runs.map((run) => (
-            <tr key={`${run.repo}:${run.id}`}>
-              <td>
-                <a
-                  {...linkTo(
-                    { view: 'agent-run', runRepo: run.repo, run: run.id, ...space },
-                    navigate,
-                  )}
-                >
-                  {agentName(run.agent)}
-                </a>
-              </td>
-              <td>
-                <a {...linkTo({ view: 'overview', repo: run.repo }, navigate)}>
-                  {names.get(run.repo) ?? run.repo}
-                </a>
-              </td>
-              <td>
-                <a {...linkTo({ view: 'change', repo: run.repo, number: run.change }, navigate)}>
-                  #{run.change}
-                </a>
-              </td>
-              <td>
-                <code>{shortSha(run.head)}</code>
-              </td>
-              <td>
-                <span className={`chip run-${tileTone(run)}`}>{valueLabel(run.value)}</span>
-              </td>
-              <td>
-                {run.model}
-                {run.fallback && (
-                  <span className="chip run-warn" title={run.fallback}>
-                    fallback
-                  </span>
-                )}
-              </td>
-              <td className="num">{formatCost(run.cost_usd)}</td>
-              <td>{runDuration(run)}</td>
-              <td>
-                <StatusChip run={run} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 export function AgentRuns({
   workspace,
@@ -116,7 +35,6 @@ export function AgentRuns({
   space: Space;
   navigate: Navigate;
 }) {
-  const runs = useSource<{ runs: ManagedRun[] }>(runsPath(workspace, { agent }), '/api/managed');
   const state = useSource<WorkspaceState>(workspacePath(workspace), '/api/managed');
   const names = new Map((state.data?.repos ?? []).map((r) => [r.id, r.name]));
   return (
@@ -141,10 +59,14 @@ export function AgentRuns({
           ))}
         </nav>
       </div>
-      {loadState(runs, 'runs') ??
-        (runs.data && (
-          <RunsTable runs={runs.data.runs} names={names} space={space} navigate={navigate} />
-        ))}
+      <AgentRunList
+        key={`${workspace}:${agent ?? ''}`}
+        workspace={workspace}
+        agent={agent}
+        names={names}
+        space={space}
+        navigate={navigate}
+      />
       <a {...linkTo({ view: 'agents-home', ...space }, navigate)}>Back to agents</a>
     </div>
   );
@@ -205,6 +127,7 @@ export function AgentRunDetail({
                 </>
               )}
             </dl>
+            <AgentUsage runs={[detail.run]} coverage="This run" />
             {detail.run.summary && (
               <section aria-labelledby="summary-heading">
                 <h2 id="summary-heading">Summary</h2>
@@ -257,7 +180,11 @@ export function AgentRunDetail({
                   </table>
                 </div>
               ) : (
-                <p className="source-empty">Nothing was charged for this run.</p>
+                <p className="source-empty">
+                  {detail.run.cost_usd > 0
+                    ? 'Cost breakdown is unavailable.'
+                    : 'Nothing was charged for this run.'}
+                </p>
               )}
             </section>
             <section aria-labelledby="transcript-heading">

@@ -1,0 +1,9 @@
+.agent-usage-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.agent-usage-summary h2,
+.agent-usage-summary p {
+  margin: 0;
+}
