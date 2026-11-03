@@ -803,7 +803,11 @@
           "directory": "../frontend/dist",
           "binding": "ASSETS",
           "not_found_handling": "single-page-application",
-          "run_worker_first": true
+          "run_worker_first": [
+            "/*",
+            "!/assets/*",
+            "!/brand/*"
+          ]
         },
         "vars": {
           "AUDIT_LOG": "off",

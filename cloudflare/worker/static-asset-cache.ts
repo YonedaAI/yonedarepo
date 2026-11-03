@@ -1,8 +1,8 @@
 // Only public fingerprinted build output is immutable; application data stays fresh.
+
+import { FINGERPRINTED_ASSET } from '../../shared/static-assets';
 import type { Env } from './types';
 
-const FINGERPRINTED =
-  /^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.(js|css|woff2?|png|jpe?g|webp|avif|gif|svg)$/;
 const TYPES: Record<string, RegExp> = {
   js: /^(text|application)\/(javascript|ecmascript)(;|$)/,
   css: /^text\/css(;|$)/,
@@ -23,7 +23,7 @@ export function staticAssetCache(
   result: Response,
   type = result.headers.get('content-type'),
 ): Response {
-  const extension = FINGERPRINTED.exec(new URL(req.url).pathname)?.[1];
+  const extension = FINGERPRINTED_ASSET.exec(new URL(req.url).pathname)?.[1];
   if (
     env.STATIC_ASSET_CACHE !== 'on' ||
     !['GET', 'HEAD'].includes(req.method) ||
