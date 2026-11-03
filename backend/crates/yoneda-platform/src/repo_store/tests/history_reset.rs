@@ -102,6 +102,37 @@ fn a_reset_repository_takes_a_clone_again_under_the_same_ids() {
 }
 
 #[test]
+fn fresh_status_distinguishes_reimported_history_at_the_same_commit_and_version() {
+    let (h, root) = opened();
+    let bytes = h.read_object(&root);
+    let before = h.ok(OWNER, json!({"op":"repo_status"}));
+    assert!(
+        before["history_chain"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty())
+    );
+    reset(&h);
+    let empty = h.ok(OWNER, json!({"op":"repo_status"}));
+    assert_eq!(empty["history_chain"], Value::Null);
+    h.ok(
+        IMPORTER,
+        json!({"op":"repo_record_pushed", "commits":[{
+            "commit":root,"data_b64":STANDARD.encode(bytes),"touches":[],
+            "objects":[{"id":root,"kind":"commit"}]
+        }]}),
+    );
+    h.ok(
+        IMPORTER,
+        json!({"op":"repo_import","ref":"main","commit":root}),
+    );
+    let after = h.ok(OWNER, json!({"op":"repo_status"}));
+    assert_eq!(after["version"], before["version"]);
+    assert_eq!(after["refs"], before["refs"]);
+    assert_eq!(after["object_store"], before["object_store"]);
+    assert_ne!(after["history_chain"], before["history_chain"]);
+}
+
+#[test]
 fn a_reset_moves_the_repository_to_the_store_of_record() {
     let (h, _) = opened();
     h.db.query(

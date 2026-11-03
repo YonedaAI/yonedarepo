@@ -10,6 +10,8 @@ export type RepoStatus = {
   forks: number;
   /** The paths a path-scoped token may read (null: the whole repository). */
   grant: string[] | null;
+  /** Identity of this version's history, including after an operator re-import reuses version numbers. None before the first transaction-log entry. */
+  history_chain: string | null;
   /** Whether a push opens a Landing, and whether agents run on those. */
   landings: AutoLandings;
   name: string;
@@ -437,6 +439,13 @@ export const repoStatusSchema = {
         "null"
       ]
     },
+    "history_chain": {
+      "description": "Identity of this version's history, including after an operator re-import reuses\nversion numbers. None before the first transaction-log entry.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "landings": {
       "$ref": "#/$defs/AutoLandings",
       "description": "Whether a push opens a Landing, and whether agents run on those."
@@ -519,6 +528,7 @@ export const repoStatusSchema = {
   "required": [
     "name",
     "version",
+    "history_chain",
     "owner",
     "object_store",
     "policy",

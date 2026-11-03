@@ -46,6 +46,35 @@ localStorage or IndexedDB metadata cache; no cached access or mutable refs/check
 If measurements justify immutable memory caching, key it by repository and commit,
 with current grant/quarantine validation before display, and bound retained bytes.
 
+## Completed activity cache
+
+The first live bootstrap's named completion times (min / median / max, ms) were
+908 / 973 / 3,167 cold, 760 / 804 / 941 on reload and 681 / 1,003 / 1,116 on repeat
+navigation. The 300 ms repeat goal remains unmet, and the first cold stall persists.
+Activity still spends 158–347 ms on a 200-commit log; warm README reads spend about
+104 ms before a 2 ms edge hit. Decoded JSON is 124,083 bytes (41,930 transferred).
+
+This slice remains inside `OVERVIEW_BOOTSTRAP`. After fresh status admits the caller,
+cache only completed compact activity, never pending I/O, status, refs, viewer,
+latest checks or errors. Keys include repository/store, exact selected commit/ref,
+the actual log version, fresh history chain and quarantine epoch. Restricted grants,
+forks and histories with no chain bypass it. Fresh status obtains the chain alongside
+version from the same existing SQL query, without a migration or extra query.
+Fresh principal redaction still runs for each response. A version race populates
+no key until a later admission observes that version's chain. Re-importing the same
+commit under reused version numbers changes the chain and cannot reuse old activity.
+
+Bound the isolate cache to 128 entries and 4 MiB total, with a 256 KiB entry cap.
+Legacy activity missing author metadata bypasses storage because author backfill
+does not advance the log version. Cache hits perform zero log RPCs. Misses retain
+one log RPC and the 200-entry limit; no extra network call is introduced. Reuse the already
+selected root for the Overview README walk instead of resolving that commit again,
+while retaining the same path/grant and blob quarantine checks. Picker metadata
+continues to render progressively. Global object-tier ordering is outside this slice.
+
+Measure actual named/picker content again after integration; these content savings
+alone cannot guarantee 300 ms while fresh admission/name resolution remain serial.
+
 Test old-server fallback, empty/import/error states, alias/cell forwarding, selected
 branches and commits, min_version, public privacy, private denial, restricted paths,
 quarantine, revocation and cancellation. Compare at least three cold/reload/picker

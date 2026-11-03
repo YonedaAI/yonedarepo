@@ -33,6 +33,20 @@ it('bootstraps exact Overview content through one fresh status without shard dia
   expect(shards).toBe(0);
 });
 
+it('reuses completed activity while admitting each request and refreshing mutable checks', async () => {
+  const r = await setup('overview_cached');
+  const seen = countingOps(on);
+  const path = `/repos/${r.id}?${mode}`;
+  const first = await api(path, r.owner, {}, seen.env);
+  const second = await api(path, r.owner, {}, seen.env);
+  expect(second.body.overview.activity).toEqual(first.body.overview.activity);
+  expect(seen.take()).toMatchObject({ repo_status: 2, repo_log: 1, repo_commit: 2 });
+  expect((await api(`/repos/${r.id}/commits/${r.commit}/checks`, r.owner, { body: { name: 'live', status: 'pass', evidence: 'current' } }, on)).status).toBe(200);
+  const refreshed = await api(path, r.owner, {}, seen.env);
+  expect(refreshed.body.overview.latest.checks).toContainEqual({ name: 'live', status: 'pass' });
+  expect(seen.take().repo_commit).toBe(1);
+});
+
 it('reuses the named resolver status and handle and preserves aliases', async () => {
   const r = await setup('overview_named');
   const seen = countingOps(on);
@@ -133,6 +147,7 @@ it('runs README, latest and activity independently after selecting one tree', as
 
 it('keeps grants, revocation and private admission ahead of every bundled content read', async () => {
   const r = await setup('overview_private');
+  await api(`/repos/${r.id}?${mode}`, r.owner, {}, on);
   const stranger = { cookie: await signup('overview_stranger') };
   for (const who of [{}, stranger]) {
     expect((await api(`/repos/${r.id}?${mode}`, who, {}, on)).status).toBe(404);
@@ -172,6 +187,8 @@ it('redacts legacy email principals throughout public nested responses', async (
   expect(made.status).toBe(200);
   const picked = await platformFetch(new Request('https://yoneda/api/auth/handle', { method: 'PUT', headers: { cookie: owner.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ handle: 'overview_alias' }) }), on);
   expect(picked.status).toBe(200);
+  const member = await api(`/repos/${made.body.id}?${mode}`, owner, {}, on);
+  expect(member.body.overview.activity.commits[0].principal).toContain(email);
   const byId = await api(`/repos/${made.body.id}?${mode}`, {}, {}, on);
   expect(byId.status).toBe(200);
   expect(byId.body.viewer.public).toBe(true);

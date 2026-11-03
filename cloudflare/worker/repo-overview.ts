@@ -1,8 +1,9 @@
 // One authorized Overview read. Mutable admission/status stays fresh; every content
 // section is selected from one tree's commit, rather than following a moving branch again.
 import { failure } from './repo-api-failure';
-import { listTree, readFile } from './repo-files';
+import { listTree, readFileFromTree } from './repo-files';
 import type { Json, RepoContext } from './repo-ops';
+import { overviewActivity } from './repo-overview-activity';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
@@ -31,19 +32,6 @@ function latestView(value: Json): Json {
         failing_checks: value.gates.failing_checks,
       },
     }),
-  };
-}
-function activityView(value: Json): Json {
-  return {
-    commits: (value.commits as Json[]).map(
-      ({ commit, principal, author_name, authored_at, landed }) => ({
-        commit,
-        principal,
-        author_name,
-        authored_at,
-        landed: landed ? { landed_at: landed.landed_at } : null,
-      }),
-    ),
   };
 }
 
@@ -93,20 +81,8 @@ export async function overview(
     const name = readmeName(tree.entries);
     [latest, activity, readme] = await Promise.all([
       part('latest', () => fresh.call({ op: 'repo_commit', commit: tree.commit }).then(latestView)),
-      part('activity', () =>
-        fresh
-          .call({
-            op: 'repo_log',
-            ref,
-            from: tree.commit,
-            limit: 200,
-            ...(query.has('at') && { at: Number(query.get('at')) }),
-          })
-          .then(activityView),
-      ),
-      part('readme', () =>
-        name ? readFile(fresh, { path: name, commit: tree.commit }) : Promise.resolve(null),
-      ),
+      part('activity', () => overviewActivity(fresh, status, ref, tree.commit, query)),
+      part('readme', () => (name ? readFileFromTree(fresh, tree, name) : Promise.resolve(null))),
     ]);
   }
   return {
