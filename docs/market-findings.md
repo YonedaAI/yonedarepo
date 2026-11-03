@@ -6,7 +6,7 @@ Researched 2026-11-02 from public sources, linked at the end. Where only one sou
 
 1. Turn on prod analytics (`docs/analytics-plan.md`, phases 1 and 2), so usage and Landing outcomes are counted.
 2. Run forgemark, Entire's open-source benchmark, against YonedaRepo and publish the result.
-3. Rerun the 1,000-writer burst and write it up as one post: many agents pushing to one repository at once.
+3. Write up the home page's "One branch. A thousand writers. No retries." as one post, with a fresh 3-run measure through `git push`. Today's 1,000 of 1,000 (2026-10-30) went through the API.
 4. Ship a free first step that works with GitHub, as Entire did: for example, `yoneda` importing a GitHub repository in one command so agents have somewhere to push.
 5. Line up 5 teams running agents as design partners, and quote them.
 6. Launch on Show HN and in the Cloudflare developer community. Check whether Workers Launchpad has a cohort open.
@@ -54,7 +54,7 @@ Entire is not collecting agent sessions to train models. Dohmke told Axios: "We 
 
 | Possible claim | Today |
 |---|---|
-| **1,000 agents pushing to one repository at once** | The burst test exists; numbers need a fresh run |
+| **1,000 agents on one branch, all landed first time** | On the home page. Measured 2026-10-30: 1,000 of 1,000 landed, 168–424 landings/s, through the API from the bench Worker. Plain Git's 1 of 1,000 follows from its rules, not a run |
 | **Built on Cloudflare: no servers, nothing to pay while idle** | True today |
 | **Outcome data from Landings** | Flight Path records what an agent changed, which checks ran, what review found, and whether it landed |
 | Code kept in the EU | Built on `claude/global`, not switched on. Entire already offers an EU region, so this is not unique |
@@ -71,7 +71,12 @@ A team buying a code platform asks first whether it trains on their code. Entire
 2. Customers opt in to share outcome data, in return for credits or a benchmark report on their own agents.
 3. YonedaRepo publishes aggregate findings, such as which agents land the most code. That is marketing and data at once.
 
-"Newer technology" is a claim until it's measured: forgemark (next step 2) settles it.
+"Newer technology" is a claim until it's measured. Two measures answer different questions:
+
+| Measure | Question | Who wins today |
+|---|---|---|
+| One branch, many writers (ours) | Do concurrent agents all land without retrying? | YonedaRepo by design: Git rejects all but the first push |
+| forgemark `branch` mode | How many pushes per second, each agent on its own branch? | Unknown until we run it. This is where Entire claims 89× over GitHub |
 
 ## Sources
 
