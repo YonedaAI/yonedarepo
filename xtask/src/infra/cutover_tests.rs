@@ -336,6 +336,7 @@ fn read_performance_switches_have_dev_prod_parity() {
                 "JOINED_REPO_PATH",
                 "OVERVIEW_BOOTSTRAP",
                 "OVERVIEW_DEFER_ACTIVITY",
+                "REPO_IMAGE_REVALIDATION",
                 "RECENT_VERSIONS",
             ] {
                 assert_eq!(
