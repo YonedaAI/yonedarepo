@@ -38,6 +38,9 @@ state afterwards. An owner-requested review is not automatic-trigger evidence.
 Private run receipts and the changing work ledger are under
 `.local/implementation-20261103/`; do not publish their account or monitor data.
 
+Future proposal: [local Rust repository service](local-repository-future.md).
+This records a possible Git-compatible local mode; no implementation is authorized.
+
 ## Historical handoff
 
 The following records the earlier state and superseded plan. It is retained for
