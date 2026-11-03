@@ -153,6 +153,7 @@
     "AUTOMATIC_LOCALITY": "on",
     "CELLS": "on",
     "CLIENT_ERRORS": "off",
+    "GLOBAL_AUTH_LIMITS": "on",
     "PUBLIC_APP_ORIGIN": "https://dev.yonedarepo.com",
     "REGION_SIGNALS": "on",
     "REQUEST_IDS": "off",

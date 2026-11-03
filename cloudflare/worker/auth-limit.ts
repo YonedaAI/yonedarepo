@@ -1,6 +1,6 @@
-// Front auth counters use the primary platform's placed default HTTP fetch handler.
-// Placement does not cover RPC/named entrypoints. Already-shared OWNER_TOKEN signs only
-// this purpose; the operator credential itself never travels in a request.
+// Compatibility for the preceding frontend during additive rollout of global counters.
+// New handlers use auth-counter.ts and the shared authority; this old signed route can be
+// removed after every frontend has upgraded. The operator credential never travels.
 import { hmacHex, hmacKey } from './hmac';
 import { error, readJson, response } from './http';
 import type { Env } from './types';
@@ -16,7 +16,7 @@ const validKey = (key: unknown): key is string =>
   [...key].every((char) => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127);
 const payload = (key: string, at: number) => `yoneda:placed-auth-limit:v1\n${at}\n${key}`;
 
-/** The raw primary default service binding, never its named/RPC/routing proxy. */
+/** The raw counter service binding, never a named/RPC/routing proxy. */
 export async function placedAuthLimit(platform: Fetcher, secret: string | undefined, key: string) {
   if (!secret) throw new Error('The auth service is not configured');
   if (!validKey(key)) return { success: false };

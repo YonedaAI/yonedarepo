@@ -4,7 +4,7 @@
 // ever asks about is a readable name, of the authorities that hold them, and on any doubt it
 // says `enam`, which holds every older repository and forwards the rest.
 import { normalizeHandle } from '../../shared/account';
-import { placedAuthLimit } from './auth-limit';
+import { authCounterEnv } from './auth-counter';
 import { hinted } from './cell-env';
 import { HOME_COOKIE } from './cell-names';
 import {
@@ -113,19 +113,9 @@ function routedPlatform(env: Env, platform: Fetcher): Fetcher {
 
 /** The front's bindings: as they are, with cells off. */
 export function frontEnv(env: Env): Env {
-  if (!cellsOn(env) || !env.PLATFORM) return env;
+  if (!cellsOn(env) || !env.PLATFORM) return authCounterEnv(env);
   const platform = env.PLATFORM;
-  return {
-    ...env,
-    PLATFORM: routedPlatform(env, platform),
-    // The front runs at many edge locations. Keep its existing shared auth keys at
-    // one placed backend counter; otherwise OAuth gets a fresh allowance per colo.
-    ...(env.AUTH_LIMITER && {
-      AUTH_LIMITER: {
-        limit: ({ key }: { key: string }) => placedAuthLimit(platform, env.OWNER_TOKEN, key),
-      },
-    }),
-  };
+  return { ...authCounterEnv(env), PLATFORM: routedPlatform(env, platform) };
 }
 
 /** A provider sign-in on the front: what it starts, it starts in the cell of the person's

@@ -6,6 +6,7 @@ const LIFETIME: i64 = 7 * 24 * 60 * 60 * 1000;
 
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> Result<Value> {
     match op {
+        SigninOp::RateLimit => super::auth_limit::admit(db, c, now),
         SigninOp::Signup => {
             let username =
                 yoneda_core::account::normalize_account_identifier(&string(c, "username")?)?;

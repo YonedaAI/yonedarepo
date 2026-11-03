@@ -271,10 +271,6 @@
       "stream": "4ff4b2c0c4ec4234934fa94498ab73c5"
     }
   ],
-  "placement": {
-    "mode": "targeted",
-    "region": "aws:us-east-1"
-  },
   "preview_urls": false,
   "queues": {
     "consumers": [
@@ -390,6 +386,7 @@
     "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
     "GITHUB_APP_ID": "5571444",
     "GITHUB_APP_SLUG": "yonedarepo-dev-import",
+    "GLOBAL_AUTH_LIMITS": "on",
     "LANDING_INSTRUMENTS": "on",
     "LAND_MODE": "batch",
     "LAND_WHEN_CLEARED": "on",

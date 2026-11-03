@@ -846,11 +846,15 @@ fn dev_and_prod_share_edge_and_regional_backend_topology() {
             assert_eq!(config["vars"]["AUTOMATIC_LOCALITY"], "on");
             assert_eq!(config["vars"]["REGION_SIGNALS"], "on");
         }
-        assert_eq!(role("platform")["placement"]["region"], "aws:us-east-1");
-        assert_eq!(
-            role("platform-weur")["placement"]["region"],
-            "aws:eu-central-1"
-        );
+        for name in ["platform", "platform-weur"] {
+            assert!(
+                role(name).get("placement").is_none(),
+                "API must run at the edge"
+            );
+        }
+        for config in [front, role("platform"), role("platform-weur")] {
+            assert_eq!(config["vars"]["GLOBAL_AUTH_LIMITS"], "on");
+        }
         let european_service = format!("{}-platform-weur", spec.prefix);
         assert!(
             front["services"]
@@ -967,7 +971,7 @@ mod cells {
         let cell = worker(&spec, "platform-weur");
         assert_eq!(cell["name"], "{prefix}-platform-weur");
         assert_eq!(cell["main"], worker(&spec, "platform")["main"]);
-        assert_eq!(cell["placement"]["region"], "aws:eu-central-1");
+        assert!(cell.get("placement").is_none());
         assert!(cell.get("routes").is_none(), "reached through bindings");
         assert_eq!(cell["vars"]["CELL"], "weur");
         assert_eq!(cell["vars"]["CELLS"], "on");
