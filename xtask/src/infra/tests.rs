@@ -827,6 +827,16 @@ fn dev_and_prod_share_edge_and_regional_backend_topology() {
         let configs = spec.configs(&lock(resource_lock)).unwrap();
         let role = |name: &str| &configs.iter().find(|(w, _)| w.role == name).unwrap().1;
         let front = role("agents");
+        let primary_binding = front["services"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|service| service["binding"] == "PLATFORM")
+            .unwrap();
+        assert!(
+            primary_binding.get("entrypoint").is_none(),
+            "placed auth HTTP must target the default fetch handler"
+        );
         assert!(
             front.get("placement").is_none(),
             "frontend must run at the edge"

@@ -184,21 +184,27 @@ export async function orgPages(page, { account, member, shot, cleanup }, m) {
   await createOrg.getByRole('button', { name: 'Create organization' }).click();
   await settle(page.getByRole('heading', { level: 1, name: org }), [createOrg.getByRole('alert')], { timeoutMs: 30_000, what: 'creating the organization' });
   await page.waitForURL(`**/orgs/${org}`);
-  await see(page.getByText(/You are an owner/), 'the org page naming the creator an owner');
+  await see(page.locator('.org-header .chip').getByText('Owner', { exact: true }), 'the org page naming the creator an owner');
   await see(railOrg(page, org), 'the org in the sidebar');
 
   const teams = page.getByRole('region', { name: 'Teams', exact: true });
   await see(teams.getByText('No teams yet.'), 'the Teams empty state');
-  await teams.getByLabel('New team').fill('devs');
+  await teams.getByLabel('Team name').fill('devs');
   await teams.getByRole('button', { name: 'Create team' }).click();
   const devs = teams.locator('li.org-team', { has: page.getByRole('heading', { name: /^devs/ }) });
   await settle(devs, [teams.getByRole('alert')], { timeoutMs: 30_000, what: 'creating team devs' });
-  await see(devs.getByText(`team:${org}/devs`), `the team entry team:${org}/devs`);
+  await see(devs.getByRole('heading', { name: /^devs/ }), 'the team entry devs');
 
   const members = page.getByRole('region', { name: 'Members', exact: true });
-  await members.getByLabel(/^Account/).fill(member.name);
+  const email = member.identifier.includes('@');
+  await members.getByRole('combobox', { name: 'Account', exact: true }).fill(email ? member.identifier : `@${member.name}`);
+  // Email resolves one account; a handle prefix may also match longer handles.
+  const candidate = members.getByRole('option', { disabled: false, ...(email ? {} : { name: `@${member.name}`, exact: true }) });
+  await candidate.waitFor();
+  assert.equal(await candidate.count(), 1, 'an exact account identifier must resolve one candidate');
+  await candidate.click();
   await members.getByRole('button', { name: 'Add member' }).click();
-  await settle(members.getByRole('cell', { name: member.name, exact: true }), [members.getByRole('alert')], { timeoutMs: 30_000, what: `adding ${member.name} to the org` });
+  await settle(members.locator('.org-member-name').getByText(member.name, { exact: true }), [members.getByRole('alert')], { timeoutMs: 30_000, what: `adding ${member.name} to the org` });
   await devs.getByLabel('Add member').selectOption(member.name);
   await devs.getByRole('button', { name: 'Add', exact: true }).click();
   await settle(devs.getByRole('listitem').filter({ hasText: member.name }), [teams.getByRole('alert')], { timeoutMs: 30_000, what: `adding ${member.name} to team devs` });

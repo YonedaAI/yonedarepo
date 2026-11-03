@@ -133,12 +133,6 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
     const waitUntil = (work: Promise<unknown>) => this.ctx.waitUntil(work);
     return served({ env: this.env, req, waitUntil }, () => platformFetch(req, this.env));
   }
-  /** The unpinned front's existing auth limiter, kept at this placed backend. RPC only. */
-  authLimit(key: string): Promise<{ success: boolean }> {
-    if (typeof key !== 'string' || !key || key.length > 256 || !this.env.AUTH_LIMITER)
-      return Promise.resolve({ success: false });
-    return this.env.AUTH_LIMITER.limit({ key });
-  }
   /** Inbound TCP: Git over SSH, through the SSH gateway container. */
   connect(socket: Socket) {
     return sshFrontDoor(socket, this.env);
