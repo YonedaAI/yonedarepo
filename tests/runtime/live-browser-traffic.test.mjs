@@ -3,16 +3,19 @@
 // Workers read. A tool that talks to the platform without it fails here.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 import { client as acceptanceClient } from '../../tools/acceptance/client.mjs';
 import { headers as benchHeaders } from '../../tools/fanout-bench/requests.js';
 import { gitConfigEnv, OWN_TRAFFIC_ENV } from '../../tools/own-traffic.mjs';
 import { sandboxEnv } from '../../tools/staging/agent-sandbox.mjs';
+import { serve as gatewayShim } from '../../tools/staging/agent-sandbox/gateway-shim.mjs';
 import { OWN_TRAFFIC, Session } from '../../tools/staging/client.mjs';
 import { CliKit } from '../../tools/staging/cli-tools.mjs';
 import { Walk } from '../../tools/staging/cli-walk-kit.mjs';
@@ -32,6 +35,7 @@ const NOT_THE_PLATFORM = new Map([
   ['tools/ship/monitor.mjs', 'Superfan and /health, which is not a client request'],
   ['tools/staging/webhook-flow.mjs', "the bench Worker's hook box"],
   ['tools/fanout-bench/worker.js', 'the bench Worker calling itself'],
+  ['tools/staging/agent-sandbox/gateway-shim.mjs', 'model provider forwarding, verified below'],
 ]);
 /** A fetch whose headers come from somewhere a test below checks. */
 const CHECKED_ELSEWHERE = new Map([
@@ -40,6 +44,7 @@ const CHECKED_ELSEWHERE = new Map([
   ['tools/fanout-bench/requests.js', 'headers'],
   ['tools/fanout-bench/region-steps.js', 'the init runStep builds, tested in region-tools.test.mjs'],
   ['tools/staging/cli-tools.mjs', "the proxy forwards the CLI's own headers"],
+  ['tools/staging/agent-sandbox/codex-run.mjs', 'the actual API helper headers, verified below'],
 ]);
 /** Stock Git over SSH: the protocol has no header to carry, so these runs stay counted. */
 const OVER_SSH = new Set(['tools/staging/ssh-flow.mjs']);
@@ -98,6 +103,61 @@ test('every live browser context sends the mark the front Worker looks for', asy
 test('every kit API session sends the mark too', () => {
   const headers = new Session('https://x.test', { bearer: 'token' }).headers();
   assert.equal(headers[NAME], VALUE);
+});
+
+test('the sandbox Codex API helper marks reads and writes without running an agent', async () => {
+  const source = await readFile('tools/staging/agent-sandbox/codex-run.mjs', 'utf8');
+  assert.equal(fetchCalls(source).length, 1, 'a new fetch needs its own traffic check');
+  // Evaluate the real declarations only, before context delivery or CLI startup. Neither
+  // credentials nor subprocess capabilities from the host enter this fixture.
+  const begin = source.indexOf('const headers =');
+  const end = source.indexOf('\nconst packet =', begin);
+  assert.ok(begin >= 0 && end > begin, 'the API declaration boundary changed');
+  const sent = [];
+  const api = runInNewContext(`${source.slice(begin, end)}\napi;`, {
+    origin: 'https://platform.test', repo: 'fixture',
+    process: { env: { YONEDA_TOKEN: 'fixture-token' } },
+    fetch: async (url, init) => {
+      sent.push({ url, ...init });
+      return new Response('{}', { status: 200 });
+    },
+  });
+  await api('/context?memories=8');
+  await api('/context/deliveries', { method: 'POST', body: '{}' });
+  assert.equal(sent.length, 2);
+  assert.equal(sent[0].url, 'https://platform.test/api/v1/repos/fixture/context?memories=8');
+  assert.equal(sent[1].url, 'https://platform.test/api/v1/repos/fixture/context/deliveries');
+  assert.equal(sent[1].method, 'POST');
+  assert.equal(sent[1].body, '{}');
+  for (const { headers } of sent) {
+    assert.equal(headers[NAME], VALUE);
+    assert.equal(headers.authorization, 'Bearer fixture-token');
+  }
+});
+
+test('the sandbox gateway fetch is model traffic and cannot forward a website or API path', async () => {
+  const source = await readFile('tools/staging/agent-sandbox/gateway-shim.mjs', 'utf8');
+  assert.equal(fetchCalls(source).length, 1, 'a new fetch needs its own traffic check');
+  const seen = [];
+  const upstream = createServer((req, res) => {
+    seen.push(req.url);
+    res.writeHead(200, { 'content-type': 'application/json' }).end('{}');
+  });
+  upstream.listen(0, '127.0.0.1');
+  await once(upstream, 'listening');
+  const shim = gatewayShim({ gateway: `http://127.0.0.1:${upstream.address().port}/provider`, token: 'fixture', model: 'fixture-model', port: 0 });
+  await once(shim, 'listening');
+  const origin = `http://127.0.0.1:${shim.address().port}`;
+  const ask = (path) => fetch(`${origin}${path}`, { method: 'POST', body: JSON.stringify({ model: 'fixture-model', input: 'fixture' }) });
+  try {
+    for (const path of ['/', '/api/v1/repos', '/api/v1/mcp'])
+      assert.equal((await ask(path)).status, 403);
+    assert.deepEqual(seen, [], 'platform paths must never reach the provider fetch');
+    assert.equal((await ask('/openai/responses')).status, 200);
+    assert.deepEqual(seen, ['/provider/openai/responses']);
+  } finally {
+    await Promise.all([new Promise((done) => shim.close(done)), new Promise((done) => upstream.close(done))]);
+  }
 });
 
 test('every fetch in a tool carries the mark, or goes somewhere that never counts', async () => {
