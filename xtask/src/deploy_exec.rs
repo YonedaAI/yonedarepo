@@ -2,10 +2,11 @@
 use crate::deploy_env::Step;
 use crate::deploy_guard::{self as guard, Options};
 use crate::deploy_prebuilt::{Prebuilt, prebuilt};
+pub(crate) use crate::deploy_timings::Timings;
 use crate::infra::inventory::Deployable;
 use crate::infra::retired::Kind;
 use crate::infra::spec::{Env, Spec};
-use crate::infra::wrangler::{self, table};
+use crate::infra::wrangler;
 use crate::process::Result;
 use std::collections::BTreeMap;
 use std::time::Instant;
@@ -258,33 +259,6 @@ fn row(w: &Deployable, state: &str, revision: &str) -> Vec<String> {
         state.into(),
         revision.into(),
     ]
-}
-
-/// Wall time per step, printed as a table (and to the Actions job summary).
-#[derive(Debug, Default)]
-pub(crate) struct Timings {
-    rows: Vec<(String, f64, bool)>,
-}
-
-impl Timings {
-    pub(crate) fn record(&mut self, step: &str, started: Instant, ok: bool) {
-        self.rows
-            .push((step.into(), started.elapsed().as_secs_f64(), ok));
-    }
-
-    pub(crate) fn print(&self) {
-        let mut rows: Vec<Vec<String>> = self
-            .rows
-            .iter()
-            .map(|(step, secs, ok)| {
-                let result = if *ok { "ok" } else { "FAILED" };
-                vec![step.clone(), format!("{secs:.1}"), result.into()]
-            })
-            .collect();
-        let total: f64 = self.rows.iter().map(|(_, secs, _)| secs).sum();
-        rows.push(vec!["total".into(), format!("{total:.1}"), String::new()]);
-        table("deploy timings", &["Step", "Seconds", "Result"], &rows);
-    }
 }
 
 /// Builds the frontend without pnpm (worktrees symlink node_modules), pointing its Git, CLI
