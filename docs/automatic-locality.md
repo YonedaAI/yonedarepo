@@ -55,8 +55,8 @@ rewrites them. Private copies have no public bucket or API route.
 
 The new class uses the appended `v9` Durable Object migration, without altering
 existing class identities or repository SQL migrations. Both environments keep
-`AUTOMATIC_LOCALITY=off`. Deploy this code before enabling that variable. Preserve
-the class and binding on rollback after first use. Local workerd proves state,
+`AUTOMATIC_LOCALITY=off`. Deploy this code before enabling that variable. Cloudflare cannot roll back across that class migration; a rollback must use a
+compatible build retaining the class, migration history and binding. Local workerd proves state,
 authorization and race behavior, not physical placement: Cloudflare's location
 [location hints](https://developers.cloudflare.com/durable-objects/reference/data-location/)
 are best effort and count only when a new object is first reached. HTTP/API

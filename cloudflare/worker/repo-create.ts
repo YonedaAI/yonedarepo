@@ -1,6 +1,8 @@
 // Creating platform repositories: the owner (or the operator for a named workspace) creates
 // a repository, optionally seeded with files or imported from a Git remote, and may issue its
-// first repository tokens in the same request.
+// first repository tokens in the same request. Over 300 nonblank lines: create and import
+// admission share owner, name and token checks here; the actual network import executes
+// separately in repo-clone, and the shared compensation is used by forks too.
 
 import { noteOwnerCell } from './account-place';
 import { afterAnswer } from './background';
