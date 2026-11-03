@@ -30,3 +30,13 @@ on warm navigation; a loading state must render immediately and must not blank t
 Readable-name requests now reach the unpinned API without a frontend directory read.
 The API still resolves ownership and access and forwards to the correct repository
 authority. Known repository IDs continue routing directly.
+
+Session bootstrap uses `GET /api/auth/session?summary=true`: one fresh session check,
+without avatar or handle reads. Full profile details hydrate independently after admission.
+Home feed reads run on Home and global search only. Overview activity mounts after the
+README has answered (including an error), then waits until near the viewport. These
+optional reads must never gate the repository list, header, files or README text.
+
+Repository navigation starts list and session requests in parallel. The API authenticates
+each list request itself; the UI still waits for session admission before displaying the
+private workspace. An optional profile response cannot authorize repository access.

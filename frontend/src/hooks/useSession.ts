@@ -32,7 +32,7 @@ export function useSession() {
     setLoading(true);
     try {
       const result = await api<{ authenticated: boolean } & Partial<AccountIdentity>>(
-        'auth/session',
+        'auth/session?summary=true',
       );
       if (generation.current !== current) return;
       const next: AccountIdentity | null =
@@ -54,25 +54,42 @@ export function useSession() {
       signedIn.current = !!next;
       setIdentity(next);
       setError('');
+      // Profile decoration is independent of admission to the workspace.
+      if (next)
+        void api<{ authenticated: boolean } & AccountIdentity>('auth/session')
+          .then((details) => {
+            if (generation.current !== current) return;
+            if (!details.authenticated) {
+              clear();
+              setSessionEnded(true);
+            } else if (details.username === next.username) {
+              setIdentity(details);
+            }
+          })
+          .catch(() => {
+            /* Initials remain usable when optional details cannot load. */
+          });
     } catch (e) {
       if (generation.current === current) setError((e as Error).message);
     } finally {
       if (generation.current === current) setLoading(false);
     }
-  }, []);
+  }, [clear]);
   const signOut = useCallback(async () => {
     await api('auth/logout', {});
     clear();
     setSessionEnded(false);
   }, [clear]);
   /** A new picture or name, without reading the session again. */
-  const patchIdentity = useCallback(
-    (change: Partial<AccountIdentity>) =>
-      setIdentity((current) => current && { ...current, ...change }),
-    [],
-  );
+  const patchIdentity = useCallback((change: Partial<AccountIdentity>) => {
+    generation.current++; // A delayed profile must not overwrite an explicit edit.
+    setIdentity((current) => current && { ...current, ...change });
+  }, []);
   useEffect(() => {
     void discover();
+    return () => {
+      generation.current++;
+    };
   }, [discover]);
   return {
     authenticated: identity !== null,
