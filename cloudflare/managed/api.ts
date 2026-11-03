@@ -21,6 +21,7 @@ import { principalName, repoAgents, runNow } from './agent-actions';
 import { setRepos, sync } from './agent-repos';
 import { billingState, credit, removeCard, setAutoTopUp, setupCard } from './billing';
 import { type ManagedEnv, REPO_ID, TOKEN_NAME } from './config';
+import { runExact } from './exact-run';
 import { ledgerStub } from './ledger';
 import { type Json, Platform } from './platform';
 import { repoStub } from './repo-agents';
@@ -200,6 +201,7 @@ export async function managedApi(req: Request, env: ManagedEnv, parts: string[])
   if (!resource && get)
     return {
       workspace,
+      capabilities: ['exact_head_review'],
       agents: await Promise.all(MANAGED_AGENTS.map((a) => agentState(env, workspace, a, owned))),
       credit: await credit(env, workspace),
       billing: stripeEnabled(env) ? 'stripe' : 'coming',
@@ -211,7 +213,20 @@ export async function managedApi(req: Request, env: ManagedEnv, parts: string[])
     if (!agent) throw new ApiRefusal('NOT_FOUND', 'Unknown agent', 404);
     if (get && !sub) return agentState(env, workspace, agent, owned);
     if (req.method === 'PUT' && !sub) return update(env, req, workspace, agent, owned);
-    if (req.method === 'POST' && sub === 'run') return runNow(env, workspace, agent);
+    if (req.method === 'POST' && sub === 'run') {
+      const text = await req.text();
+      let body: Record<string, unknown>;
+      try {
+        body = text ? JSON.parse(text) : {};
+      } catch {
+        throw new ApiRefusal('INVALID_INPUT', 'Send a JSON object', 400);
+      }
+      if (!body || typeof body !== 'object' || Array.isArray(body))
+        throw new ApiRefusal('INVALID_INPUT', 'Send a JSON object', 400);
+      return Object.keys(body).length
+        ? runExact(env, workspace, agent, owned, body)
+        : runNow(env, workspace, agent);
+    }
     if (req.method === 'POST' && sub === 'archive') {
       await setRepos(env, req, workspace, agent, [], false);
       await workspaceStub(env, workspace).archive(agent.id);

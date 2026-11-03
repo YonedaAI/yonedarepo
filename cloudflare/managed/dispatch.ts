@@ -205,6 +205,7 @@ export async function reviewChanges(
   opened: boolean,
   limit = Number.POSITIVE_INFINITY,
   retryFailed = false,
+  explicit = false,
 ) {
   const repo = repoStub(env, repoId);
   const workspace = workspaceStub(env, ctx.account);
@@ -221,15 +222,15 @@ export async function reviewChanges(
       }
       const stored = await workspace.settings(id);
       const s = resolveSettings(agent, stored.workspace, stored.repos[repoId]);
-      if (s.trigger.when === 'ready' && !opened) continue;
+      if (!explicit && s.trigger.when === 'ready' && !opened) continue;
       if (s.trigger.changes === 'ready_for_review' && !readyForReview(change)) continue;
-      if (s.trigger.paths.length && paths === null)
+      if (!explicit && s.trigger.paths.length && paths === null)
         paths = (
           ((await ctx.platform.change(repoId, change.number)).diff?.changes ?? []) as {
             path: string;
           }[]
         ).map((f) => String(f.path));
-      if (!triggerMatches(s.trigger, String(change.branch), paths ?? [])) continue;
+      if (!explicit && !triggerMatches(s.trigger, String(change.branch), paths ?? [])) continue;
       const claim = await repo.claim(
         repoId,
         id,
