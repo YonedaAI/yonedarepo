@@ -2,7 +2,7 @@
 // request; an explicit Durable Object owner may retain and share its own pending reads.
 import { afterAnswer } from './background';
 import { type DurableFlightOwner, Flights } from './flights';
-import { cachedCopy, edgePut } from './repo-cache-tiers';
+import { cachedCopy, edgeFirstCopy, edgePut } from './repo-cache-tiers';
 import { automaticLocality, keepNearby, localityRegion, readNearby } from './repo-locality';
 import type { ObjectKind, ObjectRecords } from './repo-object-records';
 import type { RepoObjects } from './repo-objects';
@@ -56,11 +56,14 @@ export class ObjectReader {
         kind !== 'commit' &&
         bytes.byteLength <= 1024 * 1024
       ) {
-        const object: CachedObject =
-          kind === 'blob'
-            ? { id, kind, data_b64: toBase64(bytes) }
-            : JSON.parse(new TextDecoder().decode(bytes));
-        await keepNearby(this.objects.env, this.objects.repo, object);
+        const fill = () => {
+          const object: CachedObject =
+            kind === 'blob'
+              ? { id, kind, data_b64: toBase64(bytes) }
+              : JSON.parse(new TextDecoder().decode(bytes));
+          return keepNearby(this.objects.env, this.objects.repo, object);
+        };
+        await (this.objects.env.EDGE_FIRST_READS === 'on' ? afterAnswer(fill) : fill());
       }
     }
     this.hits[tier]++;
@@ -76,6 +79,11 @@ export class ObjectReader {
 
   /** Each tier a cold read asks is timed (`read.*`), so a slow read shows where it waited. */
   private async walk(id: string, kind: ObjectKind, stagedWith?: string): Promise<Walked> {
+    const edgeFirst = this.objects.env.EDGE_FIRST_READS === 'on';
+    if (edgeFirst) {
+      const bytes = await edgeFirstCopy(this.objects.repo, id, kind);
+      if (bytes) return { bytes, tier: 'edge', filled: Promise.resolve() };
+    }
     const nearby =
       automaticLocality(this.objects.env) &&
       !this.objects.inherited &&
@@ -93,6 +101,7 @@ export class ObjectReader {
       this.records.key(id),
       id,
       kind,
+      edgeFirst,
     );
     if (copy?.tier === 'edge') return { ...copy, filled: Promise.resolve() };
     if (copy) {

@@ -154,6 +154,7 @@
     "CLIENT_ERRORS": "off",
     "FAST_APP_HEAD": "on",
     "GLOBAL_AUTH_LIMITS": "on",
+    "OVERVIEW_MARKDOWN_PRELOAD": "on",
     "PUBLIC_APP_ORIGIN": "https://yonedarepo.com",
     "REGION_SIGNALS": "on",
     "REQUEST_IDS": "off",

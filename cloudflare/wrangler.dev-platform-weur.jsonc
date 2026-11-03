@@ -253,6 +253,7 @@
     "CELL_HINT": "weur",
     "CELL_JURISDICTION": "eu",
     "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
+    "EDGE_FIRST_READS": "on",
     "EMAIL_CONTACT": "hello@yonedarepo.com",
     "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
     "GITHUB_APP_ID": "5571444",
