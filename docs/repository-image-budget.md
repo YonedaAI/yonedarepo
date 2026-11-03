@@ -48,3 +48,16 @@ selected-commit/ref changes, cancellation and object-URL cleanup. Use real serve
 React with synthetic API replies and network counts, wide/375px, light/dark,
 loading/failure and full images. No live benchmark, inference or writer/load test.
 Root owns integration, dev deployment and subsequent real SPA measurements.
+
+## Visible images only
+
+A normal Chrome diagnostic reproduced cache loss when an offscreen Files image
+started conditional revalidation within the optional section's 200px margin,
+then navigation canceled it. Keep the shared section margin at 200px; repository
+images use 0px. Before an image intersects the actual viewport it makes zero
+blob requests. Scrolling it into view starts one fresh authorized read. Visible
+request cancellation, scope guards and URL revocation stay unchanged. No timers,
+background completion or private JavaScript cache is added. Validate the real
+served components and normal HTTP cache, including Files → Overview reuse and
+canceling an already-visible image. This does not guarantee browser cache reuse
+after a genuinely visible in-flight request is canceled.

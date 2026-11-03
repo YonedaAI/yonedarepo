@@ -1,7 +1,7 @@
 // Start optional reads only when their content is close enough to be seen.
 import { useEffect, useRef, useState } from 'react';
 
-export function useNearViewport<T extends Element>() {
+export function useNearViewport<T extends Element>(rootMargin = '200px') {
   const ref = useRef<T>(null);
   const [near, setNear] = useState(false);
   useEffect(() => {
@@ -18,10 +18,10 @@ export function useNearViewport<T extends Element>() {
           observer.disconnect();
         }
       },
-      { rootMargin: '200px' },
+      { rootMargin },
     );
     observer.observe(target);
     return () => observer.disconnect();
-  }, []);
+  }, [rootMargin]);
   return { ref, near };
 }

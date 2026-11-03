@@ -15,7 +15,7 @@ const bytesOf = (base64: string) => Uint8Array.from(atob(base64), (c) => c.charC
 /** An image of this repository, or its words while it loads and if it can't be shown. */
 function RepoImage({ place, path, alt }: { place: Place; path: string; alt: string }) {
   const [url, setUrl] = useState<string>();
-  const { ref, near } = useNearViewport<HTMLSpanElement>();
+  const { ref, near } = useNearViewport<HTMLSpanElement>('0px');
   useEffect(() => {
     setUrl(undefined);
     if (!near) return;
