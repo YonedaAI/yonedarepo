@@ -20,7 +20,12 @@ impl DurableObject for WorkspaceAuthority {
         let mut command: Value = req.json().await?;
         if command["op"] == "org_member_put" {
             // Arm recovery before the durable grant can commit; failed grants leave an idle alarm.
-            self.state.storage().set_alarm(1_000_i64).await?;
+            let storage = self.state.storage();
+            let deadline = Date::now().as_millis() as i64 + 1_000;
+            if storage.get_alarm().await?.is_none_or(|at| at > deadline) {
+                // Repeated grants/role edits must not postpone pending delivery.
+                storage.set_alarm(1_000_i64).await?;
+            }
         }
         crate::telemetry::serving(&req);
         command["now"] = json!(Date::now().as_millis() as i64);

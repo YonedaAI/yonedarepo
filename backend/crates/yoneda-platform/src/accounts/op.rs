@@ -204,7 +204,7 @@ op_names! {
 op_names! {
  pub(crate) enum NotificationOp {
  Pending="member_notices_pending",Claim="member_notice_claim",MailBegin="member_notice_mail_begin",Finish="member_notice_finish",
- Put="notification_put",List="notifications_list",Read="notifications_read",
+ Identity="notification_identity",Hint="notification_hint",Put="notification_put",List="notifications_list",Read="notifications_read",
  }
 }
 

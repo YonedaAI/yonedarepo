@@ -15,7 +15,7 @@ fn org() -> NativeStore {
 fn add(db: &NativeStore, role: &str) {
     call(
         db,
-        json!({"op":"org_member_put","actor":"alice","account":"bob","role":role}),
+        json!({"op":"org_member_put","actor":"alice","account":"bob","role":role,"recipient_incarnation":1}),
     );
 }
 fn pending(db: &NativeStore) -> Vec<Value> {
@@ -129,10 +129,11 @@ fn recipient_inbox_is_idempotent_and_acknowledges_only_stored_rows() {
         &db,
         json!({"op":"signup","username":"bob","password":"long test password","salt":"01".repeat(16),"recovery_hash":"b".repeat(64),"session_hash":"a".repeat(64)}),
     );
+    call(&db, json!({"op":"notification_identity"}));
     for _ in 0..2 {
         call(
             &db,
-            json!({"op":"notification_put","org":"acme","id":1,"role":"member","at":999}),
+            json!({"op":"notification_put","org":"acme","id":1,"role":"member","at":999,"incarnation":1}),
         );
     }
     let inbox = call(&db, json!({"op":"notifications_list"}));
@@ -144,7 +145,7 @@ fn recipient_inbox_is_idempotent_and_acknowledges_only_stored_rows() {
     );
     call(
         &db,
-        json!({"op":"notification_put","org":"acme","id":1,"role":"member","at":999}),
+        json!({"op":"notification_put","org":"acme","id":1,"role":"member","at":999,"incarnation":1}),
     );
     assert_eq!(call(&db, json!({"op":"notifications_list"}))["unread"], 0);
 }
@@ -153,9 +154,10 @@ fn recipient_inbox_is_idempotent_and_acknowledges_only_stored_rows() {
 fn preceding_schema_upgrade_keeps_membership_and_does_not_backfill_old_notices() {
     let db = org();
     add(&db, "member");
+    db.query("DROP TABLE account_incarnation", &[]).unwrap();
     db.query("DROP TABLE account_notifications", &[]).unwrap();
     db.query("DROP TABLE org_member_notices", &[]).unwrap();
-    db.query("DELETE FROM workspace_migrations WHERE version=14", &[])
+    db.query("DELETE FROM workspace_migrations WHERE version>=14", &[])
         .unwrap();
     let before = db
         .query("SELECT * FROM org_members ORDER BY account", &[])
@@ -193,5 +195,57 @@ fn failed_delivery_backlog_does_not_starve_new_notices() {
             .unwrap()
             .iter()
             .any(|n| n["recipient"] == "person24")
+    );
+}
+
+#[test]
+fn a_recreated_name_at_the_same_clock_cannot_receive_the_previous_persons_notice() {
+    let db = NativeStore::memory().unwrap();
+    let signup = json!({"op":"signup","username":"bob","password":"long test password","salt":"01".repeat(16),"recovery_hash":"b".repeat(64),"session_hash":"a".repeat(64),"email":"old@example.com"});
+    call(&db, signup.clone());
+    let old = call(&db, json!({"op":"notification_identity"}))["incarnation"].clone();
+    call(&db, json!({"op":"account_close"}));
+    call(&db, signup);
+    let new = call(&db, json!({"op":"notification_identity"}))["incarnation"].clone();
+    assert_ne!(old, new);
+    let notice = json!({"op":"notification_put","org":"private_org","id":1,"role":"member","at":1000,"incarnation":old});
+    assert_eq!(call(&db, notice.clone()), json!({"recorded":false}));
+    assert!(
+        call(&db, json!({"op":"notifications_list"}))["items"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(super::orgs::hints(&db).unwrap().is_empty());
+    let mut fresh = notice;
+    fresh["incarnation"] = new;
+    assert_eq!(call(&db, fresh)["recorded"], true);
+}
+
+#[test]
+fn migration_from_initial_notice_schema_fences_old_events_without_losing_inbox() {
+    let db = org();
+    db.query("DROP TABLE account_incarnation", &[]).unwrap();
+    db.query(
+        "ALTER TABLE org_member_notices DROP COLUMN recipient_incarnation",
+        &[],
+    )
+    .unwrap();
+    db.query("DELETE FROM workspace_migrations WHERE version=15", &[])
+        .unwrap();
+    db.query("INSERT INTO org_member_notices(recipient,org,role,created_at) VALUES('bob','acme','member',1)",&[]).unwrap();
+    assert_eq!(pending(&db).len(), 1);
+    assert_eq!(
+        call(&db, json!({"op":"member_notice_claim","id":1}))["notice"]["recipient_incarnation"],
+        0
+    );
+    assert!(pending(&db).len() == 1);
+    assert_eq!(
+        db.query(
+            "SELECT COUNT(*) AS n FROM workspace_migrations WHERE version=15",
+            &[]
+        )
+        .unwrap()[0]["n"],
+        1
     );
 }

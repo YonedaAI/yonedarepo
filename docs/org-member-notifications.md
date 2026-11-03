@@ -6,9 +6,15 @@ saved membership never depends on notification delivery succeeding.
 
 The organization authority commits a notice beside a new membership grant.
 Existing memberships and role-only edits create no notice. Removing a member
-cancels unfinished notices; a later new membership has a new event id. An alarm
-is armed before the grant can commit, then sends at most 20 pending notice jobs
-per minute through the existing platform queue until completion. No external I/O
+cancels unfinished notices; a later new membership has a new event id. A job
+already in flight may record the same person's historical membership before it
+observes cancellation; that entry grants no access. Recipient incarnation is
+captured at the grant and checked in the recipient transaction for inbox, hint
+and verified mail target. Account name reuse cannot receive a prior person's
+notice, even if both signups share the same clock tick. An alarm is armed
+before the grant can commit, then sends at most 20 pending notice jobs per pass
+through the existing platform queue. Pending delivery retries every minute; new
+grants can bring that pass forward without postponing an earlier alarm. No external I/O
 runs inside the membership transaction. Queue loss and transient mail failure
 leave the durable notice recoverable. Concurrent jobs take a fenced lease.
 
@@ -32,8 +38,8 @@ Local queue/mail capture and served UI checks are distinct from real email
 delivery. No actual email is sent by the automated local checks.
 
 Request budget: no inbox request during sign-in or the initial repository load;
-one deferred read once usable, at most one background read per visible minute,
-and an explicit read when opening. Responses contain at most 50 entries; each
+one deferred read once usable, a 60-second visible-tab poll, a fresh read when
+returning to a visible tab, and an explicit read when opening. Responses contain at most 50 entries; each
 personal inbox retains 100. Organization recovery processes at most 20 events
 per pass. Existing account, queue and email bindings are reused.
 

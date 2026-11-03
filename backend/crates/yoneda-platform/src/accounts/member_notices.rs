@@ -10,10 +10,11 @@ pub(super) fn added<S: SqlStore>(
     recipient: &str,
     role: &str,
     now: i64,
+    incarnation: i64,
 ) -> Result<()> {
     db.query(
-        "INSERT INTO org_member_notices(recipient,org,role,created_at) VALUES(?,?,?,?)",
-        &[json!(recipient), json!(org), json!(role), json!(now)],
+        "INSERT INTO org_member_notices(recipient,org,role,created_at,recipient_incarnation) VALUES(?,?,?,?,?)",
+        &[json!(recipient), json!(org), json!(role), json!(now),json!(incarnation)],
     )?;
     Ok(())
 }

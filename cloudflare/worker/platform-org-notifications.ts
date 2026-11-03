@@ -23,14 +23,19 @@ export async function memberNotificationJob(
     await finish('skipped');
     return {};
   }
-  await workspace(env, recipient, {
+  const delivered = await workspace(env, recipient, {
     op: 'notification_put',
+    incarnation: notice.recipient_incarnation,
     org,
     id,
     role: notice.role,
     at: notice.created_at,
   });
-  const state = await workspace(env, recipient, { op: 'email_status' });
+  if (!delivered.recorded) {
+    await finish('skipped');
+    return {};
+  }
+  const state = delivered.contact;
   if (!state.verified || typeof state.email !== 'string') {
     await finish('skipped');
     return {};

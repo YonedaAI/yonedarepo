@@ -226,7 +226,9 @@ fn member_put<S: SqlStore>(db: &S, c: &Value, org: &str, actor: &str, now: i64) 
         json!({ "account": account, "role": role, "previous": previous, "actor": actor }),
     )?;
     if previous.is_none() {
-        super::member_notices::added(db, org, &account, &role, now)?;
+        // Older trusted adapters omit the fence; their notices cannot deliver.
+        let incarnation = c["recipient_incarnation"].as_i64().unwrap_or_default();
+        super::member_notices::added(db, org, &account, &role, now, incarnation)?;
     }
     Ok(json!({ "account": account, "role": role, "previous": previous }))
 }

@@ -72,3 +72,59 @@ it('inbox failures do not expose internal account or storage details',async()=>{
  const result=await notificationsRoute(new Request('https://yoneda.test/api/auth/notifications'),scoped,async()=>{throw new Error('Synthetic private storage detail');});
  expect(result.status).toBe(503);const body=await result.json<any>();expect(body.error.message).toBe('Notifications are unavailable. Try again.');expect(JSON.stringify(body)).not.toContain('private storage');
 });
+
+it('repeated member puts and role edits never postpone an earlier recovery alarm',async()=>{
+ const s=await seed(false);
+ const stub=bindings.WORKSPACES.get(bindings.WORKSPACES.idFromName('account:notice_org'));
+ const {runInDurableObject}=await import('cloudflare:test');
+ const deadline=Date.now()+200;
+ await runInDurableObject(stub,async(_instance,state)=>{await state.storage.setAlarm(deadline);});
+ for(const role of ['member','owner','member']){
+  expect((await api('/orgs/notice_org/members',s.owner,{body:{account:'notice_member',role}})).status).toBe(200);
+  expect(await runInDurableObject(stub,async(_instance,state)=>state.storage.getAlarm())).toBe(deadline);
+ }
+});
+
+it('held old delivery cannot disclose an organization to a recreated account name',async()=>{
+ const s=await seed();let replace=true;
+ const wrapped={...s.env,WORKSPACES:{idFromName:(name:string)=>bindings.WORKSPACES.idFromName(name),get:(id:DurableObjectId)=>{
+  const stub=bindings.WORKSPACES.get(id);return{fetch:async(input:RequestInfo,init?:RequestInit)=>{
+   const command=typeof init?.body==='string'?JSON.parse(init.body):{};
+   if(command.op==='notification_put'&&replace){
+    replace=false;
+    await api('/orgs/notice_org/members/notice_member',s.owner,{method:'DELETE'});
+    await workspace(scoped,'notice_member',{op:'account_close'});
+    await workspace(scoped,'notice_member',{op:'signup',username:'notice_member',password:'replacement password',salt:'02'.repeat(16),recovery_hash:'c'.repeat(64),session_hash:'d'.repeat(64),email:'replacement@example.com'});
+   }
+   return stub.fetch(input,init);
+  }};
+ }}}as unknown as Env;
+ const send=vi.fn<typeof fetch>();await memberNotificationJob(wrapped,s.job,send);
+ expect((await workspace(scoped,'notice_member',{op:'notifications_list'})).items).toEqual([]);
+ expect((await workspace(scoped,'notice_member',{op:'account_summary'})).orgs).toEqual([]);
+ expect(send).not.toHaveBeenCalled();
+ expect((await api('/orgs/notice_org/members',s.owner,{body:{account:'notice_member',role:'member'}})).status).toBe(200);
+ const fresh=(await workspace(scoped,'notice_org',{op:'member_notices_pending'})).notices[0];
+ await memberNotificationJob(s.env,{...s.job,number:fresh.id},send);
+ expect((await workspace(scoped,'notice_member',{op:'notifications_list'})).items).toHaveLength(1);
+ expect(send).not.toHaveBeenCalled();
+});
+
+
+it('a held synchronous membership hint cannot leak to a recreated account name',async()=>{
+ const s=await seed(false);await api('/orgs/notice_org/members/notice_member',s.owner,{method:'DELETE'});let replace=true;
+ const wrapped={...scoped,WORKSPACES:{idFromName:(name:string)=>bindings.WORKSPACES.idFromName(name),get:(id:DurableObjectId)=>{
+  const stub=bindings.WORKSPACES.get(id);return{fetch:async(input:RequestInfo,init?:RequestInit)=>{
+   const command=typeof init?.body==='string'?JSON.parse(init.body):{};
+   if(command.op==='notification_hint'&&replace){
+    replace=false;await api('/orgs/notice_org/members/notice_member',s.owner,{method:'DELETE'});
+    await workspace(scoped,'notice_member',{op:'account_close'});
+    await workspace(scoped,'notice_member',{op:'signup',username:'notice_member',password:'replacement password',salt:'02'.repeat(16),recovery_hash:'c'.repeat(64),session_hash:'d'.repeat(64)});
+   }
+   return stub.fetch(input,init);
+  }};
+ }}}as unknown as Env;
+ expect((await api('/orgs/notice_org/members',s.owner,{body:{account:'notice_member',role:'member'}},wrapped)).status).toBe(200);
+ expect(replace).toBe(false);
+ expect((await workspace(scoped,'notice_member',{op:'account_summary'})).orgs).toEqual([]);
+});
