@@ -1,5 +1,5 @@
-import { Bell } from 'lucide-react';
-import { useState } from 'react';
+import { Bell, X } from 'lucide-react';
+import { useRef, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
@@ -8,8 +8,20 @@ import { useNotifications } from './useNotifications';
 
 export function Notifications({ enabled, navigate }: { enabled: boolean; navigate: Navigate }) {
   const [open, setOpen] = useState(false);
-  const { inbox, loading, error, load, markRead } = useNotifications(enabled);
+  const { inbox, loading, error, load, markRead, remove, clearAll } = useNotifications(enabled);
   const unread = inbox?.unread ?? 0;
+  const content = useRef<HTMLDivElement>(null);
+  async function dismiss(id?: string) {
+    await (id ? remove(id) : clearAll());
+    requestAnimationFrame(() => {
+      const root = content.current;
+      if (!root?.isConnected) return;
+      const next =
+        root.querySelector<HTMLElement>('button:not(:disabled)') ??
+        root.closest('dialog')?.querySelector<HTMLElement>('.dialog-heading button');
+      next?.focus();
+    });
+  }
   return (
     <>
       <button
@@ -31,7 +43,7 @@ export function Notifications({ enabled, navigate }: { enabled: boolean; navigat
       </button>
       {open && enabled && (
         <Dialog title="Notifications" onClose={() => setOpen(false)}>
-          <div className="notification-content">
+          <div className="notification-content" ref={content}>
             {error ? (
               <Failure error={error} what="notifications" onRetry={() => void load()} />
             ) : !inbox ? (
@@ -42,8 +54,8 @@ export function Notifications({ enabled, navigate }: { enabled: boolean; navigat
               </EmptyState>
             ) : (
               <>
-                {unread > 0 && (
-                  <div className="notification-actions">
+                <div className="notification-actions">
+                  {unread > 0 && (
                     <button
                       type="button"
                       className="quiet"
@@ -52,22 +64,42 @@ export function Notifications({ enabled, navigate }: { enabled: boolean; navigat
                     >
                       Mark all as read
                     </button>
-                  </div>
-                )}
+                  )}
+                  <button
+                    type="button"
+                    className="quiet"
+                    disabled={loading}
+                    onClick={() => void dismiss()}
+                  >
+                    Clear all
+                  </button>
+                </div>
                 <ul className="notification-list">
                   {inbox.items.map((item) => (
                     <li key={item.id} className={item.unread ? 'unread' : ''}>
-                      <a
-                        {...linkTo({ view: 'org', org: item.org }, (route, options) => {
-                          setOpen(false);
-                          navigate(route, options);
-                        })}
+                      <div className="notification-message">
+                        <a
+                          {...linkTo({ view: 'org', org: item.org }, (route, options) => {
+                            setOpen(false);
+                            navigate(route, options);
+                          })}
+                        >
+                          You joined <strong>{item.org}</strong>
+                        </a>
+                        <time dateTime={new Date(item.at).toISOString()}>
+                          {new Date(item.at).toLocaleDateString()}
+                        </time>
+                      </div>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        disabled={loading}
+                        aria-label={`Remove notification about ${item.org}`}
+                        title="Remove notification"
+                        onClick={() => void dismiss(item.id)}
                       >
-                        You joined <strong>{item.org}</strong>
-                      </a>
-                      <time dateTime={new Date(item.at).toISOString()}>
-                        {new Date(item.at).toLocaleDateString()}
-                      </time>
+                        <X size={16} />
+                      </button>
                     </li>
                   ))}
                 </ul>

@@ -18,6 +18,8 @@
   display: flex;
   justify-content: flex-end;
   margin-bottom: 12px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .notification-list {
   list-style: none;
@@ -26,7 +28,7 @@
 }
 .notification-list li {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   padding: 14px 0;
@@ -55,4 +57,16 @@
 .notification-content {
   height: min(240px, 60dvh);
   overflow: auto;
+}
+
+.notification-message {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+.notification-list .icon-button {
+  flex: none;
 }

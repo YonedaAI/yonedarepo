@@ -50,3 +50,26 @@ describe('obsolete repository read cancellation', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
+
+it('bodyless DELETE finishes once after its read scope is canceled', async () => {
+  const scope = new AbortController();
+  let finish!: (value: Response) => void;
+  let signal!: AbortSignal;
+  const send = vi.fn((_path, options) => {
+    signal = options.signal;
+    return new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+  });
+  vi.stubGlobal('fetch', send);
+  const pending = api('auth/notifications/acme%3A1', undefined, {
+    method: 'DELETE',
+    signal: scope.signal,
+  }).catch((error) => error);
+  scope.abort();
+  expect(signal.aborted).toBe(false);
+  finish(Response.json({ items: [], unread: 0 }));
+  await expect(pending).resolves.toEqual({ items: [], unread: 0 });
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(send.mock.calls[0]?.[1].method).toBe('DELETE');
+});

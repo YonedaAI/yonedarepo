@@ -98,8 +98,11 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
     return error('UNAUTHORIZED', 'Same-origin request required', 401);
   const action = path.slice('/api/auth/'.length);
   try {
-    if (action === 'notifications')
-      return notificationsRoute(req, env, () => accountPrincipal(req, env));
+    if (action === 'notifications' || action.startsWith('notifications/'))
+      return notificationsRoute(req, env, async () => {
+        const session = await signedInSession(req, env);
+        return session ? { workspace: session.account, sessionHash: session.sessionHash } : null;
+      });
     let result: Response;
     if (action === 'session' && req.method === 'GET') {
       const { principal, suspended } = await sessionCheck(req, env);
