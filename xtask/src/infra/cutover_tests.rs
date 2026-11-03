@@ -316,6 +316,19 @@ fn dev_and_prod_never_share_a_rate_limit_namespace() {
 }
 
 #[test]
+fn shared_read_trees_have_dev_prod_parity() {
+    for (_, workers) in [dev(), prod()] {
+        for name in ["platform", "platform-weur"] {
+            assert_eq!(
+                role(&workers, name).config["vars"]["SHARED_READ_TREES"],
+                "on",
+                "{name} must inherit the same read configuration"
+            );
+        }
+    }
+}
+
+#[test]
 fn dev_is_renamed_on_the_same_hosts_and_secrets() {
     let (spec, workers) = dev();
     assert_eq!(spec.prefix, "yonedarepo-dev");

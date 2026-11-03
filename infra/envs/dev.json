@@ -292,7 +292,8 @@
           "REQUEST_IDS": "off",
           "AUTOMATIC_LOCALITY": "on",
           "CELLS": "on",
-          "GLOBAL_AUTH_LIMITS": "on"
+          "GLOBAL_AUTH_LIMITS": "on",
+          "SHARED_READ_TREES": "on"
         },
         "secrets_store_secrets": [
           {

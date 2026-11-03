@@ -383,6 +383,7 @@
     "REPO_UNDO_DAYS": "30",
     "REQUEST_IDS": "off",
     "SERVICE_LEVELS": "on",
+    "SHARED_READ_TREES": "on",
     "SITE_EVENTS_DATASET": "yonedarepo_prod_site_events",
     "SPAN_SAMPLE": "off",
     "SSH_FRONT_DOOR": "tunnel",
