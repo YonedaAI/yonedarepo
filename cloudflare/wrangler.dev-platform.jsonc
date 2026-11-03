@@ -60,6 +60,7 @@
 // REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.
 // SPAN_SAMPLE=<N> keeps the Server-Timing phases of 1 request in N, and of every request over 5 seconds, as a request.spans log line and one SITE_EVENTS point, after the answer (worker/repo-span-sample.ts). off keeps none.
 // SERVICE_LEVELS=on writes one SITE_EVENTS point per landing, clone, push and repository create and per 10 API reads, after the answer, for the admin page (shared/service-levels.ts). Set it on this Worker and Superfan together. Budget: docs/observability-plan.md.
+// REPO_ANALYTICS=on records admitted repository usage in the existing SITE_EVENTS point and enables Insights; TRAFFIC_EVENTS and TRAFFIC_REPORT must also be on. No historical usage is backfilled.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -431,6 +432,7 @@
     "REGIONAL_API": "on",
     "REGION_HINT_TEST": "on",
     "REGION_SIGNALS": "on",
+    "REPO_ANALYTICS": "on",
     "REPO_ERASE": "on",
     "REPO_SIZE_GUARD": "on",
     "REPO_STORAGE_GUARD": "on",

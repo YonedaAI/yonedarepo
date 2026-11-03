@@ -2,7 +2,13 @@
 
 To save as `docs/analytics-plan.md`.
 
-Status: frozen on 2026-11-01. Phase 1 built behind `TRAFFIC_REPORT`, on in dev and prod. Phase 3 steps 1 and 2 and Phase 6 built behind `REPO_ANALYTICS`, Phase 7 behind `OPS_REPORT`, Phase 8 behind `OPERATOR_AUDIT`, Phase 5 behind `VISITORS` and Phase 4 behind `AGENT_REPORT`, all off. The rest is plan. Written 2026-10-31 at dev `4755d9c1`.
+Status: historical plan frozen on 2026-11-01. Phase 1 built behind `TRAFFIC_REPORT`, on in dev and prod. Phase 3 steps 1 and 2 and Phase 6 built behind `REPO_ANALYTICS`, Phase 7 behind `OPS_REPORT`, Phase 8 behind `OPERATOR_AUDIT`, Phase 5 behind `VISITORS` and Phase 4 behind `AGENT_REPORT`, all off. The rest is plan. Written 2026-10-31 at dev `4755d9c1`.
+Repository usage activation update (2026-11-03): `REPO_ANALYTICS=on` is now
+declared for dev and prepared in matching prod source configuration. This enables
+the existing admitted usage points, Insights and repository reports after deploy;
+it does not backfill missing history. Other off switches remain unchanged. See
+[activation budget and validation](repository-usage-activation.md). Source readiness
+is separate from a deployed flag and a successful live query.
 
 ## What this answers
 

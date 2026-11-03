@@ -274,6 +274,7 @@
     "RECENT_VERSIONS": "on",
     "REGIONAL_API": "on",
     "REGION_SIGNALS": "on",
+    "REPO_ANALYTICS": "on",
     "REPO_ERASE": "on",
     "REPO_SIZE_GUARD": "on",
     "REPO_STORAGE_GUARD": "on",
