@@ -929,7 +929,8 @@
           "AUTOMATIC_LOCALITY": "on",
           "GLOBAL_AUTH_LIMITS": "on",
           "STATIC_ASSET_CACHE": "on",
-          "FAST_APP_HEAD": "on"
+          "FAST_APP_HEAD": "on",
+          "OVERVIEW_MARKDOWN_PRELOAD": "on"
         },
         "services": [
           {
