@@ -4,6 +4,7 @@ import { recordAccount } from '../../cloudflare/worker/account-index';
 import { claims, emailKey } from '../../cloudflare/worker/oauth-identity';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { api, bindings, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { applySchema } from './repo-fixture-schema';
 
 usePlatformFixture();
 const password = 'long platform test password';
@@ -106,4 +107,40 @@ it('rejects deleted account aliases and verifies provider email claims against t
   expect(found.body.candidates).toEqual([{identifier:'provider@example.com',handle:'provider_person',member:false}]);
   await workspace(scoped,'provider_person',{op:'identity_unlink',provider:'github'});
   expect((await search('claim_org','provider@example.com',cookie)).body.candidates).toEqual([]);
+});
+
+it('searches both regional projections even when the owner has no repositories in the other region', async () => {
+  const cookie=await signup('regional_owner');
+  await api('/orgs',{cookie},{body:{name:'regional_org'}});
+  await recordAccount(scoped,'regional_owner','email',Date.now());
+  const europe=(bindings as unknown as {INDEX_WEUR:D1Database}).INDEX_WEUR;
+  await applySchema(europe);
+  const remote={...scoped,INDEX:europe};
+  await legacy('regional_only');
+  await recordAccount(remote,'regional_only','email',Date.now());
+  await legacy('regional_duplicate');
+  await recordAccount(scoped,'regional_duplicate','email',Date.now());
+  await recordAccount(remote,'regional_duplicate','email',Date.now());
+  await legacy('private.regional@example.com','regional_private');
+  await bindings.INDEX.prepare('DELETE FROM platform_handles WHERE workspace=?').bind('private.regional@example.com').run();
+  await europe.prepare('INSERT INTO platform_handles(workspace,handle) VALUES(?,?)').bind('private.regional@example.com','regional_private').run();
+  await legacy('stale.regional@example.com','regional_stale');
+  await workspace(scoped,'stale.regional@example.com',{op:'handle_set',handle:'current_alias'});
+  await europe.prepare('INSERT INTO platform_handles(workspace,handle) VALUES(?,?)').bind('stale.regional@example.com','regional_stale').run();
+  await legacy('regional_gone');
+  await recordAccount(remote,'regional_gone','email',Date.now());
+  await workspace(scoped,'regional_gone',{op:'account_close'});
+  await europe.prepare('INSERT INTO platform_handles(workspace,handle) VALUES(?,?)').bind('regional_org','regional_org').run();
+  const CELL_WEUR={fetch:async()=>{throw new Error('member search should read bound indexes, not caller home routing');}} as unknown as Fetcher;
+  const target={...scoped,CELLS:'on',CELL_WEUR,INDEX_WEUR:europe};
+  const found=await search('regional_org','regional_',cookie,target);
+  expect(found.status,JSON.stringify(found.body)).toBe(200);
+  expect(found.body.candidates.map((c:any)=>c.identifier).sort()).toEqual(['regional_duplicate','regional_only','regional_owner','regional_private']);
+  expect(JSON.stringify(found.body)).not.toContain('@example.com');
+  expect((await bindings.INDEX.prepare('SELECT 1 FROM platform_accounts WHERE account=?').bind('regional_only').first())).toBeNull();
+  const outsider=await signup('other_regional');
+  let queries=0;
+  const watched=new Proxy(europe,{get(db,key){if(key==='prepare')return (sql:string)=>{queries++;return db.prepare(sql);};const value=Reflect.get(db,key);return typeof value==='function'?value.bind(db):value;}});
+  expect((await search('regional_org','regional_',outsider,{...target,INDEX_WEUR:watched})).status).toBe(403);
+  expect(queries).toBe(0);
 });

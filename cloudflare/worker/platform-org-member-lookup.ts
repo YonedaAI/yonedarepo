@@ -2,6 +2,7 @@
 // handle authorities verify every result. Email lookup accepts only an exact address.
 import { normalizeAccountIdentifier, normalizeHandle } from '../../shared/account';
 import { accountSummary } from './account-index';
+import { allCells, cellsOn, indexOf } from './cells';
 import { accountFor } from './email-accounts';
 import { ApiError } from './repo-ops';
 import type { Env, Json } from './types';
@@ -74,17 +75,27 @@ export async function memberCandidates(
   const prefix = normalizeHandle(text);
   if (!prefix) return { candidates: [] };
   // Range comparisons treat underscores literally, unlike LIKE. No email column is read.
-  const { results } = await env.INDEX.prepare(
-    `SELECT handle FROM platform_handles WHERE handle>=?1 AND handle<?2
+  const indexes = cellsOn(env)
+    ? [...new Set(allCells(env).map((cell) => indexOf(env, cell)))]
+    : [env.INDEX];
+  const pages = await Promise.all(
+    indexes.map((index) =>
+      index
+        .prepare(
+          `SELECT handle FROM platform_handles WHERE handle>=?1 AND handle<?2
      UNION SELECT handle FROM platform_accounts WHERE handle>=?1 AND handle<?2
      UNION SELECT account AS handle FROM platform_accounts
        WHERE account>=?1 AND account<?2 AND instr(account,'@')=0
      ORDER BY handle LIMIT 10`,
-  )
-    .bind(prefix, `${prefix}\uffff`)
-    .all<{ handle: string }>();
+        )
+        .bind(prefix, `${prefix}\uffff`)
+        .all<{ handle: string }>(),
+    ),
+  );
   // Exact known handles also work before their listing projection catches up.
-  const handles = [...new Set([prefix, ...results.map((row) => row.handle)])];
+  const handles = [
+    ...new Set([prefix, ...pages.flatMap((page) => page.results.map((row) => row.handle))]),
+  ].sort();
   const people = await Promise.all(handles.map((handle) => publicPerson(env, handle)));
   return {
     candidates: people
