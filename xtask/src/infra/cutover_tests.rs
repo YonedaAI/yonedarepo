@@ -783,3 +783,11 @@ fn an_empty_2xx_answer_counts_as_success() {
     assert!(!ok(StatusCode::NOT_FOUND, &serde_json::Value::Null));
     assert!(!ok(StatusCode::FORBIDDEN, &json!({"success": true})));
 }
+#[test]
+fn search_code_memo_has_dev_prod_and_cell_parity() {
+    for (_, workers) in [dev(), prod()] {
+        for worker in workers.iter().filter(|w| w.role.starts_with("platform")) {
+            assert_eq!(worker.config["vars"]["SEARCH_CODE_MEMO"], "on");
+        }
+    }
+}

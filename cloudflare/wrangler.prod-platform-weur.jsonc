@@ -272,6 +272,7 @@
     "REPO_STORAGE_GUARD": "on",
     "REPO_UNDO_DAYS": "30",
     "REQUEST_IDS": "off",
+    "SEARCH_CODE_MEMO": "on",
     "SERVICE_LEVELS": "on",
     "SHARED_READ_TREES": "on",
     "SITE_EVENTS_DATASET": "yonedarepo_prod_site_events",
