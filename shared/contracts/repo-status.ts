@@ -32,6 +32,8 @@ export type RepoStatus = {
   /** Blobs no read serves (quarantined or purged); trees still name them. */
   quarantined: Withheld[];
   refs: RefHead[];
+  /** Optional internal read selection, requested with status and stripped by the adapter. */
+  snapshot?: RepoSnapshot | null;
   version: number;
   viewer: Viewer;
   /** Who may read: members only, or anyone. */
@@ -71,6 +73,15 @@ export type Policy = {
 export type RefHead = {
   commit_id: string;
   name: string;
+  version: number;
+};
+
+/** A current branch selection made in the same transaction as fresh read admission. */
+export type RepoSnapshot = {
+  commit: string;
+  parents: string[];
+  ref: string;
+  tree: string;
   version: number;
 };
 
@@ -243,6 +254,39 @@ export const repoStatusSchema = {
         "name",
         "commit_id",
         "version"
+      ],
+      "type": "object"
+    },
+    "RepoSnapshot": {
+      "description": "A current branch selection made in the same transaction as fresh read admission.",
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "parents": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "tree": {
+          "type": "string"
+        },
+        "version": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "ref",
+        "commit",
+        "tree",
+        "parents"
       ],
       "type": "object"
     },
@@ -511,6 +555,17 @@ export const repoStatusSchema = {
         "$ref": "#/$defs/RefHead"
       },
       "type": "array"
+    },
+    "snapshot": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RepoSnapshot"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional internal read selection, requested with status and stripped by the adapter."
     },
     "version": {
       "format": "uint64",

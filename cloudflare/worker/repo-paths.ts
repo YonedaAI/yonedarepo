@@ -15,6 +15,7 @@ import { audited } from './repo-audit';
 import { refreshHead } from './repo-head';
 import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
 import { overviewRequested } from './repo-overview';
+import { overviewSnapshotRequest, type SnapshotRequest } from './repo-overview-admission';
 import { resolvedOverview } from './repo-overview-resolve';
 import { joinedPathHandle, statusWithHandle } from './repo-path-metadata';
 import { admitAnonymous } from './repo-public';
@@ -153,10 +154,22 @@ export async function releaseNames(env: Env, owner: string, repo: string) {
 }
 
 /** Whether `auth` may read `repo` (the same NOT_FOUND as for none when not). */
-async function readable(env: Env, auth: Credentials | null, repo: string) {
+async function readable(
+  env: Env,
+  auth: Credentials | null,
+  repo: string,
+  snapshot?: SnapshotRequest,
+) {
   try {
     if (!auth) await admitAnonymous(env, repo);
-    return await caller(env, repo, auth ?? { _anonymous: true })({ op: 'repo_status' });
+    return await caller(
+      env,
+      repo,
+      auth ?? { _anonymous: true },
+    )({
+      op: 'repo_status',
+      ...(snapshot && { snapshot }),
+    });
   } catch (e: any) {
     if (['NOT_FOUND', 'FORBIDDEN', 'UNAUTHORIZED', 'GONE'].includes(e?.code)) throw missing();
     throw e;
@@ -196,7 +209,7 @@ export async function resolvePath(
       cell,
       `/api/v1/resolve/${handle}/${encodeURIComponent(name)}${query?.size ? `?${query}` : ''}`,
     );
-  const status = await readable(env, auth, found.repo);
+  const status = await readable(env, auth, found.repo, overviewSnapshotRequest(env, query));
   const resolved = {
     id: found.repo,
     handle: owner.handle,

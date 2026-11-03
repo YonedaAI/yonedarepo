@@ -46,6 +46,11 @@ The broad automated-QA expansion is paused. Continue feature acceptance and the
 required release checks. Preserve activity/contributors above the Overview README;
 optional activity must not block the repository header, files or README text.
 
+The [admitted Overview snapshot](overview-admitted-snapshot-budget.md) is locally
+verified but off in both environment declarations. It removes a redundant
+published-head selection lookup after fresh admission, with existing tree reads
+unchanged. A controlled dev comparison is still required before enabling it.
+
 For retained demos, reserve maintained review maxima before each new head, run
 stock coding agents only in the Docker sandbox, and request reviews at the exact
 captured head after coding exits. Preserve the original $2.90 managed-review cap.

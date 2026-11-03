@@ -1584,6 +1584,7 @@ mod separation;
 mod sessions;
 mod shards;
 mod staging;
+mod status_snapshot;
 mod symlink_refs;
 mod tags;
 mod tool_schemas;
