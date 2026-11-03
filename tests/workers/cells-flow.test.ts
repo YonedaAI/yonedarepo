@@ -147,7 +147,7 @@ describe('a person who signs up in Europe', () => {
   });
 });
 
-it('creates for the current visitor location despite an older account home and a wrong first hop', async () => {
+it.each([['EU', undefined], ['NA', 'weur']])('keeps selected authority placement consistent for visitor %s and selected region %s', async (continent, region) => {
   const auth = await signupIn(enam, 'travelingcreator', 'NA');
   // In-process combiners need the placement method; physical location is a live proof.
   const placed = { idFromName: fakeCombiners.idFromName, get: (name: string) => ({ ...fakeCombiners.get(name), where: async () => 'TST' }) } as unknown as DurableObjectNamespace;
@@ -155,7 +155,7 @@ it('creates for the current visitor location despite an older account home and a
   const automaticWeur: Env = { ...weur, LAND_COMBINERS: placed, AUTOMATIC_LOCALITY: 'on', CELL_ENAM: served(() => automaticEnam) };
   const req = new Request('https://yoneda/api/v1/repos', {
     method: 'POST', headers: { 'content-type': 'application/json', cookie: auth.cookie },
-    body: JSON.stringify(repo('traveling-project')), cf: { continent: 'EU', colo: 'FRA' },
+    body: JSON.stringify(repo('traveling-project', region ? { region } : {})), cf: { continent, colo: continent === 'EU' ? 'FRA' : 'IAD' },
   });
   const response = await platformFetch(req, automaticEnam);
   expect(response.status).toBe(200);
