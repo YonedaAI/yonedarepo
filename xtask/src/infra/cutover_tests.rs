@@ -86,7 +86,10 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     );
     assert_eq!(platform["vars"]["WEB_ORIGIN"], "https://yonedarepo.com");
     assert_eq!(platform["ratelimits"][0]["namespace_id"], "1001");
-    assert_eq!(platform["placement"], json!({"mode": "smart"}));
+    assert_eq!(
+        platform["placement"],
+        json!({"mode": "targeted", "region": "aws:us-east-1"})
+    );
     assert_eq!(platform["vars"]["TRAFFIC_EVENTS"], "on");
     assert_eq!(platform["vars"]["TRAFFIC_REPORT"], "on");
     assert_eq!(platform["vars"]["REGION_SIGNALS"], "on");
@@ -795,12 +798,15 @@ fn managed_list_speed_switch_has_dev_prod_parity() {
 }
 
 #[test]
-fn api_placement_uses_smart_default_fetch_while_front_stays_global() {
+fn api_placement_follows_data_while_front_stays_global() {
     for (_, workers) in [dev(), prod()] {
-        for name in ["platform", "platform-weur"] {
+        for (name, region) in [
+            ("platform", "aws:us-east-1"),
+            ("platform-weur", "aws:eu-central-1"),
+        ] {
             assert_eq!(
                 role(&workers, name).config["placement"],
-                json!({"mode":"smart"})
+                json!({"mode":"targeted", "region":region})
             );
         }
         let front = &role(&workers, "agents").config;

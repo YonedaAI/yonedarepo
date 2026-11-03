@@ -252,7 +252,8 @@
     "enabled": true
   },
   "placement": {
-    "mode": "smart"
+    "mode": "targeted",
+    "region": "aws:us-east-1"
   },
   "preview_urls": false,
   "queues": {

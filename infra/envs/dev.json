@@ -20,7 +20,7 @@
       "ratelimit": "2003",
       "public_ratelimit": "2004",
       "bound": true,
-      "placement": "smart"
+      "placement": "aws:eu-central-1"
     }
   ],
   "workers": [
@@ -574,7 +574,8 @@
           ]
         },
         "placement": {
-          "mode": "smart"
+          "mode": "targeted",
+          "region": "aws:us-east-1"
         }
       }
     },

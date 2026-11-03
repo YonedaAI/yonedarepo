@@ -534,7 +534,8 @@
           ]
         },
         "placement": {
-          "mode": "smart"
+          "mode": "targeted",
+          "region": "aws:us-east-1"
         }
       }
     },
@@ -1030,7 +1031,7 @@
       "ratelimit": "1003",
       "public_ratelimit": "1004",
       "bound": true,
-      "placement": "smart"
+      "placement": "aws:eu-central-1"
     }
   ]
 }
