@@ -132,10 +132,11 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
         "GLOBAL_AUTH_LIMITS",
         "STATIC_ASSET_CACHE",
         "FAST_APP_HEAD",
+        "OVERVIEW_MARKDOWN_PRELOAD",
     ] {
         assert_eq!(vars[switch], "on", "{switch}");
     }
-    assert_eq!(vars.as_object().map(|v| v.len()), Some(15));
+    assert_eq!(vars.as_object().map(|v| v.len()), Some(16));
     assert!(
         agents.get("placement").is_none(),
         "frontend runs at the edge"
@@ -318,9 +319,14 @@ fn dev_and_prod_never_share_a_rate_limit_namespace() {
 #[test]
 fn read_performance_switches_have_dev_prod_parity() {
     for (_, workers) in [dev(), prod()] {
+        assert_eq!(
+            role(&workers, "agents").config["vars"]["OVERVIEW_MARKDOWN_PRELOAD"],
+            "on"
+        );
         for name in ["platform", "platform-weur"] {
             for flag in [
                 "SHARED_READ_TREES",
+                "EDGE_FIRST_READS",
                 "JOINED_REPO_PATH",
                 "OVERVIEW_BOOTSTRAP",
             ] {

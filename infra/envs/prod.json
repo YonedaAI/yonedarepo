@@ -262,7 +262,8 @@
           "GLOBAL_AUTH_LIMITS": "on",
           "SHARED_READ_TREES": "on",
           "JOINED_REPO_PATH": "on",
-          "OVERVIEW_BOOTSTRAP": "on"
+          "OVERVIEW_BOOTSTRAP": "on",
+          "EDGE_FIRST_READS": "on"
         },
         "secrets_store_secrets": [
           {
@@ -827,7 +828,8 @@
           "AUTOMATIC_LOCALITY": "on",
           "GLOBAL_AUTH_LIMITS": "on",
           "STATIC_ASSET_CACHE": "on",
-          "FAST_APP_HEAD": "on"
+          "FAST_APP_HEAD": "on",
+          "OVERVIEW_MARKDOWN_PRELOAD": "on"
         },
         "services": [
           {

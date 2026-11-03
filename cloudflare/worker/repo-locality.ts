@@ -4,6 +4,7 @@ import { durableJson } from './durable';
 import { log } from './log';
 import { regionOfRequest } from './region';
 import type { CachedObject } from './repo-stores';
+import { record, timed } from './repo-timing';
 import { currentScope } from './request-scope';
 import type { Env } from './types';
 
@@ -78,35 +79,44 @@ async function permission(env: Env, repo: string) {
 export async function readNearby(env: Env, repo: string, id: string, kind: string) {
   if (kind === 'commit') return null;
   try {
-    const permit = await permission(env, repo);
-    if (!permit || permit.blocked.includes(id)) return null;
+    const permit = await timed('read.copy.permit', () => permission(env, repo));
+    if (!permit || permit.blocked.includes(id)) {
+      record(permit ? 'read.copy.blocked' : 'read.copy.skipped', 0);
+      return null;
+    }
     const get = () =>
-      command(env, repo, permit.region, { op: 'copy_get', epoch: permit.epoch, id, kind });
+      timed('read.copy.get', () =>
+        command(env, repo, permit.region, { op: 'copy_get', epoch: permit.epoch, id, kind }),
+      );
     let answer: any;
     try {
       answer = await get();
     } catch (e: any) {
       if (e?.code !== 'COPY_FENCED') throw e;
-      await command(env, repo, permit.region, {
-        op: 'copy_fence',
-        epoch: permit.epoch,
-        ids: permit.blocked,
-      });
+      await timed('read.copy.fence', () =>
+        command(env, repo, permit.region, {
+          op: 'copy_fence',
+          epoch: permit.epoch,
+          ids: permit.blocked,
+        }),
+      );
       answer = await get();
     }
+    record(answer?.object ? 'read.copy.hit' : 'read.copy.miss', 0);
     return (answer?.object ?? null) as CachedObject | null;
   } catch (e) {
+    record('read.copy.unavailable', 0);
     log.warn('read.copy_unavailable', { repo, error: e });
     return null;
   }
 }
 
-/** A bounded fill, awaited by its owning read. Lost fills are misses; publication after
- * quarantine/purge is prevented by the copy's durable epoch, rather than timing guesses. */
+/** A bounded request-owned fill (optionally through waitUntil). Lost fills are misses;
+ * the durable epoch fences publication after quarantine/purge. */
 export async function keepNearby(env: Env, repo: string, object: CachedObject) {
   if (object.kind === 'commit') return;
   try {
-    const permit = await permission(env, repo);
+    const permit = await timed('cache.copy.permit', () => permission(env, repo));
     if (!permit || permit.blocked.includes(object.id)) return;
     const bytes = new TextEncoder().encode(JSON.stringify(object)).byteLength;
     const state = permit.request;
@@ -114,7 +124,9 @@ export async function keepNearby(env: Env, repo: string, object: CachedObject) {
       return;
     state.fills++;
     state.bytes += bytes;
-    await command(env, repo, permit.region, { op: 'copy_put', epoch: permit.epoch, object });
+    await timed('cache.copy.put', () =>
+      command(env, repo, permit.region, { op: 'copy_put', epoch: permit.epoch, object }),
+    );
   } catch (e: any) {
     if (!['COPY_FENCED', 'COPY_TOO_LARGE', 'COPY_FULL'].includes(e?.code))
       log.warn('read.copy_fill_failed', { repo, error: e });
