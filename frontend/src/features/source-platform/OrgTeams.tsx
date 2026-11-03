@@ -2,7 +2,7 @@
 // A repository grants a team a role as the member entry `team:<org>/<team>`; removing
 // someone from a team ends that access within about a second.
 import { type FormEvent, useState } from 'react';
-import { addableTo, type Org, type Team, teamEntry, teamNameProblem } from './orgModel';
+import { addableTo, type Org, type Team, teamNameProblem } from './orgModel';
 import { Failure } from './SourceStatus';
 import { sourceApi } from './sourceApi';
 import { useChange } from './useChange';
@@ -39,9 +39,7 @@ function TeamCard({
   }
   return (
     <li className="org-team">
-      <h3 id={label}>
-        {team.name} <code className="source-meta">{teamEntry(org, team.name)}</code>
-      </h3>
+      <h3 id={label}>{team.name}</h3>
       {team.members.length === 0 ? (
         <p className="source-empty">No members.</p>
       ) : (
@@ -112,11 +110,9 @@ export function OrgTeams({
   }
   const teams = [...data.teams].sort((a, b) => a.name.localeCompare(b.name));
   return (
-    <section aria-labelledby="org-teams-heading">
+    <section aria-labelledby="org-teams-heading" className="org-section">
       <h2 id="org-teams-heading">Teams</h2>
-      <p className="source-meta">
-        Repository Settings → Members: add a team as <code>{teamEntry(org, '<team>')}</code>.
-      </p>
+
       {teams.length === 0 ? (
         <p className="source-empty">No teams yet.</p>
       ) : (
@@ -135,14 +131,14 @@ export function OrgTeams({
         </ul>
       )}
       {manages && (
-        <form onSubmit={create} className="source-token-form">
+        <form onSubmit={create} className="source-token-form org-team-form">
           <label htmlFor="org-team-name" className="source-field">
-            New team
+            Team name
             <input
               id="org-team-name"
               value={name}
               onChange={(e) => setName(e.target.value.trim())}
-              placeholder="devs"
+              placeholder="Team name"
               autoComplete="off"
               aria-invalid={problem ? true : undefined}
               aria-describedby={problem ? 'org-team-problem' : undefined}

@@ -1,0 +1,64 @@
+/* Organization member rows keep identities readable on a phone. */
+.org-member-table .source-table {
+  table-layout: fixed;
+  min-width: 0;
+  width: 100%;
+}
+.org-member-table :is(th, td):nth-child(2) {
+  width: 112px;
+}
+.org-member-table :is(th, td):last-child {
+  width: 84px;
+  text-align: right;
+}
+.org-member-table :is(th, td):first-child {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.org-member-name,
+.org-member-added {
+  display: block;
+}
+.org-member-added {
+  margin-top: 4px;
+  font-size: var(--text-sm);
+}
+@media (max-width: 640px) {
+  .org-member-table .source-table,
+  .org-member-table tbody {
+    display: block;
+  }
+  .org-member-table thead {
+    display: none;
+  }
+  .org-member-table tbody {
+    display: grid;
+    gap: 8px;
+  }
+  .org-member-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .org-member-table :is(th, td),
+  .org-member-table :is(th, td):nth-child(2),
+  .org-member-table :is(th, td):last-child {
+    width: auto;
+    padding: 0;
+    border: 0;
+  }
+  .org-member-table td:first-child {
+    grid-column: 1 / -1;
+  }
+  .org-member-table select {
+    width: 128px;
+    max-width: 100%;
+  }
+  .org-member-table td:last-child {
+    justify-self: end;
+  }
+}

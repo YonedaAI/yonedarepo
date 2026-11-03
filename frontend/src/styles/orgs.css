@@ -122,3 +122,132 @@
   padding: 0;
   list-style: none;
 }
+
+/* Keep organization controls on shared edges and routine management above recovery. */
+.org-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.org-page.source-tokens section {
+  margin: 0;
+}
+.org-header h1 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.org-header p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 0;
+}
+.org-section,
+.org-protection {
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+.org-page h2 {
+  margin-bottom: 12px;
+  font-size: var(--text-lg);
+}
+.org-page .org-repos li > .source-meta {
+  flex: 1;
+}
+.org-page :is(input, select, button) {
+  min-height: 36px;
+}
+.org-page .org-member-form,
+.org-page .org-team-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 16px;
+}
+.org-page .org-team-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.org-form-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.org-deleted > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+.org-deleted > summary::before {
+  content: "›";
+  font-size: 22px;
+}
+.org-deleted[open] > summary::before {
+  transform: rotate(90deg);
+}
+.org-deleted > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.org-deleted[open] > .deleted-list {
+  margin-top: 16px;
+}
+.org-protection {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 16px;
+}
+.org-protection h2,
+.org-protection p {
+  grid-column: 1;
+  margin: 0;
+}
+.org-protection > button {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  align-self: center;
+}
+.org-protection .source-error {
+  grid-column: 1 / -1;
+}
+.org-page .source-danger p {
+  max-width: 76ch;
+  margin: 0 0 12px;
+}
+.org-page .source-danger .source-create {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px 12px;
+  max-width: none;
+}
+.org-confirm-label {
+  grid-column: 1 / -1;
+}
+@media (max-width: 640px) {
+  .org-page {
+    padding: 20px 16px 32px;
+  }
+  .org-page .org-repos:not(.deleted-repos) li {
+    flex-wrap: wrap;
+  }
+  .org-page .org-repos:not(.deleted-repos) li > a {
+    flex: 1 1 100%;
+    overflow-wrap: anywhere;
+  }
+  .org-page .org-member-form,
+  .org-page .org-team-form,
+  .org-page .source-danger .source-create,
+  .org-protection {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .org-protection > button {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: start;
+    margin-top: 8px;
+  }
+}
