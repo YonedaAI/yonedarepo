@@ -36,3 +36,23 @@ creator-location guard and measurements. Never pin the frontend to fix API laten
 
 References: [Worker placement](https://developers.cloudflare.com/workers/configuration/placement/),
 [Durable Object location](https://developers.cloudflare.com/durable-objects/reference/data-location/).
+
+## Explicit data-local fallback
+
+Smart Placement is not accepted merely because its API status is SUCCESS. The
+first controlled dev samples executed the primary API in BOM while the retained
+repository stayed in IAD, with Overview completion taking several seconds. Retain
+that evidence rather than treating an enabled switch as a performance result.
+
+The fallback places the primary API near US East and the Europe API near Frankfurt.
+The frontend, creator-origin guard, authority identities and read-copy behavior
+remain unchanged. This is compute placement, not a repository/account migration.
+Require the same three-run page and regional-read comparison. Accept only if the
+measured retained-repository path improves over the unplaced baseline without
+breaking authorization, creation or Europe routing. Do not claim new Asian
+repositories get a nearby API until regional API coverage is measured there.
+
+Pinned regional client Workers preserve the original caller's geography. A
+Frankfurt client Worker invoked from Costa Rica therefore cannot establish a
+European creator-location result. Its physical execution location is useful for
+network timing, not as a substitute for actual European requester geography.

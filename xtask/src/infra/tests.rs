@@ -863,8 +863,14 @@ fn dev_and_prod_share_edge_and_regional_backend_topology() {
             assert_eq!(config["vars"]["AUTOMATIC_LOCALITY"], "on");
             assert_eq!(config["vars"]["REGION_SIGNALS"], "on");
         }
-        for name in ["platform", "platform-weur"] {
-            assert_eq!(role(name)["placement"], json!({"mode":"smart"}));
+        for (name, region) in [
+            ("platform", "aws:us-east-1"),
+            ("platform-weur", "aws:eu-central-1"),
+        ] {
+            assert_eq!(
+                role(name)["placement"],
+                json!({"mode":"targeted", "region":region})
+            );
         }
         for config in [front, role("platform"), role("platform-weur")] {
             assert_eq!(config["vars"]["GLOBAL_AUTH_LIMITS"], "on");
@@ -1001,7 +1007,10 @@ mod cells {
         let cell = worker(&spec, "platform-weur");
         assert_eq!(cell["name"], "{prefix}-platform-weur");
         assert_eq!(cell["main"], worker(&spec, "platform")["main"]);
-        assert_eq!(cell["placement"], json!({"mode":"smart"}));
+        assert_eq!(
+            cell["placement"],
+            json!({"mode":"targeted", "region":"aws:eu-central-1"})
+        );
         assert!(cell.get("routes").is_none(), "reached through bindings");
         assert_eq!(cell["vars"]["CELL"], "weur");
         assert_eq!(cell["vars"]["CELLS"], "on");
