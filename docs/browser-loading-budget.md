@@ -40,3 +40,9 @@ optional reads must never gate the repository list, header, files or README text
 Repository navigation starts list and session requests in parallel. The API authenticates
 each list request itself; the UI still waits for session admission before displaying the
 private workspace. An optional profile response cannot authorize repository access.
+
+A stalled platform authentication must not hold subsequent requests with the same cookie.
+Authentication work is request-local. Organization access caches retain only completed JSON
+for the existing one-second access bound; they never share pending I/O across requests.
+Validate with an intentionally held first lookup and an independent second request, then
+repeat normal browser navigation including reload/cancellation before marking dev verified.
