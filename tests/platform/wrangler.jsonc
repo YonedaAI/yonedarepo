@@ -23,5 +23,8 @@
   ],
   "queues": { "producers": [{ "binding": "PLATFORM_QUEUE", "queue": "yoneda-platform-test" }] },
   "r2_buckets": [{ "binding": "OBJECTS", "bucket_name": "yoneda-platform-test" }],
-  "d1_databases": [{ "binding": "INDEX", "database_name": "yoneda-platform-index", "database_id": "00000000-0000-0000-0000-000000000001" }]
+  "d1_databases": [
+    { "binding": "INDEX", "database_name": "yoneda-platform-index", "database_id": "00000000-0000-0000-0000-000000000001" },
+    { "binding": "INDEX_WEUR", "database_name": "yoneda-platform-index-weur", "database_id": "00000000-0000-0000-0000-000000000002" }
+  ]
 }
