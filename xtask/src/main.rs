@@ -21,6 +21,7 @@ mod deploy_plan;
 mod deploy_prebuilt;
 mod deploy_registry;
 mod deploy_rollback;
+mod deploy_secret_preflight;
 mod deploy_secrets;
 mod deploy_ship;
 mod deploy_source;

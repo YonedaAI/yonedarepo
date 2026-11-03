@@ -57,7 +57,10 @@ fn uploads(
     let mut upload = Map::new();
     let in_file = |name: &String| worker.secret_files.get(name).unwrap_or(name).clone();
     for name in worker.secrets.iter().filter(|s| !present.contains(*s)) {
-        let value = values.get(&in_file(name)).ok_or_else(|| name.clone())?;
+        let value = values
+            .get(&in_file(name))
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| name.clone())?;
         upload.insert(name.clone(), Value::String(value.clone()));
     }
     for name in worker
@@ -65,7 +68,7 @@ fn uploads(
         .iter()
         .filter(|s| !present.contains(*s))
     {
-        if let Some(value) = values.get(&in_file(name)).filter(|v| !v.is_empty()) {
+        if let Some(value) = values.get(&in_file(name)).filter(|v| !v.trim().is_empty()) {
             upload.insert(name.clone(), Value::String(value.clone()));
         }
     }
@@ -122,5 +125,14 @@ mod tests {
             uploads(&worker(), &set(&[]), &values).unwrap_err(),
             "OWNER_TOKEN"
         );
+    }
+    #[test]
+    fn required_sources_must_be_nonempty_before_upload() {
+        for empty in ["", "   ", "\t\n"] {
+            assert_eq!(
+                uploads(&worker(), &set(&[]), &file(&[("OWNER_TOKEN", empty)])).unwrap_err(),
+                "OWNER_TOKEN"
+            );
+        }
     }
 }

@@ -108,6 +108,8 @@ Workflow deploy tokens live in the `YONEDA_ENV_FILE` secret of the GitHub Enviro
 
 Each env's secrets file (`~/.config/yonedarepo/staging.env` for dev, the name kept from before the rename; `prod.env` for prod; mode 0600) holds the Worker secrets its spec lists, such as `OWNER_TOKEN`, `VAULT_KEY` (64 hex), and superfan's `CF_ANALYTICS_TOKEN` (read-only: Account Analytics, Workers Scripts, Queues, Containers; superfan looks up the platform's queue, Durable Object and container ids by name with it) and `SUPERFAN_READ_TOKEN`. `deploy` uploads only the secrets a Worker does not have yet.
 
+Before a regional deploy changes any Worker, it reads secret **names** on the primary API, its API aliases and bound regional authorities. A capability already configured on the primary must remain available on its destinations: either the secret is installed there, or its declared local source is nonempty. Unconfigured optional features stay optional; frontend OAuth is outside API parity. A regional authority's missing Git LFS credentials need its explicit regional source mappings (`LFS_S3_ACCESS_KEY_ID_WEUR` and `LFS_S3_SECRET_ACCESS_KEY_WEUR` for Europe), rather than the primary bucket's credentials. Existing installed values are never rotated by this check. An offline `--dry-run` checks the plan, not live credential parity; presence does not prove a credential's validity or permissions.
+
 ### Synthetic checks
 
 Superfan's checks (`PROBES`, [observability-plan.md](observability-plan.md)) need two things `/health` doesn't:

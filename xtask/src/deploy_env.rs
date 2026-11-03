@@ -12,10 +12,12 @@ use crate::infra::inventory::{self, Deployable};
 use crate::infra::spec::{Env, Lock, Spec};
 use crate::infra::wrangler::table;
 use crate::process::Result;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::time::Instant;
 
-pub(crate) use crate::deploy_plan::{Source, Step, steps};
+#[cfg(test)]
+pub(crate) use crate::deploy_plan::steps;
+pub(crate) use crate::deploy_plan::{Source, Step};
 
 pub(crate) async fn deploy(args: &[String]) -> Result<()> {
     let env = Env::from_args(args)?;
@@ -50,11 +52,21 @@ pub(crate) async fn run(
         crate::deploy_evidence::prod_facts(&mut facts, options).await?;
     }
     guard::preflight(env, spec, &facts, options)?;
-    let missing = if !options.front_only && !options.dry_run {
-        crate::deploy_cells::missing(env, spec).await?
+    let inventory = if !options.front_only && !options.dry_run {
+        crate::deploy_cells::inventory(env, spec).await?
     } else {
-        BTreeSet::new()
+        crate::deploy_secret_preflight::Inventory::default()
     };
+    let values = if inventory.secrets.is_empty() {
+        BTreeMap::new()
+    } else {
+        crate::deploy_secret_preflight::read_sources(spec)?
+    };
+    // Stop before builds or rollout preparation. checked_plan repeats this pure check
+    // at the plan boundary; neither check uploads or rotates a credential.
+    if !options.dry_run {
+        crate::deploy_secret_preflight::validate(&workers, &inventory, &values)?;
+    }
     timings.record("preflight: clean tree, branch tip", started, true);
     let head = facts.head.clone();
     let prebuilt = match &options.prebuilt {
@@ -76,10 +88,13 @@ pub(crate) async fn run(
         }
         (None, _) => (Source::Dockerfile, None, None),
     };
-    let mut plan = crate::deploy_bootstrap::insert(
-        steps(env, &workers, options.dry_run, &source),
+    let mut plan = crate::deploy_secret_preflight::checked_plan(
+        env,
         &workers,
-        &missing,
+        &source,
+        options.dry_run,
+        &inventory,
+        &values,
     )?;
     if host_token.is_some() && !options.dry_run {
         plan = with_host_moves(plan, &workers);
