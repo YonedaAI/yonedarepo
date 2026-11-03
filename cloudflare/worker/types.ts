@@ -231,6 +231,9 @@ export interface Env {
   ANALYTICS_READ_TOKEN?: string;
   /** `on` lets search engines index this environment (production only; seo-files.ts). */
   SEO_INDEXING?: string;
+  /** `on` serves a generic noindex repository shell for account-cookie requests without
+   * waiting for optional public metadata. API authorization is unchanged. */
+  FAST_APP_HEAD?: string;
   /** This Worker itself (service binding); the SSH gateway's container reaches the
    * platform through it (platform-ssh-gateway.ts). */
   SELF?: Fetcher;
