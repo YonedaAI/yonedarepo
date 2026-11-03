@@ -24,6 +24,7 @@ import { usePeople } from './people';
 import { findReadme, Readme } from './Readme';
 import { RepoFiles } from './RepoFiles';
 import type { RepoStatus } from './repoStatus';
+import { repositoryContentScope } from './repositoryContentScope';
 import { Failure, Loading } from './SourceStatus';
 import { useSource } from './useSource';
 
@@ -168,6 +169,7 @@ export function RepoOverview({
     );
   const tree = listing.value?.kind === 'tree' ? listing.value : undefined;
   const readme = tree && findReadme(tree.entries);
+  const scope = repositoryContentScope(status);
   return (
     <section className="repo-overview" aria-label="Overview">
       <PageToolbar
@@ -193,7 +195,7 @@ export function RepoOverview({
       />
       {listing.error && <Failure error={listing.error} onRetry={listing.reload} />}
       {!listing.value && !listing.error && <Loading what="files" />}
-      {listing.value && (
+      {tree && (
         <div className="overview-latest">
           {bootstrap?.errors?.latest ? (
             <Failure
@@ -204,7 +206,7 @@ export function RepoOverview({
           ) : (
             <LatestCommit
               repo={repo}
-              commit={listing.value.commit}
+              commit={tree.commit}
               preloaded={bootstrap?.latest ?? undefined}
               commitLink={(commit, children) => (
                 <a {...linkTo({ view: 'commit', repo, commit }, navigate)}>{children}</a>
@@ -235,13 +237,14 @@ export function RepoOverview({
         bootstrap.readme && (
           <Readme
             repo={repo}
+            scope={scope}
             ref={bootstrap.readme.commit}
             path={bootstrap.readme.path}
             preloaded={bootstrap.readme}
           />
         )
       ) : (
-        readme && <Readme repo={repo} ref={refName} path={readme.name} />
+        readme && tree && <Readme repo={repo} scope={scope} ref={tree.commit} path={readme.name} />
       )}
     </section>
   );

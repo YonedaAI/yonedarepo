@@ -1,6 +1,6 @@
 // The Files page: branch or tag, path, version (time travel) and Clone; the latest commit; the
 // directory as a file table with its README below, or one file with blame.
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { BranchPicker, CloneButton, LatestCommit } from './CodeParts';
@@ -12,6 +12,7 @@ import { FileView } from './FileView';
 import { findReadme, Readme } from './Readme';
 import { RepoFirstSteps } from './RepoFirstSteps';
 import { canMoveBranches, type RepoStatus } from './repoStatus';
+import { repositoryContentScope } from './repositoryContentScope';
 import { Failure, Loading } from './SourceStatus';
 import type { SourceRoute } from './sourceRoute';
 import { VersionPicker } from './VersionPicker';
@@ -40,6 +41,7 @@ export function RepoFiles({
   initialEmpty?: boolean;
 }) {
   const ref = apiRef(route.ref, status?.refs);
+  const scope = repositoryContentScope(status);
   // A line belongs to the file on screen: every link away leaves it behind.
   const { line, ...place } = route;
   const queried = useListing(route.repo, initialEmpty ? undefined : ref, route.path, route.at);
@@ -49,11 +51,15 @@ export function RepoFiles({
   // The place the form was opened on: moving to another closes it.
   const here = `${route.ref}:${route.path}`;
   const [writingAt, setWritingAt] = useState<string | null>(null);
-  const writing = writingAt === here;
   const canCommit =
     canMoveBranches(status?.viewer) &&
     route.at === undefined &&
-    !route.ref.startsWith('refs/tags/');
+    !route.ref.startsWith('refs/tags/') &&
+    Boolean(listing.value?.commit);
+  const writing = writingAt === here && canCommit;
+  useEffect(() => {
+    if (!canCommit) setWritingAt(null);
+  }, [canCommit]);
   const tree = listing.value?.kind === 'tree' ? listing.value : undefined;
   const activity = useActivity(route.repo, route.ref, route.path, Boolean(tree), route.at);
   const go = (path: string): SourceRoute => ({ ...place, path });
@@ -179,7 +185,8 @@ export function RepoFiles({
           {readme && ref && (
             <Readme
               repo={route.repo}
-              ref={ref}
+              ref={tree.commit}
+              scope={scope}
               path={route.path ? `${route.path}/${readme.name}` : readme.name}
               at={route.at}
             />
@@ -189,6 +196,7 @@ export function RepoFiles({
       {listing.value?.kind === 'file' && !writing && ref && (
         <FileView
           file={listing.value}
+          scope={scope}
           path={route.path}
           line={line}
           place={{ repo: route.repo, ref, path: route.path, at: route.at }}

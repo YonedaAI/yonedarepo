@@ -60,6 +60,21 @@ describe('the Files page', () => {
     expect(page(route({ at: 3 }))).not.toContain('Add file');
     expect(page(route({ ref: 'refs/tags/v1' }))).not.toContain('Add file');
   });
+  it('keeps an unpublished overlay readable without offering an edit with an unknown base', () => {
+    listing.value = {
+      kind: 'file',
+      commit: null,
+      version: 5,
+      size: 3,
+      content: 'x',
+      encoding: 'utf-8',
+      executable: false,
+    } as unknown as Listing;
+    const rendered = page(route({ path: 'a.ts' }));
+    expect(rendered).toContain('Loading the latest commit');
+    expect(rendered).not.toContain('>Edit<');
+    expect(rendered).not.toContain('Add file');
+  });
   it('offers Edit on a text file, not on a binary one', () => {
     const file = { commit: HEAD, size: 3, content: 'x', executable: false };
     listing.value = { kind: 'file', encoding: 'utf-8', ...file };

@@ -10,11 +10,13 @@ import { CopyButton, FileHeader } from './FileHeader';
 import { isMarkdown, PreviewToggle } from './FilePreview';
 import { PLAIN_BYTES, showRaw } from './fileFacts';
 import { RepoMarkdown } from './RepoMarkdown';
+import { repositoryImageKey, repositoryImagePlace } from './repositoryContentScope';
 
 const isText = (file: FileBody) => file.encoding === 'utf-8';
 
 export function FileView({
   file,
+  scope,
   path,
   line,
   place,
@@ -23,6 +25,7 @@ export function FileView({
   onNavigate,
 }: {
   file: FileBody;
+  scope: string;
   path: string;
   line?: number;
   place: { repo: string; ref: string; path: string; at?: number };
@@ -33,6 +36,7 @@ export function FileView({
 }) {
   const [blaming, setBlaming] = useState(false);
   const [source, setSource] = useState(false);
+  const imagePlace = repositoryImagePlace(place, file);
   const text = isText(file);
   const previewable = text && file.size > 0 && !line && isMarkdown(path);
   const large = file.size > PLAIN_BYTES;
@@ -94,7 +98,11 @@ export function FileView({
       ) : blaming && place.at === undefined ? (
         <FileBlame repo={place.repo} path={path} refName={place.ref} onNavigate={onNavigate} />
       ) : previewable && !source ? (
-        <RepoMarkdown source={file.content} place={place} />
+        <RepoMarkdown
+          key={repositoryImageKey(scope, place, file)}
+          source={file.content}
+          place={imagePlace}
+        />
       ) : (
         <>
           {large && (
