@@ -23,6 +23,7 @@ import type { Env } from './types';
 import { withWebAnalytics } from './web-analytics';
 import { publicOrigin, websitePage } from './website-metadata';
 
+const FRONT_AUTH = new Set(['/api/auth/providers', '/api/auth/identities', '/api/auth/unlink']);
 const GITHUB_PAGES = new Set(['/github/connect', '/github/connected']);
 
 export async function frontFetch(req: Request, bound: Env): Promise<Response> {
@@ -68,8 +69,13 @@ export async function frontFetch(req: Request, bound: Env): Promise<Response> {
     return env.MANAGED
       ? forwardRequest(env.MANAGED, carriedRequest(req))
       : error('NOT_FOUND', 'Managed agents are not available here', 404);
-  // Sign-in stays on a pinned Worker: its limiter is one count per cell, not one per location.
-  if (cellsOn(env) && env.PLATFORM && url.pathname.startsWith('/api/auth/'))
+  // Provider configuration belongs to this Worker; credential routes use the API.
+  if (
+    cellsOn(env) &&
+    env.PLATFORM &&
+    url.pathname.startsWith('/api/auth/') &&
+    !FRONT_AUTH.has(url.pathname)
+  )
     return forwardRequest(env.PLATFORM, carriedRequest(req));
   try {
     const authResponse = await accountRoute(req, env);

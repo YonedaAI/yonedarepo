@@ -167,7 +167,8 @@ export async function createRepository(env: Env, requester: Credentials, body: J
       method: 'POST',
       body: JSON.stringify({ ...body, region: cell }),
     });
-  const hint = regionHint(env, body) ?? localityRegion(env);
+  const local = localityRegion(env);
+  const hint = regionHint(env, body) ?? (local && cellsOn(env) ? cell : local);
   if (!hint) {
     const created = await create(env, requester, body);
     return cellsOn(env) ? { ...created, region: cell } : created;

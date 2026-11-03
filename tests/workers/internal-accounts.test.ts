@@ -10,6 +10,7 @@ import {
   requestAccount,
   withRequestAccount,
 } from '../../cloudflare/worker/internal-accounts';
+import { inScope } from '../../cloudflare/worker/request-scope';
 import type { Credentials } from '../../cloudflare/worker/repo-ops';
 import type { Env } from '../../cloudflare/worker/types';
 
@@ -29,13 +30,13 @@ beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
-it('reads the list once per isolate in five minutes, however many ask', async () => {
+it('coalesces list reads within a request and reuses the completed list for five minutes', async () => {
   const { env, all } = d1(['team']);
-  const asked = await Promise.all([
+  const asked = await inScope({ req: new Request('https://yoneda/api/v1/admin/traffic') }, () => Promise.all([
     isInternal(env, 'team', NOW),
     isInternal(env, 'stranger', NOW),
     isInternal(env, 'team', NOW + 4 * MINUTE),
-  ]);
+  ]));
   expect(asked).toEqual([true, false, true]);
   expect(all).toHaveBeenCalledTimes(1);
   await isInternal(env, 'team', NOW + 5 * MINUTE);

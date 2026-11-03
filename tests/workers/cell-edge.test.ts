@@ -1,6 +1,5 @@
-// The first hop, through a real authority for names and fake cells for the rest: what each kind
-// of request reaches, and that a repository's id costs no read at all.
-import { env as testEnv } from 'cloudflare:test';
+// The first hop is transport only: known IDs route directly and readable names reach
+// the API, which resolves and authorizes them once.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { cellOfRequest, edgeFetch, frontEnv, toCell } from '../../cloudflare/worker/cell-edge';
 import { HOME_COOKIE } from '../../cloudflare/worker/cell-names';
@@ -67,34 +66,10 @@ describe('with no repository in the path', () => {
 });
 
 describe('with a readable name', () => {
-  const named = { ...base, WORKSPACES: testEnv.WORKSPACES } as unknown as Env;
-  const claim = (owner: string, repo: string, name: string) =>
-    testEnv.WORKSPACES.get(testEnv.WORKSPACES.idFromName(`account:${owner}`)).fetch('http://workspace/command', {
-      method: 'POST',
-      body: JSON.stringify({ op: 'owned_repo_claim', repo, name }),
-    });
-  const signup = (owner: string) =>
-    testEnv.WORKSPACES.get(testEnv.WORKSPACES.idFromName(`account:${owner}`)).fetch('http://workspace/command', {
-      method: 'POST',
-      body: JSON.stringify({
-        op: 'signup',
-        username: owner,
-        password: 'a long test password',
-        salt: '01'.repeat(16),
-        recovery_hash: 'b'.repeat(64),
-        session_hash: 'a'.repeat(64),
-      }),
-    });
-
-  it('the owner’s authority says which repository, and its id the cell', async () => {
-    await signup('edgeowner');
-    await claim('edgeowner', weurRepo, 'project');
-    expect(await ask('/edgeowner/project.git/info/refs', {}, named)).toBe('weur');
-    expect(await ask('/api/v1/resolve/edgeowner/project', {}, named)).toBe('weur');
-  });
-
-  it('a name nobody holds goes to enam, which holds the older ones', async () => {
-    expect(await ask('/nobodyhere/project.git/info/refs', {}, named)).toBe('enam');
+  it('leaves readable names to the API without reading an authority at the edge', async () => {
+    expect(await ask('/edgeowner/project.git/info/refs')).toBe('enam');
+    expect(await ask('/api/v1/resolve/edgeowner/project')).toBe('enam');
+    expect(await ask('/nobodyhere/project.git/info/refs')).toBe('enam');
   });
 });
 

@@ -147,6 +147,11 @@
       "database_id": "ec419fb5-308e-4c52-8252-6d321302d771",
       "database_name": "yonedarepo-dev-platform-index",
       "migrations_dir": "migrations"
+    },
+    {
+      "binding": "INDEX_WEUR",
+      "database_id": "2c8c288e-8975-4b8f-955a-7e7e916fee7d",
+      "database_name": "yonedarepo-dev-platform-index-weur"
     }
   ],
   "durable_objects": {
@@ -266,10 +271,6 @@
       "stream": "4ff4b2c0c4ec4234934fa94498ab73c5"
     }
   ],
-  "placement": {
-    "mode": "targeted",
-    "region": "aws:us-east-1"
-  },
   "preview_urls": false,
   "queues": {
     "consumers": [
@@ -354,6 +355,10 @@
     {
       "binding": "MANAGED",
       "service": "yonedarepo-dev-agents-managed"
+    },
+    {
+      "binding": "CELL_WEUR",
+      "service": "yonedarepo-dev-platform-weur"
     }
   ],
   "tail_consumers": [
@@ -373,13 +378,15 @@
     "ADMIN_NOTIFY_EMAIL": "",
     "AGENT_SIGNUP": "on",
     "AUDIT_LOG": "off",
-    "AUTOMATIC_LOCALITY": "off",
+    "AUTOMATIC_LOCALITY": "on",
     "BLOB_WRITE_THROUGH": "off",
+    "CELLS": "on",
     "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
     "EMAIL_CONTACT": "hello@yonedarepo.com",
     "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
     "GITHUB_APP_ID": "5571444",
     "GITHUB_APP_SLUG": "yonedarepo-dev-import",
+    "GLOBAL_AUTH_LIMITS": "on",
     "LANDING_INSTRUMENTS": "on",
     "LAND_MODE": "batch",
     "LAND_WHEN_CLEARED": "on",

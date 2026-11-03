@@ -91,9 +91,22 @@ export function App() {
   const [shown, setShown] = useState<ShownRepo>();
   const onLoaded = useCallback((loaded: ShownRepo) => setShown(loaded), []);
   const [missing, setMissing] = useState<string>();
-  const platform = useSource<{ repos: PlatformRepo[] }>(session.authenticated ? '/repos' : null);
+  // The API checks the session itself; list requests need not wait for display identity.
+  const listEarly =
+    session.loading &&
+    (signedInHint() ||
+      route.view === 'repositories' ||
+      route.view === 'repo-name' ||
+      Boolean(routeRepo(route)));
+  const platform = useSource<{ repos: PlatformRepo[] }>(
+    session.authenticated || listEarly ? '/repos' : null,
+  );
   const orgs = useSource<{ orgs: OrgSummary[] }>(session.authenticated ? '/orgs' : null);
-  const activity = useSource<AccountActivity>(session.authenticated ? '/activity' : null);
+  const activity = useSource<AccountActivity>(
+    session.authenticated && (route.view === 'home' || route.view === 'global-search')
+      ? '/activity'
+      : null,
+  );
   // Operators: the sign-up feed, badged in the sidebar with those since this browser looked.
   const { isAdmin, signups, signupsSeen, onSignupsSeen } = useSignups(session.identity);
   // Before anything renders a link, so repository links carry their readable address.

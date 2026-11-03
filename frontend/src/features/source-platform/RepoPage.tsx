@@ -28,7 +28,7 @@ import { chosenBranch } from './repoBranch';
 import { rememberRepoName, repoNameOf } from './repoNames';
 import type { RepoStatus } from './repoStatus';
 import { SessionView } from './SessionView';
-import { Failure } from './SourceStatus';
+import { Failure, Loading } from './SourceStatus';
 import { formatSourceRoute, type SourceRoute } from './sourceRoute';
 import { useImportProgress } from './useImportProgress';
 import { useSource } from './useSource';
@@ -67,7 +67,7 @@ export function RepoPage({
 }) {
   const repo = route.repo;
   const status = useSource<RepoStatus & { owner_handle?: string | null; insights?: boolean }>(
-    `/repos/${repo}`,
+    `/repos/${repo}?summary=true`,
   );
   // Its readable address (`/<handle>/<name>`): the status names the owner's handle (null
   // while an email-named owner has none: the id address keeps working).
@@ -106,6 +106,7 @@ export function RepoPage({
         <div className="repo-page">
           {/* The top bar's trail is what a sighted reader goes by; a screen reader gets the same. */}
           <h1 className="sr-only">{name ?? data?.name ?? repoNameOf(repo)?.name ?? repo}</h1>
+          {!data && !status.error && <Loading what="repository" />}
           {data && <RepoHoldBanner repo={repo} />}
           {status.error && (
             <Failure error={status.error} what="this repository" onRetry={status.reload} />

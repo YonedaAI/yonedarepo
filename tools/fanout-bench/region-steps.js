@@ -80,6 +80,17 @@ export async function runStep(target, s, serve) {
     placement: response.headers.get('cf-placement'),
     ...(fine ? (content ? {} : { error: 'WRONG_CONTENT' }) : failure(raw, response)),
   };
+  // Optional public-asset attestation: keep bytes out of records, and never copy arbitrary
+  // response headers (sign-in and create responses can carry credentials).
+  if (s.sha256 === true) {
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', raw));
+    answer.sha256 = Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    answer.cache = {
+      status: response.headers.get('cf-cache-status'),
+      control: response.headers.get('cache-control'),
+      etag: response.headers.get('etag'),
+    };
+  }
   if (s.keep && fine && raw.length <= KEEP_BYTES) answer.value = JSON.parse(new TextDecoder().decode(raw));
   if (s.keep_cookie) answer.cookie = response.headers.get('set-cookie')?.split(';')[0] ?? null;
   return answer;

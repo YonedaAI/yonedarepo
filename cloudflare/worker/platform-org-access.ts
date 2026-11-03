@@ -22,11 +22,14 @@ export type OrgAccess = Record<string, { role: OrgRole; teams: OrgTeam[] }>;
 /** Orgs asked per request at most (an account's hints beyond it are not resolved). */
 const ORGS_PER_ACCOUNT = 100;
 const CACHE_LIMIT = 10_000;
-const answers = new Map<string, { at: number; value: Promise<Json | null> }>();
+// Only completed JSON may cross request contexts; unfinished I/O stays with its caller.
+const answers = new Map<string, { at: number; sequence: number; value: Json | null }>();
+let generation = 0;
+let sequence = 0;
 const key = (org: string, account: string) => `${org}\n${account}`;
 
 /** The account's role and teams in `org`, or null when it is not a member. */
-function ask(env: Env, org: string, account: string): Promise<Json | null> {
+async function ask(env: Env, org: string, account: string): Promise<Json | null> {
   const k = key(org, account);
   const cached = answers.get(k);
   if (cached && Date.now() - cached.at < ACCESS_MS) return cached.value;
@@ -35,16 +38,25 @@ function ask(env: Env, org: string, account: string): Promise<Json | null> {
     for (const [old, entry] of answers) if (now - entry.at >= ACCESS_MS) answers.delete(old);
   }
   const at = Date.now();
-  const value = workspace(env, org, { op: 'org_access', account }).then(
-    (answer) => (answer.role ? answer : null),
-    (e) => {
-      answers.delete(k);
-      // A hint naming no org (or a person) grants nothing; anything else fails the request.
-      if (e?.code === 'NOT_FOUND') return null;
-      throw e;
-    },
-  );
-  answers.set(k, { at, value });
+  const version = generation;
+  const order = ++sequence;
+  let value: Json | null;
+  try {
+    const answer = await workspace(env, org, { op: 'org_access', account });
+    value = answer.role ? answer : null;
+  } catch (e: any) {
+    if (e?.code === 'NOT_FOUND') return null;
+    throw e;
+  }
+  // A slower old request cannot overwrite a newer answer or undo invalidation.
+  if (
+    generation === version &&
+    Date.now() - at < ACCESS_MS &&
+    (!answers.has(k) || (answers.get(k)?.sequence ?? 0) < order) &&
+    (answers.has(k) || answers.size < CACHE_LIMIT)
+  ) {
+    answers.set(k, { at, sequence: order, value });
+  }
   return value;
 }
 
@@ -69,6 +81,7 @@ export async function orgAccess(
 
 /** After an org change this isolate served: its copies for `org` (one account's, or all). */
 export function forgetOrgAccess(org: string, account?: string) {
+  generation++;
   if (account) {
     answers.delete(key(org, account));
     return;

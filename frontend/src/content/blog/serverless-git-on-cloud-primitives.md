@@ -1,10 +1,10 @@
 ---
-title: What serverless Git costs, measured on Cloudflare
+title: What serverless Git costs
 date: 2026-10-20
 author: Matthew Long
 category: Research
 order: 3
-summary: Part III maps the transaction log onto cloud primitives and measures it on Cloudflare. Batched landing landed all 1,000 writers in each of six bursts, with no refused commit, landing or read.
+summary: Part III maps the transaction log onto cloud primitives and measures it on one reference deployment. Batched landing landed all 1,000 writers in each of six bursts, with no refused commit, landing or read.
 image: /blog/serverless-git-on-cloud-primitives/cover.webp
 imageAlt: Cover card of the paper A Cloud-Portable Architecture for Serverless Git, Part III of the series Source Code as a Transactional Abstraction, by Matthew Long.
 caption: Part III of Source Code as a Transactional Abstraction, by Matthew Long (YonedaAI).
@@ -21,11 +21,11 @@ Every landing on a branch passes through something that serializes it. If that s
 
 ## Six primitives, one job each
 
-![Diagram of Workers request handlers sending each repository's commits and landings to one serialized authority, with an object store, a durable queue, container checks and a Git projection around it.](/blog/serverless-git-on-cloud-primitives/hero.svg "A diagram of the architecture described in the paper, showing its primitives and the Cloudflare product that realizes each.")
+![Diagram of Workers request handlers sending each repository's commits and landings to one serialized authority, with an object store, a durable queue, container checks and a Git projection around it.](/blog/serverless-git-on-cloud-primitives/hero.svg "A diagram of the architecture described in the paper, showing its primitives and the cloud service that realizes each.")
 
-The architecture is written against contracts, not products. The paper names six primitives and maps each onto one Cloudflare product (Table 1):
+The architecture is written against contracts, not products. The paper names six primitives and maps each onto one service in the reference deployment (Table 1):
 
-| Primitive | Contract | Cloudflare realization |
+| Primitive | Contract | Reference realization |
 |---|---|---|
 | Object store | Immutable, content-addressed puts and gets | R2, and Artifacts for Git objects |
 | Serialized authority | Durable state per key, with linearizable compare-and-set on refs and log append | One Durable Object with SQLite per repository |
@@ -34,7 +34,7 @@ The architecture is written against contracts, not products. The paper names six
 | Container compute | Checks and heavy builds | Containers |
 | Git projection | Serves the Git protocol from the log, optionally | Artifacts |
 
-Table 1 also names another documented product per contract (S3, a Spanner row, SQS, Lambda, Fargate) but makes no performance claim about them. Every measurement comes from Cloudflare.
+Table 1 also names another documented product per contract (S3, a Spanner row, SQS, Lambda, Fargate) but makes no performance claim about them. Every measurement comes from that same cloud deployment.
 
 The primitive that decides capacity is the authority. Each repository has exactly one `SourceRepository` Durable Object holding the log, refs, checkpoints, landing queue and lease in its SQLite database. A ref's compare-and-swap, its log entry and the landing record are **one SQLite transaction**. The price is that the authority is a serial resource for the whole repository: two branches of one repository queue behind each other, while two repositories never interact.
 

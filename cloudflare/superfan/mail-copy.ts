@@ -29,7 +29,7 @@ export const WORD: Record<string, string> = {
   land_queue: 'landing',
   commit_shards: 'commit',
   pack_builder: 'clone pack',
-  ssh_gateway: 'SSH',
+  ssh_gateway: 'SSH gateway',
   workspace_authority: 'account',
   cron: 'scheduled task',
   synthetic: 'site check',
@@ -43,6 +43,8 @@ export const nounOf = (component: string) => NOUN[component] ?? WORD[component] 
 
 /** The counts behind a failure rate; with no rate, they already are the title. */
 function errorCounts(f: Facts) {
+  if (f.word === 'SSH gateway')
+    return 'Gateway checks include keep-alive calls and housekeeping alarms.';
   if (typeof f.values.error_rate !== 'number') return 'Unhandled errors in the last hour.';
   const parts = [
     typeof f.values.exceptions === 'number' ? plural(f.values.exceptions, 'exception') : null,
@@ -139,11 +141,12 @@ export const COPY: Copy[] = [
     title: (f) => {
       const rate = f.values.error_rate;
       if (typeof rate === 'number')
-        return `${Number((rate * 100).toFixed(1))}% of ${f.word} calls failing`;
+        return `${Number((rate * 100).toFixed(1))}% of ${f.word} ${f.word === 'SSH gateway' ? 'checks' : 'calls'} failing`;
       return `${number(count(f, 'exceptions', 'error_logs'))} ${f.word} errors`;
     },
     means: errorCounts,
     first: "Open this Worker's logs. If a deploy started it, roll back.",
+    firstOn: { ssh_gateway: 'Check alarm and container logs, then try a fresh SSH clone.' },
   },
   ...RELEASE_COPY,
   {

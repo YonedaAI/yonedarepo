@@ -26,7 +26,7 @@ export function RichMarkdown({
   if (source.length > MAX_CHARS) return <pre>{source}</pre>;
   return (
     <div className="md-body">
-      <Suspense fallback={<Markdown source={source} shift={shift} image={image} />}>
+      <Suspense fallback={<Markdown source={source} shift={shift} />}>
         <GfmDocument source={source} shift={shift} anchors={anchors} image={image} />
       </Suspense>
     </div>

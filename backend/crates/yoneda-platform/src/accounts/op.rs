@@ -9,6 +9,7 @@ use yoneda_core::{Error, Result};
 op_names! {
     pub(crate) enum SigninOp {
         Signup = "signup",
+        RateLimit = "auth_rate_limit",
         Login = "login",
         Session = "session",
         Logout = "logout",

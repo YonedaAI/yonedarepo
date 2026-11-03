@@ -13,7 +13,7 @@ import { mergeOverview, mergePages } from '../../cloudflare/worker/platform-admi
 import { PAGE } from '../../cloudflare/worker/platform-admin-queries';
 import { inScope } from '../../cloudflare/worker/request-scope';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, author, bindings, file, queued, scoped, usePlatformFixture } from './repo-fixture';
+import { api, author, bindings, fakeCombiners, file, queued, scoped, usePlatformFixture } from './repo-fixture';
 import { applySchema } from './repo-fixture-schema';
 
 usePlatformFixture();
@@ -145,6 +145,30 @@ describe('a person who signs up in Europe', () => {
     const read = await api(`/repos/${elsewhere.body.id}`, { token: issued.body.token }, {}, enam);
     expect(read.status).toBe(200);
   });
+});
+
+it.each([['EU', undefined], ['NA', 'weur']])('keeps selected authority placement consistent for visitor %s and selected region %s', async (continent, region) => {
+  const auth = await signupIn(enam, 'travelingcreator', 'NA');
+  // In-process combiners need the placement method; physical location is a live proof.
+  const placed = { idFromName: fakeCombiners.idFromName, get: (name: string) => ({ ...fakeCombiners.get(name), where: async () => 'TST' }) } as unknown as DurableObjectNamespace;
+  const automaticEnam: Env = { ...enam, LAND_COMBINERS: placed, AUTOMATIC_LOCALITY: 'on', CELL_WEUR: served(() => automaticWeur) };
+  const automaticWeur: Env = { ...weur, LAND_COMBINERS: placed, AUTOMATIC_LOCALITY: 'on', CELL_ENAM: served(() => automaticEnam) };
+  const req = new Request('https://yoneda/api/v1/repos', {
+    method: 'POST', headers: { 'content-type': 'application/json', cookie: auth.cookie },
+    body: JSON.stringify(repo('traveling-project', region ? { region } : {})), cf: { continent, colo: continent === 'EU' ? 'FRA' : 'IAD' },
+  });
+  const response = await platformFetch(req, automaticEnam);
+  expect(response.status).toBe(200);
+  const created = await response.json<any>();
+  expect(cellOfRepo(created.id)).toBe('weur');
+  expect(created.region_hint).toBe('weur');
+  expect(await rowOf(weurIndex, created.id)).not.toBeNull();
+  expect(await rowOf(scoped.INDEX, created.id)).toBeNull();
+  const throughOriginal = await api(`/repos/${created.id}`, auth, {}, automaticEnam);
+  expect(throughOriginal.status).toBe(200);
+  expect(throughOriginal.body.region).toBe('weur');
+  const listed = await api('/repos', auth, {}, automaticEnam);
+  expect(listed.body.repos.map((r: any) => r.id)).toContain(created.id);
 });
 
 describe('a region that is not a cell', () => {

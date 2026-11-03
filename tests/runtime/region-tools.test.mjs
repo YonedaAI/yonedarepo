@@ -66,6 +66,20 @@ test('a step that must hold a text fails without it, and bytes go as bytes', asy
   assert.deepEqual([wrong.ok, wrong.error], [false, 'WRONG_CONTENT']);
 });
 
+test('a public asset step can attest exact bytes and cache headers without keeping content', async () => {
+  const stub = stubbedFetch(() => new Response('abc', { headers: { 'cf-cache-status': 'HIT', 'cache-control': 'public, max-age=3600', etag: 'v1', 'set-cookie': 'private=value' } }));
+  try {
+    const row = await runStep('https://x', { label: 'asset', path: '/asset.js', sha256: true });
+    assert.equal(row.sha256, 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+    assert.deepEqual(row.cache, { status: 'HIT', control: 'public, max-age=3600', etag: 'v1' });
+    assert.equal(row.value, undefined);
+    assert.equal(row.cookie, undefined);
+    const normal = await runStep('https://x', { label: 'ordinary', path: '/' });
+    assert.equal(normal.sha256, undefined);
+    assert.equal(normal.cache, undefined);
+  } finally { stub.restore(); }
+});
+
 test('the platform answers from the region when asked, and a page stays with the front Worker', async () => {
   const stub = stubbedFetch(() => new Response('from the public path'));
   const asked = [];

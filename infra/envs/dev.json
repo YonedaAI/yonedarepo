@@ -15,12 +15,11 @@
   "cells": [
     {
       "code": "weur",
-      "placement": "aws:eu-central-1",
       "containers": "WEUR",
       "jurisdiction": "eu",
       "ratelimit": "2003",
       "public_ratelimit": "2004",
-      "bound": false
+      "bound": true
     }
   ],
   "workers": [
@@ -241,10 +240,6 @@
             "head_sampling_rate": 0.01
           }
         },
-        "placement": {
-          "mode": "targeted",
-          "region": "aws:us-east-1"
-        },
         "tail_consumers": [
           {
             "service": "{prefix}-superfan"
@@ -295,7 +290,9 @@
           "SPAN_SAMPLE": "off",
           "SERVICE_LEVELS": "on",
           "REQUEST_IDS": "off",
-          "AUTOMATIC_LOCALITY": "off"
+          "AUTOMATIC_LOCALITY": "on",
+          "CELLS": "on",
+          "GLOBAL_AUTH_LIMITS": "on"
         },
         "secrets_store_secrets": [
           {
@@ -610,7 +607,8 @@
           }
         ],
         "vars": {
-          "CELLS": "on"
+          "CELLS": "on",
+          "AUTOMATIC_LOCALITY": "on"
         },
         "services": [
           {
@@ -886,10 +884,6 @@
         },
         "workers_dev": true,
         "preview_urls": false,
-        "placement": {
-          "mode": "targeted",
-          "region": "aws:us-east-1"
-        },
         "routes": [
           {
             "pattern": "dev.yonedarepo.com",
@@ -926,7 +920,12 @@
           "WEB_ANALYTICS_TOKEN": "70b90cc7e849429fa25cc64897ebfd2b",
           "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
           "REQUEST_IDS": "off",
-          "CLIENT_ERRORS": "off"
+          "CLIENT_ERRORS": "off",
+          "CELLS": "on",
+          "AUTOMATIC_LOCALITY": "on",
+          "GLOBAL_AUTH_LIMITS": "on",
+          "STATIC_ASSET_CACHE": "on",
+          "FAST_APP_HEAD": "on"
         },
         "services": [
           {

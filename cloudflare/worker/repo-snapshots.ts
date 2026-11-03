@@ -23,7 +23,7 @@ const PINNED_ORIGIN = 'https://snapshots.yoneda.internal';
 const platform = (env: Env, repo: string) => caller(env, repo, { _system: 'projection' });
 
 const loading = new Flights<Json>();
-/** One load per key at a time in this isolate; concurrent callers share it. */
+/** One unfinished load per key in this request; completed snapshots remain shared. */
 const once = (key: string, load: () => Promise<Json>) => loading.join(key, load).work;
 
 /** The caller's read access and main's published head, as `readFromHead`; null also when
@@ -196,8 +196,8 @@ async function refsSnapshot(env: Env, repo: string, minVersion: number): Promise
   return refs;
 }
 
-/** The head holder's refs role: one authority read per `REFS_MS` at most, shared by every
- * isolate's readers. */
+/** The head holder's completed refs cache, shared for `REFS_MS`. Unfinished loads stay
+ * within their owning request. */
 export class RefsHolder {
   #refs: { value: Json; at: number } | null = null;
   #loads = new Flights<Json>();

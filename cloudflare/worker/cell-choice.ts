@@ -1,5 +1,5 @@
-// Which cell a new repository goes to: the one the request names; failing that, an org's home,
-// or the account's. A region is fixed from here on: it is in the repository's id.
+// A new repository follows the current visitor's location before an org/account home.
+// A selected internal destination wins across forwarding. The id fixes its authority.
 
 import { homeCell } from './account-place';
 import { allCells, cellOfRegion, cellsOn, isCell, thisCell } from './cells';

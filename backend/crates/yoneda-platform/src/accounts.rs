@@ -16,6 +16,9 @@ mod audit_log;
 mod audit_log_tests;
 mod audit_seal;
 mod auth_events;
+mod auth_limit;
+#[cfg(test)]
+mod auth_limit_tests;
 mod avatars;
 #[cfg(test)]
 mod avatars_tests;

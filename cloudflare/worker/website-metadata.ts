@@ -1,4 +1,5 @@
 import { appHead, indexable, type PageHead, siteHead, structuredData } from './seo-head';
+import { staticAssetCache } from './static-asset-cache';
 import type { Env } from './types';
 
 /** Meta tags whose content is the page's title or description. */
@@ -29,10 +30,12 @@ export async function websitePage(req: Request, env: Env): Promise<WebsitePage> 
     headers.delete('if-none-match');
     headers.delete('if-modified-since');
     const complete = await env.ASSETS.fetch(new Request(asked, { headers }));
-    if (!complete.headers.get('content-type')?.includes('text/html')) return { response: assets };
+    if (!complete.headers.get('content-type')?.includes('text/html'))
+      return { response: staticAssetCache(req, env, assets, complete.headers.get('content-type')) };
     assets = complete;
   }
-  if (!assets.headers.get('content-type')?.includes('text/html')) return { response: assets };
+  if (!assets.headers.get('content-type')?.includes('text/html'))
+    return { response: staticAssetCache(req, env, assets) };
   const origin = publicOrigin(req, env.PUBLIC_APP_ORIGIN);
   if (!origin)
     return {

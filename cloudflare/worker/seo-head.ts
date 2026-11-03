@@ -56,32 +56,29 @@ const ORGANIZATION = 'Yoneda Labs';
 /** Whether this environment may be indexed (production's `SEO_INDEXING=on`). */
 export const indexable = (env: Env) => env.SEO_INDEXING === 'on';
 
-// One parsed manifest per assets binding (an isolate serves one deployment's assets); a miss is
-// asked again next time, so a failed read does not last the isolate's life.
-const manifests = new WeakMap<object, Promise<Site | null>>();
+// One completed manifest per assets binding (an isolate serves one deployment's assets).
+// Pending I/O belongs to its request; misses and failures are retried next time.
+const manifests = new WeakMap<object, Site>();
 
 /** The build's site routes, or null where the build wrote none (a dev server, an old build). */
-export function siteRoutes(env: Env, origin: string): Promise<Site | null> {
-  let site = manifests.get(env.ASSETS);
-  if (!site) {
-    site = env.ASSETS.fetch(new Request(`${origin}/_site/routes.json`))
-      .then(async (r) => {
-        if (!r.ok || !r.headers.get('content-type')?.includes('json')) return null;
-        const manifest = await r.json<Manifest>();
-        return {
-          routes: manifest.routes,
-          aliases: manifest.aliases,
-          byPath: new Map(manifest.routes.map((route) => [route.path, route])),
-        };
-      })
-      .catch(() => null)
-      .then((found) => {
-        if (!found) manifests.delete(env.ASSETS);
-        return found;
-      });
+export async function siteRoutes(env: Env, origin: string): Promise<Site | null> {
+  const cached = manifests.get(env.ASSETS);
+  if (cached) return cached;
+  try {
+    const response = await env.ASSETS.fetch(new Request(`${origin}/_site/routes.json`));
+    if (!response.ok || !response.headers.get('content-type')?.includes('json')) return null;
+    const manifest = await response.json<Manifest>();
+    const site = {
+      routes: manifest.routes,
+      aliases: manifest.aliases,
+      byPath: new Map(manifest.routes.map((route) => [route.path, route])),
+    };
+    // A request that failed or never finished cannot poison the next page's head.
     manifests.set(env.ASSETS, site);
+    return site;
+  } catch {
+    return null;
   }
-  return site;
 }
 
 /** A site page's head and prerendered copy, or undefined for any other path. */
@@ -105,8 +102,13 @@ export async function appHead(req: Request, env: Env): Promise<PageHead> {
   const parts = new URL(req.url).pathname.split('/').filter(Boolean);
   if (!parts.length) return { canonical: '/' };
   if (APP_ROOTS.has(parts[0])) return { noindex: true };
-  if (parts.length === 2 && normalizeHandle(parts[0]) && REPO_NAME.test(parts[1]))
+  if (parts.length === 2 && normalizeHandle(parts[0]) && REPO_NAME.test(parts[1])) {
+    // A cookie is only a hint to skip optional public metadata. The app's API still
+    // authenticates every read; private names and credentials never enter this head.
+    const accountHint = /(?:^|;)\s*yoneda_account=[^;\s]+/.test(req.headers.get('cookie') ?? '');
+    if (env.FAST_APP_HEAD === 'on' && accountHint) return { noindex: true };
     return repositoryHead(req, env, parts[0], parts[1]);
+  }
   return {};
 }
 

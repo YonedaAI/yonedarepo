@@ -225,3 +225,23 @@ it('lists site pages and public repositories in the sitemap, never a private one
   expect(xml).not.toContain('/signin');
   expect(xml).not.toContain('unmapped-secret');
 });
+
+it('a cookie hint only skips optional metadata and cannot grant private repository access', async () => {
+  const cookie = await signup('fast_head_owner');
+  const made = await api('/repos', { cookie }, { body: {
+    name: 'private-head', visibility: 'private', policy: { required_checks: [], approvals: 0 },
+    files: [file('README.md', 'private content\n')], author,
+  } }, local);
+  expect(made.status).toBe(200);
+  const spoofed = 'yoneda_account=not-a-session';
+  const response = await frontFetch(new Request(`${ORIGIN}/fast_head_owner/private-head`, {
+    headers: { cookie: spoofed },
+  }), { ...prod, FAST_APP_HEAD: 'on' });
+  const html = await response.text();
+  expect(response.status).toBe(200);
+  expect(html).toContain('noindex');
+  expect(html).not.toContain('private-head');
+  expect(html).not.toContain('private content');
+  const refused = await api(`/repos/${made.body.id}?summary=true`, { cookie: spoofed }, {}, local);
+  expect(refused.status).toBe(404);
+});
