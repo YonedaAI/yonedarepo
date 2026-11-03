@@ -783,3 +783,13 @@ fn an_empty_2xx_answer_counts_as_success() {
     assert!(!ok(StatusCode::NOT_FOUND, &serde_json::Value::Null));
     assert!(!ok(StatusCode::FORBIDDEN, &json!({"success": true})));
 }
+
+#[test]
+fn managed_list_speed_switch_has_dev_prod_parity() {
+    for (_, workers) in [dev(), prod()] {
+        assert_eq!(
+            role(&workers, "agents-managed").config["vars"]["FAST_AGENTS_LIST"],
+            "on"
+        );
+    }
+}
