@@ -14,6 +14,7 @@ import { importSource } from './platform-github-import';
 import { auditRepo, auditRepoForget } from './repo-audit';
 import { commit } from './repo-commit';
 import { issueTokens, owning } from './repo-create-access';
+import { creationOrigin } from './repo-creation-origin';
 
 export { owning, tokenSecret } from './repo-create-access';
 
@@ -100,14 +101,17 @@ export async function createRepository(env: Env, requester: Credentials, body: J
       body: JSON.stringify({ ...body, region: cell }),
     });
   const local = localityRegion(env);
-  const hint = regionHint(env, body) ?? (local && cellsOn(env) ? cell : local);
+  const experiment = regionHint(env, body);
+  const hint = experiment ?? (local && cellsOn(env) ? cell : local) ?? creationOrigin(env, cell);
+  const eager = experiment !== null || local !== null;
   if (!hint) {
     const created = await create(env, requester, body);
     return cellsOn(env) ? { ...created, region: cell } : created;
   }
-  const near = hintedEnv(env, hint);
+  const near = hintedEnv(env, hint, eager);
   const created = await create(near, requester, body);
-  await timed('create.place', () => placeCombiners(near, created.id));
+  const place = () => timed('create.place', () => placeCombiners(near, created.id));
+  await (eager ? place() : afterAnswer(place));
   return { ...created, region_hint: hint };
 }
 
@@ -180,8 +184,9 @@ export async function importRepository(env: Env, requester: Credentials, body: J
       method: 'POST',
       body: JSON.stringify({ ...body, region: cell }),
     });
-  const hint = localityRegion(env);
-  if (hint) env = hintedEnv(env, hint);
+  const local = localityRegion(env);
+  const hint = (local && cellsOn(env) ? cell : local) ?? creationOrigin(env, cell);
+  if (hint) env = hintedEnv(env, hint, local !== null);
   const auth = await timed('import.owner', () => owning(env, requester, body));
   const asked_at = Date.now();
   const { url, github, hidden } = await timed('import.source', () =>
@@ -211,8 +216,13 @@ export async function importRepository(env: Env, requester: Credentials, body: J
       }),
   );
   if (hint) {
-    await shardOutboxes(env, id);
-    await placeCombiners(env, id);
+    if (local) {
+      await shardOutboxes(env, id);
+      await placeCombiners(env, id);
+    } else {
+      await startShards(env, id);
+      await afterAnswer(() => placeCombiners(env, id));
+    }
   }
   await timed('import.list', () => listRepository(env, id, owner, name, visibility));
   await noteOwnerCell(env, owner);
