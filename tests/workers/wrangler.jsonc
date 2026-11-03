@@ -31,6 +31,10 @@
       {
         "name": "LAND_COMBINERS",
         "class_name": "LandCombiner"
+      },
+      {
+        "name": "READ_COPIES",
+        "class_name": "RepositoryReadCopy"
       }
     ]
   },
@@ -42,6 +46,12 @@
         "SourceRepository",
         "CommitShard",
         "LandCombiner"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "RepositoryReadCopy"
       ]
     }
   ],

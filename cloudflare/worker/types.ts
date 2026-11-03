@@ -78,6 +78,10 @@ export interface Env {
   /** Durable imports of external Git repositories into the source platform. */
   PLATFORM_IMPORT: Workflow<import('./repo-clone').CloneParams>;
   OBJECTS: R2Bucket;
+  /** Private, epoch-fenced nearby Git read copies; retain the binding after first use. */
+  READ_COPIES?: DurableObjectNamespace;
+  /** Off by default: automatic US/Europe copies and actual-request creation hints. */
+  AUTOMATIC_LOCALITY?: string;
   /** R2's S3 API for Git LFS presigned URLs (repo-lfs.ts): `https://<account>.r2.cloudflarestorage.com`,
    * the OBJECTS bucket's name, and an R2 API token's S3 key pair (secrets). LFS answers 501
    * where any is missing. */

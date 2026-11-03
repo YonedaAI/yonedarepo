@@ -3,6 +3,7 @@
 export { ContainerProxy } from '@cloudflare/containers';
 export {
   CommitShard,
+  RepositoryReadCopy,
   SourceRepository,
   WorkspaceAuthority,
 } from '../../backend/crates/yoneda-worker/build/worker/shim.mjs';

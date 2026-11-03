@@ -17,6 +17,7 @@ import { derivedPrefix, purgePrefix } from './repo-admin';
 import { bundleKey, type Location, locate } from './repo-bundles';
 import { edgeDelete } from './repo-cache-tiers';
 import { accessEverywhere } from './repo-head';
+import { fenceReadCopies } from './repo-locality';
 import { RepoObjects } from './repo-objects';
 import { ApiError, caller, type Json, type RepoContext, target, walk } from './repo-ops';
 import { voidSummary } from './repo-search-directory';
@@ -122,6 +123,7 @@ export async function purgeContent(env: Env, repo: string, spec: string, claims:
     await env.OBJECTS.delete(transcripts.map((sha) => transcriptKey(repo, sha)));
   const blobs = claims.filter((c) => c.target.kind === 'blob').map((c) => c.target.id);
   if (blobs.length === 0) return bytes;
+  await fenceReadCopies(env, repo, blobs);
   const objects = new RepoObjects(env, repo, parseStore(env, spec));
   const keys = blobs.flatMap((id) => [objects.rawKey(id), objects.key(id)]);
   await Promise.all(

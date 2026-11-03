@@ -59,6 +59,7 @@ mod platform_symbol_graph;
 mod platform_symbols;
 mod platform_transcript;
 mod platform_views;
+mod read_copy;
 pub(crate) mod repo_store;
 mod secret_scan;
 pub mod shared_contracts;
@@ -67,6 +68,7 @@ pub use accounts::execute_workspace;
 pub use commit_store::{execute_commit_store, migrate_commit_store, require_free_to_erase};
 pub use migration_ledger::{AppliedMigration, applied_migrations};
 pub use platform_compute::{compute as platform_compute, stack_left};
+pub use read_copy::{execute_read_copy, migrate_read_copy};
 pub use repo_store::{execute_migrated, execute_repo_store, migrate_repo_store};
 
 /// The store contract under the name the modules were written against.

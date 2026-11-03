@@ -100,7 +100,7 @@ describe('org page', () => {
     expect(owner).toContain('Add member');
     expect(owner).toContain('Create team');
     expect(owner).toContain('Remove bob from devs');
-    expect(owner).toContain('team:acme/devs');
+    expect(owner).not.toContain('team:acme/devs');
     expect(owner).toContain(`href="/source/r${'a'.repeat(20)}"`);
     state.value['/orgs/acme'] = loaded({ ...org, role: 'member' });
     const member = html(OrgPage, { org: 'acme', navigate });
@@ -114,7 +114,7 @@ describe('org page', () => {
     state.value['/orgs/acme/repos'] = loaded({ repos: [] });
     const page = html(OrgPage, { org: 'acme', navigate });
     expect(page).toContain('No teams yet');
-    expect(page).toContain('No repositories you can use yet');
+    expect(page).toContain('No repositories yet');
   });
 });
 

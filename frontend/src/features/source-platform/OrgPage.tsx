@@ -1,83 +1,20 @@
 // An organization's page (`/orgs/:org`): its members, teams and repositories. Every member
 // sees it; only owners get the controls (the server refuses everyone else regardless).
 import { GitBranch } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { OrgHoldSection, type OrgHolds, OrgRepoHold, orgHeld } from './LegalHold';
 import { OrgAudit } from './OrgAudit';
 import { DeleteOrganization } from './OrgDelete';
+import { OrgMembers } from './OrgMembers';
 import { OrgTeams } from './OrgTeams';
-import { ORG_ROLE_HELP, ORG_ROLES, type Org, type OrgMember, type OrgRole } from './orgModel';
+import type { Org } from './orgModel';
 import { type Deleted, RecentlyDeleted } from './RecentlyDeleted';
 import { Failure, Loading } from './SourceStatus';
-import { sourceApi, when } from './sourceApi';
-import { useChange } from './useChange';
+import { when } from './sourceApi';
 import { type Loaded, useSource } from './useSource';
 
 type OrgRepo = { id: string; name: string; created_at: number; owner: string };
-
-function MemberRows({
-  members,
-  manages,
-  onRole,
-  onRemove,
-}: {
-  members: OrgMember[];
-  manages: boolean;
-  onRole: (account: string, role: OrgRole) => void;
-  onRemove: (account: string) => void;
-}) {
-  return (
-    <div className="source-table-wrap">
-      <table className="source-table">
-        <thead>
-          <tr>
-            <th>Account</th>
-            <th>Role</th>
-            <th>Added</th>
-            <th>
-              <span className="sr-only">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {members.map((m) => (
-            <tr key={m.account}>
-              <td>{m.account}</td>
-              <td>
-                {manages ? (
-                  <select
-                    aria-label={`Role of ${m.account}`}
-                    value={m.role}
-                    onChange={(e) => onRole(m.account, e.target.value as OrgRole)}
-                  >
-                    {ORG_ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  m.role
-                )}
-              </td>
-              <td>
-                {when(m.added_at)} by {m.added_by.replace(/^user:/, '')}
-              </td>
-              <td>
-                {manages && (
-                  <button type="button" className="quiet" onClick={() => onRemove(m.account)}>
-                    Remove
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 function OrgRepos({
   org,
@@ -96,7 +33,12 @@ function OrgRepos({
   if (repos.loading && !repos.data) return <Loading what="repositories" />;
   if (repos.error) return <Failure error={repos.error} onRetry={repos.reload} />;
   const list = [...(repos.data?.repos ?? [])].sort((a, b) => a.name.localeCompare(b.name));
-  if (list.length === 0) return <p className="source-empty">No repositories you can use yet.</p>;
+  if (list.length === 0)
+    return (
+      <p className="source-empty">
+        {manages ? 'No repositories yet.' : 'No repositories available.'}
+      </p>
+    );
   return (
     <ul className="org-repos">
       {list.map((r) => (
@@ -155,9 +97,19 @@ export function OrgPage({
   // Its owners': the only people who can restore them.
   const owner = loaded.data?.role === 'owner';
   const deleted = useSource<Deleted>(owner ? `/orgs/${org}/repos/deleted` : null);
-  const { busy, error, run } = useChange(loaded.reload);
-  const [account, setAccount] = useState('');
-  const [role, setRole] = useState<OrgRole>('member');
+  const reposHeading = useRef<HTMLHeadingElement>(null);
+  const deletedCount = deleted.data?.repos.length ?? 0;
+  const previousDeletedCount = useRef(deletedCount);
+  useEffect(() => {
+    // The last recovery button left the page; preserve a keyboard user's place.
+    if (
+      previousDeletedCount.current > 0 &&
+      deletedCount === 0 &&
+      document.activeElement === document.body
+    )
+      reposHeading.current?.focus();
+    previousDeletedCount.current = deletedCount;
+  }, [deletedCount]);
 
   if (!loaded.data || loaded.error)
     return (
@@ -171,25 +123,16 @@ export function OrgPage({
     );
   const data = loaded.data;
   const manages = data.role === 'owner';
-  const base = `/orgs/${org}`;
-  const put = (who: string, to: OrgRole) =>
-    run(() => sourceApi(`${base}/members`, { body: { account: who, role: to } }));
-  async function add(event: FormEvent) {
-    event.preventDefault();
-    if (await put(account.trim(), role)) setAccount('');
-  }
-  function remove(who: string) {
-    if (!window.confirm(`Remove ${who} from ${org}? They leave every team, at once.`)) return;
-    void run(() => sourceApi(`${base}/members/${encodeURIComponent(who)}`, { method: 'DELETE' }));
-  }
 
   return (
     <div className="org-page source-tokens">
-      <h1>{data.org}</h1>
-      <p className="source-meta">
-        Created {when(data.created_at)} by {data.created_by.replace(/^user:/, '')}. You are{' '}
-        {data.role === 'owner' ? 'an owner' : 'a member'}.
-      </p>
+      <header className="org-header">
+        <h1>{data.org}</h1>
+        <p className="source-meta">
+          Created {when(data.created_at)}{' '}
+          <span className="chip">{manages ? 'Owner' : 'Member'}</span>
+        </p>
+      </header>
       {data.audit_log && manages && <OrgTabs org={org} tab={tab} navigate={navigate} />}
       {tab === 'audit' && data.audit_log && manages && <OrgAudit org={org} />}
       {tab === 'audit' && !(data.audit_log && manages) && (
@@ -201,53 +144,27 @@ export function OrgPage({
       )}
       {!tab && (
         <>
-          <section aria-labelledby="org-members-heading">
-            <h2 id="org-members-heading">Members</h2>
-            <MemberRows members={data.members} manages={manages} onRole={put} onRemove={remove} />
-            {manages && (
-              <form onSubmit={add} className="source-token-form">
-                <label htmlFor="org-member-account" className="source-field">
-                  Account
-                  <input
-                    id="org-member-account"
-                    value={account}
-                    onChange={(e) => setAccount(e.target.value)}
-                    placeholder="username"
-                    autoComplete="off"
-                    required
-                  />
-                </label>
-                <label htmlFor="org-member-role" className="source-field">
-                  Role
-                  <select
-                    id="org-member-role"
-                    value={role}
-                    onChange={(e) => setRole(e.target.value as OrgRole)}
-                  >
-                    {ORG_ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {r}: {ORG_ROLE_HELP[r]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button type="submit" disabled={busy || !account.trim()}>
-                  {busy ? 'Saving…' : 'Add member'}
-                </button>
-              </form>
-            )}
-            {error && <Failure error={error} />}
-          </section>
+          <OrgMembers
+            org={org}
+            members={data.members}
+            manages={manages}
+            onChanged={loaded.reload}
+          />
           <OrgTeams org={org} data={data} manages={manages} onChanged={loaded.reload} />
-          <section aria-labelledby="org-repos-heading">
-            <h2 id="org-repos-heading">Repositories</h2>
+          <section aria-labelledby="org-repos-heading" className="org-section">
+            <h2 id="org-repos-heading" ref={reposHeading} tabIndex={-1}>
+              Repositories
+            </h2>
             <OrgRepos org={org} repos={repos} holds={holds} manages={manages} navigate={navigate} />
           </section>
-          {manages && (deleted.data?.window_days || deleted.data?.repos.length) ? (
-            <section aria-labelledby="org-deleted-heading">
-              <h2 id="org-deleted-heading">Recently deleted</h2>
+          {manages && deleted.error && <Failure error={deleted.error} onRetry={deleted.reload} />}
+          {manages && deletedCount > 0 ? (
+            <details className="org-section org-deleted">
+              <summary>
+                Recently deleted <span className="chip">{deleted.data?.repos.length ?? 0}</span>
+              </summary>
               <RecentlyDeleted loaded={deleted} onRestored={repos.reload} />
-            </section>
+            </details>
           ) : null}
           {holds.data && (
             <OrgHoldSection

@@ -114,6 +114,11 @@
       {
         "class_name": "PackBuilder",
         "name": "PACK_BUILDERS"
+      },
+      {
+        "class_name": "RepositoryReadCopy",
+        "name": "READ_COPIES",
+        "script_name": "yonedarepo-dev-platform"
       }
     ]
   },
@@ -245,6 +250,7 @@
     "ADMIN_NOTIFY_EMAIL": "",
     "AGENT_SIGNUP": "on",
     "AUDIT_LOG": "off",
+    "AUTOMATIC_LOCALITY": "off",
     "BLOB_WRITE_THROUGH": "off",
     "CELL": "weur",
     "CELLS": "on",
