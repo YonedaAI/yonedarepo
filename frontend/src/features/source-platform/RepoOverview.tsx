@@ -84,6 +84,24 @@ function Activity({ commits }: { commits: LogCommit[] }) {
   );
 }
 
+function OverviewActivity({ repo, refName }: { repo: string; refName: string }) {
+  const activity = useNearViewport<HTMLDivElement>();
+  const log = useSource<{ commits: LogCommit[] }>(
+    activity.near
+      ? `/repos/${repo}/log?ref=${encodeURIComponent(refName)}&limit=${OVERVIEW_COMMITS}`
+      : null,
+  );
+  const commits = log.data?.commits;
+  return (
+    <div className="overview-numbers" ref={activity.ref}>
+      {log.error && <Failure error={log.error} what="activity" onRetry={log.reload} />}
+      {!log.data && !log.error && <Loading what="activity" />}
+      {commits && <Activity commits={commits} />}
+      {commits && <Contributors people={contributors(commits)} cut={logCut(commits)} />}
+    </div>
+  );
+}
+
 export function RepoOverview({
   repo,
   refName,
@@ -102,12 +120,6 @@ export function RepoOverview({
   account?: string;
 }) {
   const listing = useListing(repo, refName, '');
-  const activity = useNearViewport<HTMLDivElement>();
-  const log = useSource<{ commits: LogCommit[] }>(
-    activity.near
-      ? `/repos/${repo}/log?ref=${encodeURIComponent(refName)}&limit=${OVERVIEW_COMMITS}`
-      : null,
-  );
   const files = { view: 'files', repo, path: '', ref: refName } as const;
   if (listing.empty)
     return (
@@ -118,7 +130,6 @@ export function RepoOverview({
     );
   const tree = listing.value?.kind === 'tree' ? listing.value : undefined;
   const readme = tree && findReadme(tree.entries);
-  const commits = log.data?.commits;
   return (
     <section className="repo-overview" aria-label="Overview">
       <PageToolbar
@@ -159,13 +170,17 @@ export function RepoOverview({
           </a>
         </div>
       )}
-      {readme && <Readme repo={repo} ref={refName} path={readme.name} />}
-      <div className="overview-numbers" ref={activity.ref}>
-        {log.error && <Failure error={log.error} what="activity" onRetry={log.reload} />}
-        {!log.data && !log.error && <Loading what="activity" />}
-        {commits && <Activity commits={commits} />}
-        {commits && <Contributors people={contributors(commits)} cut={logCut(commits)} />}
-      </div>
+      {tree &&
+        (readme ? (
+          <Readme
+            repo={repo}
+            ref={refName}
+            path={readme.name}
+            after={<OverviewActivity key={`${repo}:${refName}`} repo={repo} refName={refName} />}
+          />
+        ) : (
+          <OverviewActivity key={`${repo}:${refName}`} repo={repo} refName={refName} />
+        ))}
     </section>
   );
 }

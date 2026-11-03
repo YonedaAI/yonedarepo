@@ -27,7 +27,10 @@ export function useSource<T = any>(path: string | null, base?: ApiInit['base']):
   const [tick, setTick] = useState(0);
   // biome-ignore lint/correctness/useExhaustiveDependencies: tick forces a re-read of the same path.
   useEffect(() => {
-    if (path === null) return;
+    if (path === null) {
+      setState((current) => (current.loading ? { ...current, loading: false } : current));
+      return;
+    }
     const controller = new AbortController();
     setState((s) => ({
       ...s,
@@ -37,7 +40,9 @@ export function useSource<T = any>(path: string | null, base?: ApiInit['base']):
       code: undefined,
     }));
     sourceApi<T>(path, { signal: controller.signal, base })
-      .then((data) => setState({ data, loading: false }))
+      .then((data) => {
+        if (!controller.signal.aborted) setState({ data, loading: false });
+      })
       .catch((e) => {
         if (controller.signal.aborted) return;
         const failed = e instanceof SourceApiError ? e : undefined;

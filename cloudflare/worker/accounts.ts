@@ -100,24 +100,27 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
     let result: Response;
     if (action === 'session' && req.method === 'GET') {
       const { principal, suspended } = await sessionCheck(req, env);
-      // The account menu's picture; a failed lookup only means initials.
-      const avatar = principal
-        ? // No picture is the page's plain fallback: a person's initials.
-          await avatarInfo(env, principal.workspace).catch(() => null)
-        : null;
-      result = response(
-        principal
-          ? {
-              authenticated: true,
-              username: principal.workspace,
-              ...(await handleState(env, principal.workspace)),
-              avatar_url: ownAvatarUrl(avatar),
-              avatar_source: avatar?.source ?? null,
-              // A hint for the UI's admin entry; every admin route checks for itself.
-              is_admin: isAdminAccount(env, principal.workspace),
-            }
-          : { authenticated: false, ...(suspended ? { suspended: true } : {}) },
-      );
+      const identity = principal
+        ? {
+            authenticated: true,
+            username: principal.workspace,
+            is_admin: isAdminAccount(env, principal.workspace),
+          }
+        : { authenticated: false, ...(suspended ? { suspended: true } : {}) };
+      if (!principal || new URL(req.url).searchParams.get('summary') === 'true') {
+        result = response(identity);
+      } else {
+        const [avatar, handle] = await Promise.all([
+          avatarInfo(env, principal.workspace).catch(() => null),
+          handleState(env, principal.workspace),
+        ]);
+        result = response({
+          ...identity,
+          ...handle,
+          avatar_url: ownAvatarUrl(avatar),
+          avatar_source: avatar?.source ?? null,
+        });
+      }
     } else if (action === 'handle' && req.method === 'PUT') {
       const principal = await accountPrincipal(req, env);
       if (!principal) return error('UNAUTHORIZED', 'Sign in to choose a handle', 401);
