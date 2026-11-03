@@ -33,6 +33,7 @@ const STATUS: Record<string, number> = {
   OVERLOADED: 503,
   // A create that failed and took back what it did: the same request can be repeated.
   CREATE_UNAVAILABLE: 503,
+  REGION_UNAVAILABLE: 503,
   // Contact support: no address to reply to, email not set up here, or the send failed.
   NO_EMAIL: 409,
   SUPPORT_UNAVAILABLE: 503,

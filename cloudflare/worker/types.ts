@@ -216,6 +216,16 @@ export interface Env {
   /** `on`: requests find their cell, and a Worker forwards what is another's (cells.ts). Unset or
    * anything else: this Worker serves everything it is sent, as ever. */
   CELLS?: string;
+  /** `on`: default HTTP entries select an API execution Worker from trusted client geography. */
+  REGIONAL_API?: string;
+  /** Configured execution identity; separate from the repository authority's CELL. */
+  API_REGION?: string;
+  API_ENAM?: Fetcher;
+  API_WEUR?: Fetcher;
+  API_APAC?: Fetcher;
+  API_OC?: Fetcher;
+  API_SAM?: Fetcher;
+  API_AFR?: Fetcher;
   /** The cell this Worker is; unset: `enam`, today's stack. */
   CELL?: string;
   /** A cell's own object namespaces are restricted to this jurisdiction (cell-env.ts). */
