@@ -1,5 +1,7 @@
 // One authorized Overview read. Mutable admission/status stays fresh; every content
 // section is selected from one tree's commit, rather than following a moving branch again.
+
+import type { RepoSnapshot } from '../../shared/contracts/repo-status';
 import { failure } from './repo-api-failure';
 import { listTree, readFileFromTree } from './repo-files';
 import type { Json, RepoContext } from './repo-ops';
@@ -40,6 +42,7 @@ export async function overview(
   ctx: RepoContext,
   status: Json,
   query: URLSearchParams,
+  admitted?: RepoSnapshot,
 ): Promise<Json> {
   ctx.retainStatus(status);
   const fresh = ctx;
@@ -74,15 +77,19 @@ export async function overview(
     }
   };
   const tree = await part('tree', () =>
-    listTree(fresh, {
-      path: '',
-      ref,
-      commit: query.get('commit') ?? undefined,
-      // The deferred window and core must share admission's version even if main moves.
-      at: deferActivity ? at : (query.get('at') ?? undefined),
-      // A freshly acknowledged landing must not be hidden behind an older cached head.
-      min_version: minVersion,
-    }),
+    listTree(
+      fresh,
+      {
+        path: '',
+        ref,
+        commit: query.get('commit') ?? undefined,
+        // The deferred window and core must share admission's version even if main moves.
+        at: deferActivity ? at : (query.get('at') ?? undefined),
+        // A freshly acknowledged landing must not be hidden behind an older cached head.
+        min_version: minVersion,
+      },
+      admitted,
+    ),
   );
   let latest: Json | null = null;
   let activity: Json | null = empty ? { commits: [] } : null;
