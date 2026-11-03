@@ -6,6 +6,7 @@ import { reset } from 'cloudflare:test';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { frontFetch } from '../../cloudflare/worker/front-routes';
+import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import type { Env } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
 
@@ -565,4 +566,20 @@ it("records a first sign-in's region from its callback, and a later sign-in chan
   await finish({ id: '77', login: 'plain', email: 'plain@example.com' }, 'EU', off);
   expect((await summary('plain')).region).toBeUndefined();
   expect(created[1]).toEqual({ provider: 'github', welcome: true });
+});
+
+
+it('discovers frontend providers when regional APIs have no OAuth credentials', async () => {
+  const regional: Env = { ...configured, CELLS: 'on', PLATFORM: { fetch: (req: Request) => platformFetch(req, bindings) } as Fetcher };
+  const response = await frontFetch(new Request('https://yoneda.test/api/auth/providers'), regional);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ providers: ['github', 'google'] });
+});
+
+it('keeps configured provider choices on the signed-in identities page with regional APIs', async () => {
+  const signed = await signIn('github', { id: '987654', login: 'split-oauth-user', email: 'split-oauth@example.test' });
+  const regional: Env = { ...configured, CELLS: 'on', PLATFORM: { fetch: (req: Request) => platformFetch(req, bindings) } as Fetcher };
+  const response = await frontFetch(new Request('https://yoneda.test/api/auth/identities', { headers: { cookie: signed.session ?? '' } }), regional);
+  expect(response.status).toBe(200);
+  expect((await response.json<any>()).providers).toEqual(['github', 'google']);
 });
