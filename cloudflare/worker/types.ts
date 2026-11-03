@@ -92,6 +92,7 @@ export interface Env {
   OVERVIEW_BOOTSTRAP?: string;
   /** Off by default: reuse exact-content code matches after fresh authority admission. */
   SEARCH_CODE_MEMO?: string;
+  RECENT_VERSIONS?: string;
   /** R2's S3 API for Git LFS presigned URLs (repo-lfs.ts): `https://<account>.r2.cloudflarestorage.com`,
    * the OBJECTS bucket's name, and an R2 API token's S3 key pair (secrets). LFS answers 501
    * where any is missing. */

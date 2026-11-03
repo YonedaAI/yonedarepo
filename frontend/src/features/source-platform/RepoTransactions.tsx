@@ -2,7 +2,7 @@ import { usePeople } from './people';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, when } from './sourceApi';
 import { formatSourceRoute, type SourceRoute } from './sourceRoute';
-import { useSource } from './useSource';
+import { useVersions } from './useVersions';
 
 type Entry = {
   version: number;
@@ -11,7 +11,6 @@ type Entry = {
   new?: string;
   actor: string;
   paths: { path: string; op: string }[];
-  read_set: string[];
   committed_at_ms: number;
   chain: string;
 };
@@ -20,19 +19,23 @@ type Entry = {
 export function RepoTransactions({
   repo,
   onNavigate,
+  recent,
+  known,
 }: {
   repo: string;
   onNavigate: (r: SourceRoute) => void;
+  recent?: boolean;
+  known?: number;
 }) {
   const people = usePeople();
-  const log = useSource<{ entries: Entry[]; version: number }>(`/repos/${repo}/txlog?limit=500`);
+  const log = useVersions(repo, recent, known);
   if (log.error) return <Failure error={log.error} onRetry={log.reload} />;
-  if (!log.data) return <Loading what="transaction log" />;
-  if (log.data.entries.length === 0) return <p className="source-empty">The log is empty.</p>;
+  if (!log.page) return <Loading what="versions" />;
+  if (log.page.entries.length === 0) return <p className="source-empty">The log is empty.</p>;
   return (
     <div className="source-table-wrap">
       <table className="source-table">
-        <caption>Transaction log (version {log.data.version})</caption>
+        <caption>Transaction log (version {log.page.version})</caption>
         <thead>
           <tr>
             <th scope="col">Version</th>
@@ -48,7 +51,7 @@ export function RepoTransactions({
           </tr>
         </thead>
         <tbody>
-          {[...log.data.entries].reverse().map((e) => (
+          {(log.page.entries as Entry[]).map((e) => (
             <tr key={e.version}>
               <td>
                 <a
@@ -105,6 +108,16 @@ export function RepoTransactions({
           ))}
         </tbody>
       </table>
+      {log.newer.length > 0 && (
+        <button type="button" className="quiet" disabled={log.loading} onClick={log.loadNewer}>
+          Newer
+        </button>
+      )}
+      {log.page.next_before && (
+        <button type="button" className="quiet" disabled={log.loading} onClick={log.loadOlder}>
+          {log.loading ? 'Loading…' : 'Load older'}
+        </button>
+      )}
     </div>
   );
 }

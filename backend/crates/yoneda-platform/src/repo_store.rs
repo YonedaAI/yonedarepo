@@ -91,6 +91,7 @@ mod pushed;
 mod quarantine;
 mod reads;
 mod rebase;
+mod recent_versions;
 mod record;
 mod ref_chain;
 mod releases;

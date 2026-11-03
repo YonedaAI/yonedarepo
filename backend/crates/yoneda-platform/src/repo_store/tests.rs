@@ -1573,6 +1573,7 @@ mod pending_refs;
 mod pushed;
 mod quarantine;
 mod rebase;
+mod recent_versions;
 mod ref_chain;
 mod ref_grants;
 mod releases;

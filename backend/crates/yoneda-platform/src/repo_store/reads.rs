@@ -190,6 +190,9 @@ fn files_changed<S: SqlStore>(db: &S, commits: &mut [Value]) -> Result<()> {
 }
 
 pub fn txlog<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    if c["recent"] == true {
+        return super::recent_versions::read(db, c);
+    }
     let after = c["after"].as_u64().unwrap_or(0);
     let limit = c["limit"].as_u64().unwrap_or(100).clamp(1, 500);
     let until = current_version(db)?.min(after.saturating_add(limit));

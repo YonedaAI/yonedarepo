@@ -40,6 +40,7 @@ export function statusWithHandle(
     ...status,
     owner_handle: handle,
     path: handle ? `/${handle}/${status.name}` : null,
+    ...(env.RECENT_VERSIONS === 'on' && { recent_versions: true }),
     ...(cellsOn(env) && { region: cellOfRepo(repo) }),
   };
   return repoAnalytics(env) ? { ...named, insights: true } : named;

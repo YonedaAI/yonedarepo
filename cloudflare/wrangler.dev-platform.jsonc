@@ -403,6 +403,7 @@
     "OVERVIEW_BOOTSTRAP": "on",
     "PACK_CACHE": "on",
     "PUSH_BUNDLES": "on",
+    "RECENT_VERSIONS": "on",
     "REGION_HINT_TEST": "on",
     "REGION_SIGNALS": "on",
     "REPO_ERASE": "on",

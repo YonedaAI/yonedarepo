@@ -270,6 +270,7 @@
     "OVERVIEW_BOOTSTRAP": "on",
     "PACK_CACHE": "on",
     "PUSH_BUNDLES": "on",
+    "RECENT_VERSIONS": "on",
     "REGION_SIGNALS": "on",
     "REPO_ERASE": "on",
     "REPO_SIZE_GUARD": "on",

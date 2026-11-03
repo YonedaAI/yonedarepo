@@ -97,6 +97,8 @@ export function RepoFiles({
           <VersionPicker
             repo={route.repo}
             at={route.at}
+            recent={status ? status.recent_versions === true : undefined}
+            known={status?.version}
             onChange={(at) => navigate({ ...place, at })}
           />
           <CloneButton

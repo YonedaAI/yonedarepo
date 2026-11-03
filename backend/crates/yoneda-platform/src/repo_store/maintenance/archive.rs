@@ -171,6 +171,19 @@ pub fn state_at<S: SqlStore>(db: &S, version: u64) -> Result<Checkpoint> {
     replay_segment(&row.segment()?, &row.checkpoints()?, version, &projected)
 }
 
+/// Name both dependencies together: the adapter hydrates an archived command once.
+pub fn recent_required<S: SqlStore>(db: &S, through: u64, upper: u64, floor: u64) -> Result<()> {
+    let mut rows = Vec::new();
+    if through > 0 && through < floor {
+        rows.push(holding(db, through)?);
+    }
+    if upper > 0 && upper <= floor {
+        rows.push(holding(db, upper)?);
+    }
+    let keys: Vec<&str> = rows.iter().map(|row| row.segment_key.as_str()).collect();
+    require(&keys, "These versions")
+}
+
 /// Archived entries after `after` (below the floor), up to `limit`, ending at the end of
 /// the segment holding `after + 1`: a listing pages through the archive a segment a time.
 pub fn page<S: SqlStore>(db: &S, after: u64, limit: u64) -> Result<Vec<TxEntry>> {
@@ -178,6 +191,15 @@ pub fn page<S: SqlStore>(db: &S, after: u64, limit: u64) -> Result<Vec<TxEntry>>
     require(&[&row.segment_key], &format!("Version {}", after + 1))?;
     let until = row.end.min(after.saturating_add(limit));
     Ok(row.segment()?.entries[(after - row.start) as usize..(until - row.start) as usize].to_vec())
+}
+
+/// A newest-first reader's ascending window, bounded inside one verified segment.
+/// The next older page may start in its predecessor without fetching both together.
+pub fn recent_page<S: SqlStore>(db: &S, upper: u64, limit: u64) -> Result<Vec<TxEntry>> {
+    let row = holding(db, upper)?;
+    require(&[&row.segment_key], &format!("Version {upper}"))?;
+    let after = upper.saturating_sub(limit).max(row.start);
+    Ok(row.segment()?.entries[(after - row.start) as usize..(upper - row.start) as usize].to_vec())
 }
 
 /// Archived entries `(after, until]` (`until` at most the floor), optionally for one ref,

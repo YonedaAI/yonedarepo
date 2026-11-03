@@ -332,6 +332,7 @@ fn read_performance_switches_have_dev_prod_parity() {
                 "EDGE_FIRST_READS",
                 "JOINED_REPO_PATH",
                 "OVERVIEW_BOOTSTRAP",
+                "RECENT_VERSIONS",
             ] {
                 assert_eq!(
                     role(&workers, name).config["vars"][flag],
