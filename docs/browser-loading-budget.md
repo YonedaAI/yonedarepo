@@ -46,3 +46,20 @@ Authentication work is request-local. Organization access caches retain only com
 for the existing one-second access bound; they never share pending I/O across requests.
 Validate with an intentionally held first lookup and an independent second request, then
 repeat normal browser navigation including reload/cancellation before marking dev verified.
+
+## Follow-up: first paint and repeat visits
+
+With `STATIC_ASSET_CACHE=on`, a successful fingerprinted JS/CSS/font/image asset is cached
+in the browser for one year. An unchanged asset on repeat navigation must need no network
+validation; HTML, API answers, errors and non-fingerprinted assets keep their current policy.
+This caches public build output only, never session decisions or repository content.
+
+With `FAST_APP_HEAD=on`, a request carrying an account session skips optional repository
+SEO lookups before HTML delivery. It gets the generic noindex application head. Anonymous
+public repository metadata retains its current behavior; private data is still authorized
+by the API before rendering. Budget: zero metadata API calls before authenticated app HTML.
+
+Compare at least three cold/warm browser requests and real-history navigation runs, recording
+network bytes/cache headers, TTFB, and API server timing separately from automation overhead.
+The three dedicated 1,000-writer runs are the existing write-path baseline; repeat if a change
+affects that path. Client-side caching must not broaden repository or account access.

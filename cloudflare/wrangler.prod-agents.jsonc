@@ -148,11 +148,13 @@
     "AUTOMATIC_LOCALITY": "on",
     "CELLS": "on",
     "CLIENT_ERRORS": "off",
+    "FAST_APP_HEAD": "on",
     "GLOBAL_AUTH_LIMITS": "on",
     "PUBLIC_APP_ORIGIN": "https://yonedarepo.com",
     "REGION_SIGNALS": "on",
     "REQUEST_IDS": "off",
     "SEO_INDEXING": "on",
+    "STATIC_ASSET_CACHE": "on",
     "TRAFFIC_EVENTS": "on",
     "TRAFFIC_REPORT": "on",
     "WEB_ANALYTICS_TOKEN": "fd30d727a0dc4d4c949dee535977d1b2"

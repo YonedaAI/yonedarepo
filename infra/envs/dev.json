@@ -923,7 +923,9 @@
           "CLIENT_ERRORS": "off",
           "CELLS": "on",
           "AUTOMATIC_LOCALITY": "on",
-          "GLOBAL_AUTH_LIMITS": "on"
+          "GLOBAL_AUTH_LIMITS": "on",
+          "STATIC_ASSET_CACHE": "on",
+          "FAST_APP_HEAD": "on"
         },
         "services": [
           {
