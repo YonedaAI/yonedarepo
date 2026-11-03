@@ -9,7 +9,7 @@ import { linkTo, type Navigate } from '../shell/useRoute';
 import { BranchPicker, CloneButton, LatestCommit } from './CodeParts';
 import { useListing } from './codeData';
 import { currentApiOrigin } from './connect';
-import type { OverviewData } from './overviewBootstrap';
+import { type OverviewData, overviewActivityPath } from './overviewBootstrap';
 import {
   activityBars,
   type Contributor,
@@ -89,24 +89,31 @@ function OverviewActivity({
   repo,
   refName,
   preloaded,
+  request,
 }: {
   repo: string;
   refName: string;
   preloaded?: { commits: OverviewCommit[] };
+  request?: OverviewData['activity_request'];
 }) {
   const activity = useNearViewport<HTMLDivElement>();
   const log = useSource<{ commits: OverviewCommit[] }>(
-    !preloaded && activity.near
-      ? `/repos/${repo}/log?ref=${encodeURIComponent(refName)}&limit=${OVERVIEW_COMMITS}`
-      : null,
+    !preloaded && activity.near ? overviewActivityPath(repo, refName, request) : null,
   );
   const commits = preloaded?.commits ?? log.data?.commits;
   return (
-    <div className="overview-numbers" ref={activity.ref}>
+    <div className={`overview-numbers${request ? ' is-deferred' : ''}`} ref={activity.ref}>
       {log.error && <Failure error={log.error} what="activity" onRetry={log.reload} />}
       {!commits && !log.error && <Loading what="activity" />}
-      {commits && <Activity commits={commits} />}
-      {commits && <Contributors people={contributors(commits)} cut={logCut(commits)} />}
+      {commits &&
+        (commits.length ? (
+          <>
+            <Activity commits={commits} />
+            <Contributors people={contributors(commits)} cut={logCut(commits)} />
+          </>
+        ) : (
+          <p className="source-meta">No activity yet.</p>
+        ))}
     </div>
   );
 }
@@ -215,10 +222,11 @@ export function RepoOverview({
           <Failure error={bootstrap.errors.activity.message} what="activity" onRetry={onRetry} />
         ) : (
           <OverviewActivity
-            key={`${repo}:${refName}`}
+            key={`${repo}:${refName}:${bootstrap?.activity_request?.from ?? ''}:${bootstrap?.activity_request?.at ?? ''}`}
             repo={repo}
             refName={refName}
             preloaded={bootstrap?.activity ?? undefined}
+            request={bootstrap?.activity_request}
           />
         ))}
       {bootstrap?.errors?.readme ? (

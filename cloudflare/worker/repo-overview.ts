@@ -44,6 +44,15 @@ export async function overview(
   ctx.retainStatus(status);
   const fresh = ctx;
   const ref = query.get('ref') || 'main';
+  const minVersion = Math.max(status.version, Number(query.get('min_version') ?? 0));
+  const deferActivity =
+    ctx.env.OVERVIEW_DEFER_ACTIVITY === 'on' &&
+    status.parent == null &&
+    status.grant == null &&
+    !query.has('commit') &&
+    minVersion <= status.version;
+  const selectedAt = query.get('at');
+  const at = selectedAt === null || selectedAt === '' ? status.version : Number(selectedAt);
   const errors: Partial<Record<Section, Json>> = {};
   let empty = false;
   const part = async (name: Section, run: () => Promise<Json | null>) => {
@@ -69,9 +78,10 @@ export async function overview(
       path: '',
       ref,
       commit: query.get('commit') ?? undefined,
-      at: query.get('at') ?? undefined,
+      // The deferred window and core must share admission's version even if main moves.
+      at: deferActivity ? at : (query.get('at') ?? undefined),
       // A freshly acknowledged landing must not be hidden behind an older cached head.
-      min_version: Math.max(status.version, Number(query.get('min_version') ?? 0)),
+      min_version: minVersion,
     }),
   );
   let latest: Json | null = null;
@@ -81,7 +91,9 @@ export async function overview(
     const name = readmeName(tree.entries);
     [latest, activity, readme] = await Promise.all([
       part('latest', () => fresh.call({ op: 'repo_commit', commit: tree.commit }).then(latestView)),
-      part('activity', () => overviewActivity(fresh, status, ref, tree.commit, query)),
+      deferActivity
+        ? Promise.resolve(null)
+        : part('activity', () => overviewActivity(fresh, status, ref, tree.commit, query)),
       part('readme', () => (name ? readFileFromTree(fresh, tree, name) : Promise.resolve(null))),
     ]);
   }
@@ -92,6 +104,14 @@ export async function overview(
     activity,
     readme,
     empty,
+    ...(tree &&
+      deferActivity && {
+        activity_request: {
+          ref,
+          from: tree.commit,
+          at,
+        },
+      }),
     ...(Object.keys(errors).length && { errors }),
   };
 }

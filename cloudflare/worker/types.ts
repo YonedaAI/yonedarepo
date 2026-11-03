@@ -90,6 +90,8 @@ export interface Env {
   JOINED_REPO_PATH?: string;
   /** Off by default: one fresh response supplies the full selected Overview. */
   OVERVIEW_BOOTSTRAP?: string;
+  /** Off by default: optional activity follows admitted core content at the captured revision. */
+  OVERVIEW_DEFER_ACTIVITY?: string;
   /** Off by default: reuse exact-content code matches after fresh authority admission. */
   SEARCH_CODE_MEMO?: string;
   RECENT_VERSIONS?: string;

@@ -1,6 +1,6 @@
 // One freshly authorized Overview response, passed between routes only for its navigation.
 import type { Detail } from './CodeParts';
-import type { OverviewCommit } from './overviewModel';
+import { OVERVIEW_COMMITS, type OverviewCommit } from './overviewModel';
 import { chosenBranch } from './repoBranch';
 import type { NamedRoute } from './repoNames';
 import type { RepoStatus } from './repoStatus';
@@ -24,6 +24,7 @@ export type OverviewData = {
     executable: boolean;
   } | null;
   activity: { commits: OverviewCommit[] } | null;
+  activity_request?: { ref: string; from: string; at: number };
   empty: boolean;
   errors?: Partial<Record<'tree' | 'latest' | 'readme' | 'activity', OverviewError>>;
 };
@@ -79,4 +80,19 @@ export function overviewForNavigation(
   )
     return undefined;
   return handoff.overview.status;
+}
+
+/** Optional history follows the exact captured tree, with fresh server admission. */
+export function overviewActivityPath(
+  repo: string,
+  ref: string,
+  request?: OverviewData['activity_request'],
+) {
+  const query = new URLSearchParams({ ref, limit: String(OVERVIEW_COMMITS) });
+  if (request) {
+    query.set('ref', request.ref);
+    query.set('from', request.from);
+    query.set('at', String(request.at));
+  }
+  return `/repos/${repo}/log?${query}`;
 }
