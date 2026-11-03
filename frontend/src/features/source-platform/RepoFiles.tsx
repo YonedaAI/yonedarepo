@@ -29,17 +29,23 @@ export function RepoFiles({
   status,
   navigate,
   account,
+  initialEmpty = false,
 }: {
   route: Route;
   status?: RepoStatus;
   navigate: Navigate;
   /** The signed-in account, named on a commit made here. */
   account?: string;
+  /** An admitted Overview already established that this selected branch is empty. */
+  initialEmpty?: boolean;
 }) {
   const ref = apiRef(route.ref, status?.refs);
   // A line belongs to the file on screen: every link away leaves it behind.
   const { line, ...place } = route;
-  const listing = useListing(route.repo, ref, route.path, route.at);
+  const queried = useListing(route.repo, initialEmpty ? undefined : ref, route.path, route.at);
+  const listing = initialEmpty
+    ? { ...queried, empty: true, value: undefined, error: undefined }
+    : queried;
   // The place the form was opened on: moving to another closes it.
   const here = `${route.ref}:${route.path}`;
   const [writingAt, setWritingAt] = useState<string | null>(null);

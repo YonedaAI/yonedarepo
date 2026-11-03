@@ -1,5 +1,5 @@
 // Shared shell state, admission and background reads; page content never waits for decoration.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '../../hooks/useSession';
 import { emailLinkTitle, isEmailLink } from '../account-settings/emailLinkRoute';
 import { useSignups } from '../admin/useSignups';
@@ -7,6 +7,12 @@ import { syncAgents } from '../agents/agentsModel';
 import { signedInHint } from '../site/SiteRoot';
 import { siteView } from '../site/siteRoute';
 import type { OrgSummary } from '../source-platform/orgModel';
+import {
+  advanceOverviewViewer,
+  type OverviewHandoff,
+  type OverviewViewer,
+  overviewForNavigation,
+} from '../source-platform/overviewBootstrap';
 import type { ShownRepo } from '../source-platform/RepoPage';
 import { forgetRepoNames, rememberRepoName } from '../source-platform/repoNames';
 import { managedApi } from '../source-platform/sourceApi';
@@ -28,16 +34,36 @@ import { type Navigate, useRoute } from './useRoute';
 export function useAppShell() {
   const session = useSession();
   const [route, go] = useRoute();
+  const [tick, setTick] = useState(0);
+  const [overviewHandoff, setOverviewHandoff] = useState<OverviewHandoff>();
+  const viewerState = useRef<OverviewViewer>({ generation: 0 });
+  viewerState.current = advanceOverviewViewer(
+    viewerState.current,
+    `${session.authenticated}:${session.identity?.username ?? ''}:${session.sessionEnded}`,
+    !session.loading,
+  );
+  const viewer = String(viewerState.current.generation);
+  const overviewPrincipal = session.loading
+    ? undefined
+    : session.identity?.username
+      ? `user:${session.identity.username}`
+      : 'anonymous';
   const [menuOpen, setMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(storedCollapsed);
   // Following a link closes the phone navigation menu.
   const navigate = useCallback<Navigate>(
     (next, options) => {
       setMenuOpen(false);
+      setOverviewHandoff(
+        options?.overview ? { route: next, viewer, tick, overview: options.overview } : undefined,
+      );
       go(next, options);
     },
-    [go],
+    [go, viewer, tick],
   );
+  useEffect(() => {
+    setOverviewHandoff((value) => (value?.viewer === viewer ? value : undefined));
+  }, [viewer]);
   const [returned] = useState(takeAuthResult);
   // A refused provider sign-in reopens the sign-in panel with the reason; a link is a notice.
   const [signInError, setSignInError] = useState(
@@ -57,7 +83,6 @@ export function useAppShell() {
         : '',
     signInError,
   );
-  const [tick, setTick] = useState(0);
   // The open repository as its status gives it: another account's is in no sidebar row.
   const [shown, setShown] = useState<ShownRepo>();
   const onLoaded = useCallback((loaded: ShownRepo) => setShown(loaded), []);
@@ -201,6 +226,9 @@ export function useAppShell() {
     notice,
     setNotice,
     tick,
+    overviewInitial: overviewForNavigation(overviewHandoff, route, viewer, tick, overviewPrincipal),
+    overviewViewerKey: viewer,
+    overviewPrincipal,
     onLoaded,
     setMissing,
     platform,
