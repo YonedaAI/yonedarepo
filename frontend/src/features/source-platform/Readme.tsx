@@ -1,6 +1,7 @@
 // A directory's README, rendered under its files and on the repository's Overview.
 import { readQuery } from './codeData';
 import { RepoMarkdown } from './RepoMarkdown';
+import { repositoryContentKey } from './repositoryContentScope';
 import { Failure, Loading } from './SourceStatus';
 import { useSource } from './useSource';
 
@@ -10,20 +11,21 @@ const README = /^readme(\.(md|markdown))?$/i;
 export const findReadme = <E extends { name: string; type: string }>(entries: E[]) =>
   entries.find((e) => e.type !== 'tree' && README.test(e.name));
 
-export function Readme({
-  repo,
-  ref,
-  path,
-  at,
-  preloaded,
-}: {
+type ReadmeProps = {
   repo: string;
   ref: string;
   path: string;
   at?: number;
+  scope: string;
   /** Fresh bytes from this page's exact selected commit. */
   preloaded?: { encoding: string; content: string };
-}) {
+};
+
+export function Readme(props: ReadmeProps) {
+  return <ReadmeContent key={repositoryContentKey(props.scope, props)} {...props} />;
+}
+
+function ReadmeContent({ repo, ref, path, at, preloaded }: ReadmeProps) {
   const file = useSource<{ encoding: string; content: string }>(
     preloaded ? null : `/repos/${repo}/blob?${readQuery(ref, path, at)}`,
   );

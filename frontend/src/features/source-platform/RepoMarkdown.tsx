@@ -21,7 +21,8 @@ function RepoImage({ place, path, alt }: { place: Place; path: string; alt: stri
     if (!near) return;
     const controller = new AbortController();
     let made: string | undefined;
-    const query = readQuery(place.ref, path, place.at);
+    const query = new URLSearchParams(readQuery(place.ref, path, place.at));
+    query.set('revalidate', 'image');
     sourceApi<{ encoding: string; content: string; size: number }>(
       `/repos/${place.repo}/blob?${query}`,
       { signal: controller.signal },

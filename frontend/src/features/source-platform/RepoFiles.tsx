@@ -12,6 +12,7 @@ import { FileView } from './FileView';
 import { findReadme, Readme } from './Readme';
 import { RepoFirstSteps } from './RepoFirstSteps';
 import { canMoveBranches, type RepoStatus } from './repoStatus';
+import { repositoryContentScope } from './repositoryContentScope';
 import { Failure, Loading } from './SourceStatus';
 import type { SourceRoute } from './sourceRoute';
 import { VersionPicker } from './VersionPicker';
@@ -40,6 +41,7 @@ export function RepoFiles({
   initialEmpty?: boolean;
 }) {
   const ref = apiRef(route.ref, status?.refs);
+  const scope = repositoryContentScope(status);
   // A line belongs to the file on screen: every link away leaves it behind.
   const { line, ...place } = route;
   const queried = useListing(route.repo, initialEmpty ? undefined : ref, route.path, route.at);
@@ -179,7 +181,8 @@ export function RepoFiles({
           {readme && ref && (
             <Readme
               repo={route.repo}
-              ref={ref}
+              ref={tree.commit}
+              scope={scope}
               path={route.path ? `${route.path}/${readme.name}` : readme.name}
               at={route.at}
             />
@@ -189,6 +192,7 @@ export function RepoFiles({
       {listing.value?.kind === 'file' && !writing && ref && (
         <FileView
           file={listing.value}
+          scope={scope}
           path={route.path}
           line={line}
           place={{ repo: route.repo, ref, path: route.path, at: route.at }}
