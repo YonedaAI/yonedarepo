@@ -10,31 +10,63 @@ export function useNotifications(enabled: boolean) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const request = useRef<AbortController | null>(null);
+  const scope = useRef(0);
+  const active = useRef(false);
+  const write = useRef<{ controller: AbortController; done: Promise<void> } | null>(null);
+  const refreshRequested = useRef(false);
+  const reload = useRef<(() => Promise<void>) | null>(null);
   const load = useCallback(
-    async (through?: number) => {
+    async (through?: number, dismissal?: string): Promise<void> => {
       if (!enabled) return;
+      const generation = scope.current;
+      const mutation = through !== undefined || dismissal !== undefined;
+      while (write.current) {
+        if (!mutation) {
+          refreshRequested.current = true;
+          return;
+        }
+        await write.current.done;
+        if (!active.current || scope.current !== generation) return;
+      }
       request.current?.abort();
       const controller = new AbortController();
       request.current = controller;
+      let settled: (() => void) | undefined;
+      if (mutation) {
+        const done = new Promise<void>((resolve) => {
+          settled = resolve;
+        });
+        write.current = { controller, done };
+      }
       setLoading(true);
       setError('');
       try {
         const value = await api<Inbox>(
-          'auth/notifications',
+          `auth/notifications${dismissal ? `/${encodeURIComponent(dismissal)}` : ''}`,
           through === undefined ? undefined : { through },
-          { signal: controller.signal },
+          { signal: controller.signal, method: dismissal === undefined ? undefined : 'DELETE' },
         );
-        if (!controller.signal.aborted) setInbox(value);
+        if (!controller.signal.aborted && scope.current === generation) setInbox(value);
       } catch (e) {
-        if (!controller.signal.aborted) setError((e as Error).message);
+        if (!controller.signal.aborted && scope.current === generation)
+          setError((e as Error).message);
       } finally {
         if (request.current === controller) request.current = null;
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted && scope.current === generation) setLoading(false);
+        if (write.current?.controller === controller) {
+          write.current = null;
+          settled?.();
+          const refresh = refreshRequested.current || controller.signal.aborted;
+          refreshRequested.current = false;
+          if (refresh && active.current) void reload.current?.();
+        }
       }
     },
     [enabled],
   );
+  reload.current = enabled ? () => load() : null;
   useEffect(() => {
+    active.current = enabled;
     if (!enabled) {
       setInbox(undefined);
       return;
@@ -76,6 +108,8 @@ export function useNotifications(enabled: boolean) {
     document.addEventListener('visibilitychange', visible);
     return () => {
       stopped = true;
+      active.current = false;
+      scope.current++;
       clearTimeout(timer);
       clearInterval(poll);
       if (idle !== undefined) window.cancelIdleCallback(idle);
@@ -88,6 +122,8 @@ export function useNotifications(enabled: boolean) {
     loading,
     error: enabled ? error : '',
     load,
+    remove: (id: string) => load(undefined, id),
+    clearAll: () => load(undefined, ''),
     markRead: () => load(Math.max(0, ...(inbox?.items.map((item) => item.at) ?? []))),
   };
 }

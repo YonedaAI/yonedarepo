@@ -9,6 +9,17 @@ pub(super) fn handle<S: SqlStore>(
     now: i64,
 ) -> Result<Value> {
     use NotificationOp as N;
+    // The adapter carries the cookie digest; validate again inside this same transaction.
+    // A held old request must not reach a new person who later takes this account name.
+    let cookie_bound = matches!(op, N::Dismiss | N::Clear)
+        || (matches!(op, N::List | N::Read) && !c["session_hash"].is_null());
+    if cookie_bound
+        && (c["session_hash"].is_null()
+            || super::signin::handle(db, c, super::op::SigninOp::Session, now)?["authenticated"]
+                != true)
+    {
+        return Err(Error::new("UNAUTHORIZED", "Sign in to see notifications"));
+    }
     match op {
         N::Pending => super::member_notices::pending(db, now),
         N::Claim => super::member_notices::claim(db, c, now),
@@ -19,6 +30,8 @@ pub(super) fn handle<S: SqlStore>(
         N::Put => put_notice(db, c, now),
         N::List => list(db),
         N::Read => read(db, c, now),
+        N::Dismiss => dismiss(db, c, now),
+        N::Clear => clear(db, now),
     }
 }
 // Account close deletes this row but SQLite's AUTOINCREMENT sequence survives.
@@ -72,20 +85,23 @@ fn put_notice<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         return Err(bad("Invalid organization role"));
     }
     let id = format!("{org}:{seq}");
-    db.query("INSERT INTO account_notifications(id,org,role,at) VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING",&[json!(id),json!(org),json!(role),json!(number(c,"at")?)])?;
+    let at = number(c, "at")?;
+    if super::notification_retention::accepts(db, at, &id)? {
+        db.query("INSERT INTO account_notifications(id,org,role,at) VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING",&[json!(id),json!(org),json!(role),json!(at)])?;
+    }
     db.query(
         "INSERT INTO account_orgs(org,added_at) VALUES(?,?) ON CONFLICT(org) DO NOTHING",
         &[json!(org), json!(number(c, "at")?)],
     )?;
-    db.query("DELETE FROM account_notifications WHERE id NOT IN (SELECT id FROM account_notifications ORDER BY at DESC,id DESC LIMIT 100)",&[])?;
+    super::notification_retention::prune(db)?;
     let contact = super::email::handle(db, &json!({}), super::op::EmailOp::Status, now)?;
     Ok(json!({"recorded":true,"contact":contact}))
 }
 fn list<S: SqlStore>(db: &S) -> Result<Value> {
     account(db)?;
-    let items=db.query("SELECT id,org,role,at,read_at IS NULL AS unread FROM account_notifications ORDER BY at DESC,id DESC LIMIT 50",&[])?;
+    let items=db.query("SELECT id,org,role,at,read_at IS NULL AS unread FROM account_notifications WHERE dismissed_at IS NULL ORDER BY at DESC,id DESC LIMIT 50",&[])?;
     let unread = db.query(
-        "SELECT COUNT(*) AS n FROM account_notifications WHERE read_at IS NULL",
+        "SELECT COUNT(*) AS n FROM account_notifications WHERE read_at IS NULL AND dismissed_at IS NULL",
         &[],
     )?;
     Ok(json!({"items":items,"unread":unread[0]["n"]}))
@@ -96,6 +112,33 @@ fn read<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     db.query(
         "UPDATE account_notifications SET read_at=? WHERE read_at IS NULL AND at<=?",
         &[json!(now), json!(through)],
+    )?;
+    list(db)
+}
+
+fn dismiss<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
+    account(db)?;
+    let id = string(c, "id")?;
+    let valid = id.split_once(':').is_some_and(|(org, seq)| {
+        super::orgs::org_name(org).is_ok()
+            && seq
+                .parse::<i64>()
+                .is_ok_and(|n| n > 0 && n.to_string() == seq)
+    });
+    if id.len() > 64 || !valid {
+        return Err(bad("Choose a valid notification"));
+    }
+    db.query(
+        "UPDATE account_notifications SET dismissed_at=? WHERE id=? AND dismissed_at IS NULL",
+        &[json!(now), json!(id)],
+    )?;
+    list(db)
+}
+fn clear<S: SqlStore>(db: &S, now: i64) -> Result<Value> {
+    account(db)?;
+    db.query(
+        "UPDATE account_notifications SET dismissed_at=? WHERE dismissed_at IS NULL",
+        &[json!(now)],
     )?;
     list(db)
 }

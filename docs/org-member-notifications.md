@@ -26,7 +26,22 @@ in-app delivery remains available. This avoids blind duplicate sends after a
 long delivery outage; provider acceptance is separate from inbox delivery.
 
 Inbox endpoints derive the account from its current cookie session. They return
-at most 50 entries and unread count; acknowledgement can update only that account.
+at most 50 entries and unread count. Reads, acknowledgement and dismissal recheck
+the same cookie session inside the recipient transaction; a held request cannot
+reach a different person who later registers the same account name.
+
+`DELETE /api/auth/notifications/:id` removes one item from view;
+`DELETE /api/auth/notifications` clears currently retained items. Unknown valid ids
+are idempotent within the caller's own inbox. Dismissal updates a durable marker,
+not membership, organization hints, email or pending delivery. Duplicate queue
+delivery preserves dismissal and the original verified-email semantics. Migration
+0016 adds that marker after 0015; fresh, repeated and 15→16 upgrades are tested.
+Inbox retention still caps at 100 rows, including dismissed entries. A durable
+ordering floor suppresses replay after old markers are pruned; an event below
+that floor may finish its pending email without reappearing in the inbox. Later
+new events remain visible. Clear all and insertion serialize in the account
+transaction. Reads requested while dismissal is pending wait for its completion;
+closing the dialog or leaving the page never cancels an accepted mutation.
 The header bell starts after the application is usable and idle, then polls
 once a minute in visible tabs. Opening it requests the latest inbox immediately.
 No new global scan, service, queue, agent or invitation/acceptance flow is added.
@@ -50,3 +65,16 @@ light and dark, keyboard, empty/loading/error/full states passed. A typed Rust
 queue envelope is required: generic JSON maps serialize as JavaScript Maps in
 the SDK and do not reach the TypeScript envelope decoder correctly. Real email
 provider delivery and deployed acceptance remain separate checks.
+
+Dismissal request budget: one mutation per explicit action, no retries or extra
+startup reads. Reopening during a pending mutation coalesces into one follow-up
+read. The existing five-second startup grace and idle scheduling remain intact.
+
+Dismissal verification is local source acceptance, separate from deployment:
+Rust migration/retention/replay and closure cases, real workerd cookie isolation,
+held session requests across account closure/recreation, and captured mail
+acknowledgement loss. Served Chrome checks use the production frontend and local
+workerd queue delivery, including keyboard Remove/Clear all, loading/error/empty
+and full states at 375px and wide in both themes. A held DELETE followed by reopen
+cannot restore stale rows; unmount leaves the mutation active. These checks send
+no real mail and do not clear existing dev or production inboxes.
