@@ -86,7 +86,7 @@ impl Run<'_> {
             (self.env, self.spec, self.workers, self.options, self.head);
         match step {
             Step::BuildWasm => crate::commands::build_wasm()?,
-            Step::BuildFrontend => frontend_build(&crate::infra::api_origin::api_origin(spec)?)?,
+            Step::BuildFrontend => frontend_build(spec)?,
             Step::InstallPrebuilt => prebuilt(self.prebuilt)?.install(spec)?,
             Step::BuildImage => {
                 let id = crate::deploy_registry::build_local(spec)?;
@@ -289,7 +289,16 @@ impl Timings {
 
 /// Builds the frontend without pnpm (worktrees symlink node_modules), pointing its Git, CLI
 /// and MCP lines at the env's platform API origin.
-pub(crate) fn frontend_build(api_origin: &str) -> Result<()> {
+pub(crate) fn frontend_build(spec: &crate::infra::spec::Spec) -> Result<()> {
+    let api_origin = crate::infra::api_origin::api_origin(spec)?;
+    let cache = spec
+        .workers
+        .iter()
+        .find(|worker| worker.role == "agents")
+        .and_then(|worker| worker.config.get("vars"))
+        .and_then(|vars| vars.get("STATIC_ASSET_CACHE"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("off");
     for (program, args) in [
         ("node_modules/.bin/tsc", vec!["-b"]),
         ("node_modules/.bin/vite", vec!["build"]),
@@ -297,7 +306,8 @@ pub(crate) fn frontend_build(api_origin: &str) -> Result<()> {
         let status = std::process::Command::new(program)
             .args(&args)
             .current_dir(crate::layout::FRONTEND)
-            .env(crate::infra::api_origin::FRONTEND_VAR, api_origin)
+            .env(crate::infra::api_origin::FRONTEND_VAR, &api_origin)
+            .env("VITE_STATIC_ASSET_CACHE", cache)
             .status()
             .map_err(|error| format!("Cannot start frontend {program}: {error}"))?;
         if !status.success() {
