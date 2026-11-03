@@ -1,8 +1,7 @@
 // Creating platform repositories: the owner (or the operator for a named workspace) creates
 // a repository, optionally seeded with files or imported from a Git remote, and may issue its
-// first repository tokens in the same request. Over 300 nonblank lines: create and import
-// admission share owner, name and token checks here; the actual network import executes
-// separately in repo-clone, and the shared compensation is used by forks too.
+// first repository tokens in the same request. Access admission lives in repo-create-access;
+// network import executes in repo-clone, and compensation is shared with forks.
 
 import { noteOwnerCell } from './account-place';
 import { afterAnswer } from './background';
@@ -12,15 +11,17 @@ import { cellsOn, newRepoId, thisCell } from './cells';
 import { bounded, boundedRetry, failureCode } from './durable';
 import { log } from './log';
 import { importSource } from './platform-github-import';
-import { orgArg, orgCaller, orgCommand } from './platform-orgs';
 import { auditRepo, auditRepoForget } from './repo-audit';
 import { commit } from './repo-commit';
+import { issueTokens, owning } from './repo-create-access';
+
+export { owning, tokenSecret } from './repo-create-access';
+
 import { refreshHead } from './repo-head';
 import { startWorkflow } from './repo-import-start';
 import { localityRegion } from './repo-locality';
-import { type ObjectStore, RepoObjects, toBase64 } from './repo-objects';
+import { type ObjectStore, RepoObjects } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
-import { requirePatScope } from './repo-pat';
 import { holdName, releaseNames } from './repo-paths';
 import { PlatformStore } from './repo-platform-store';
 import { dispatchPurge } from './repo-projection';
@@ -36,75 +37,6 @@ import type { Env } from './types';
 const INIT_MS = 10_000;
 const SHARD_START_MS = 12_000;
 const TAKE_BACK_MS = 5_000;
-
-/**
- * Who owns a new repository: the signed-in workspace, its personal token with repo:admin
- * (acting as the account, never as a person), an organization (`owner`) one of whose
- * owners asks, or, for the operator (admin bearer) provisioning on someone's behalf, the
- * named `workspace`. Never a repository token. Only org owners create an org's
- * repositories (asked of the org's authority at once, never from a cached answer); members
- * get access through teams or membership afterwards.
- */
-export async function owning(
-  env: Env,
-  auth: Credentials,
-  body: Json,
-): Promise<Credentials & { _session: Json }> {
-  if (body.owner !== undefined && body.owner !== null) {
-    if (body.workspace !== undefined)
-      throw new ApiError('INVALID_INPUT', 'Name an owner or a workspace, not both');
-    const org = orgArg(body.owner);
-    if ('_pat' in auth) requirePatScope(auth, 'repo:admin');
-    const { account } = orgCaller(auth, true, org);
-    const access = await orgCommand(env, org, { op: 'org_access', account });
-    if (access.role !== 'owner')
-      throw new ApiError('FORBIDDEN', `Only an owner of ${org} creates its repositories`);
-    return { _session: { workspace: org, principal: `user:${account}` } };
-  }
-  if ('_pat' in auth && auth._pat.org)
-    throw new ApiError(
-      'FORBIDDEN',
-      `This token is limited to the ${auth._pat.org} organization; name it as the owner`,
-    );
-  if ('_pat' in auth) {
-    requirePatScope(auth, 'repo:admin');
-    if (body.workspace !== undefined)
-      throw new ApiError(
-        'FORBIDDEN',
-        'Only the operator creates repositories for another workspace',
-      );
-    return { _session: { workspace: auth._pat.workspace, principal: auth._pat.principal } };
-  }
-  if ('_anonymous' in auth) throw new ApiError('UNAUTHORIZED', 'Sign in to create repositories');
-  if (!('_session' in auth))
-    throw new ApiError('FORBIDDEN', 'Repositories are created by workspace owners');
-  if (body.workspace === undefined) return auth;
-  if (auth._session.principal !== 'admin')
-    throw new ApiError('FORBIDDEN', 'Only the operator creates repositories for another workspace');
-  if (typeof body.workspace !== 'string' || !/^[a-z0-9._+@-]{1,254}$/.test(body.workspace))
-    throw new ApiError('INVALID_INPUT', 'workspace must be an account identifier');
-  return { _session: { workspace: body.workspace, principal: 'admin' } };
-}
-
-/** Repository tokens issued with the repository, by its owner, in the same request. */
-async function issueTokens(ctx: RepoContext, requested: unknown) {
-  if (requested === undefined) return {};
-  if (!Array.isArray(requested) || requested.length > 4)
-    throw new ApiError('INVALID_INPUT', 'tokens must be a list of at most 4 {name, scopes}');
-  const tokens: Json[] = [];
-  for (const spec of requested as Json[]) {
-    const secret = tokenSecret();
-    const created = await ctx.call({
-      op: 'repo_token_create',
-      name: spec?.name,
-      scopes: spec?.scopes,
-      paths: spec?.paths ?? null,
-      _secret: secret,
-    });
-    tokens.push({ ...created, token: secret });
-  }
-  return { tokens };
-}
 
 function unavailable(cause: any) {
   log.warn('repo.create_failed', { error: cause });
@@ -317,9 +249,4 @@ export function unlistRepository(env: Env, repo: string) {
     env.INDEX.prepare('DELETE FROM platform_members WHERE repo=?').bind(repo),
     env.INDEX.prepare('DELETE FROM platform_activity WHERE repo=?').bind(repo),
   ]);
-}
-
-export function tokenSecret() {
-  const raw = toBase64(crypto.getRandomValues(new Uint8Array(32)));
-  return `yrp_${raw.replace(/[+/=]/g, (c) => ({ '+': '-', '/': '_', '=': '' })[c] ?? '')}`;
 }
