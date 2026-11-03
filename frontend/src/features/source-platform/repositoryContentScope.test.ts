@@ -1,6 +1,11 @@
 import { expect, it } from 'vitest';
 import type { RepoStatus } from './repoStatus';
-import { repositoryContentKey, repositoryContentScope } from './repositoryContentScope';
+import {
+  repositoryContentKey,
+  repositoryContentScope,
+  repositoryImageKey,
+  repositoryImagePlace,
+} from './repositoryContentScope';
 
 const status = () =>
   ({
@@ -56,4 +61,39 @@ it('separates repository, exact snapshot, source path and selected version witho
   ])
     expect(repositoryContentKey('scope', { ...place, ...change })).not.toBe(key);
   expect(repositoryContentKey('other', place)).not.toBe(key);
+});
+
+const imagePlace = { repo: 'rfixture', ref: 'main', path: 'README.md' };
+it('pins projected images to their valid Git commit and preserves explicit selection', () => {
+  expect(repositoryImagePlace(imagePlace, { commit: 'a'.repeat(40), version: 9 })).toEqual({
+    ...imagePlace,
+    ref: 'a'.repeat(40),
+  });
+  expect(repositoryImagePlace({ ...imagePlace, at: 3 }, { commit: null, version: 9 })).toEqual({
+    ...imagePlace,
+    at: 3,
+  });
+});
+it('pins an unpublished overlay to the captured version and fences subsequent versions', () => {
+  const first = repositoryImagePlace(imagePlace, { commit: null, version: 5 });
+  expect(first).toEqual({ ...imagePlace, at: 5 });
+  const next = repositoryImagePlace(imagePlace, { commit: null, version: 6 });
+  expect(repositoryContentKey('scope', first)).not.toBe(repositoryContentKey('scope', next));
+  for (const version of [undefined, null, -1, 1.5, Number.NaN, Infinity, '5'])
+    expect(repositoryImagePlace(imagePlace, { commit: null, version })).toEqual(imagePlace);
+  for (const commit of [undefined, '', 'null', 'main', 5])
+    expect(repositoryImagePlace(imagePlace, { commit, version: 0 })).toEqual({
+      ...imagePlace,
+      at: 0,
+    });
+});
+
+it('revalidates fresh legacy file responses with neither commit nor captured version', () => {
+  const file = { commit: null };
+  expect(repositoryImageKey('scope', imagePlace, file)).toBe(
+    repositoryImageKey('scope', imagePlace, file),
+  );
+  expect(repositoryImageKey('scope', imagePlace, { ...file })).not.toBe(
+    repositoryImageKey('scope', imagePlace, file),
+  );
 });

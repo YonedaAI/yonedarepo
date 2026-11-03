@@ -28,6 +28,10 @@ The fresh scope includes object store, history chain, quarantine epoch, path gra
 and viewer identity/access. Incomplete legacy scope metadata gets a fresh key on
 each response identity instead of treating absent guards as stable. Apply the
 scope to every repository Markdown raster path on Overview, Files and file view.
+An unpublished file may have no Git commit until projection: its images retain
+the original branch plus the captured safe transaction version. An explicit
+selected version remains selected. Old responses without either commit or
+version reauthorize images on every fresh file response identity.
 Files README and its images use the listing's exact commit, preserving edit/blame
 branch semantics and version selection. Rendering never substitutes a different
 branch head for the selected tree.

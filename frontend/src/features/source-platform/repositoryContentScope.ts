@@ -58,3 +58,34 @@ export function repositoryContentKey(
 ) {
   return JSON.stringify([scope, place.repo, place.ref, place.path, place.at ?? null]);
 }
+
+/** An overlay has no Git commit until projection; read its images at its captured version. */
+export function repositoryImagePlace<T extends { ref: string; at?: number }>(
+  place: T,
+  file: { commit: unknown; version?: unknown },
+): T {
+  if (typeof file.commit === 'string' && /^[0-9a-f]{40}$/.test(file.commit))
+    return { ...place, ref: file.commit };
+  if (
+    place.at === undefined &&
+    typeof file.version === 'number' &&
+    Number.isSafeInteger(file.version) &&
+    file.version >= 0
+  )
+    return { ...place, at: file.version };
+  return place;
+}
+
+/** Old servers without a captured revision revalidate images on every fresh file response. */
+export function repositoryImageKey(
+  scope: string,
+  place: { repo: string; ref: string; path: string; at?: number },
+  file: { commit: unknown; version?: unknown },
+) {
+  const selected = repositoryImagePlace(place, file);
+  const immutable = typeof file.commit === 'string' && /^[0-9a-f]{40}$/.test(file.commit);
+  return repositoryContentKey(
+    !immutable && selected.at === undefined ? `${scope}:${legacyScope(file)}` : scope,
+    selected,
+  );
+}
