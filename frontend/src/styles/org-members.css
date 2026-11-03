@@ -1,4 +1,55 @@
 /* Organization member rows keep identities readable on a phone. */
+.org-member-picker {
+  position: relative;
+  min-width: 0;
+}
+.org-member-suggestions {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  padding: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px #0002;
+  font-size: var(--text-sm);
+}
+.org-member-suggestions [role="listbox"] {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.org-member-suggestions [role="option"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 10px 8px;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.org-member-suggestions [aria-selected="true"] {
+  background: var(--accent-soft);
+}
+.org-member-suggestions [aria-disabled="true"] {
+  color: var(--text-2);
+  cursor: default;
+}
+.org-member-suggestions p {
+  margin: 0;
+  padding: 10px 8px;
+}
+.org-member-search-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+}
 .org-member-table .source-table {
   table-layout: fixed;
   min-width: 0;

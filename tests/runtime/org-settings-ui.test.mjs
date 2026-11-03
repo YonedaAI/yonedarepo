@@ -34,7 +34,9 @@ test('organization layout, recovery focus and permission states in the served ap
     for(const width of [1440,375]) for(const colorScheme of ['light','dark']) {
       const context=await browser.newContext({viewport:{width,height:900},colorScheme});
       const page=await context.newPage();
-      let mode='full', deleted=[removed], members=[...org.members], release;
+      let mode='full', deleted=[removed], members=[...org.members], release, releaseSearch, searchFinished;
+      const searches=[], grants=[];
+      let retrySearch=false;
       const errors=[];
       page.on('pageerror',error=>errors.push(error.message));
       await page.route('**/api/**',async route=>{
@@ -51,10 +53,17 @@ test('organization layout, recovery focus and permission states in the served ap
         }
         else if(path==='/api/v1/orgs/ui_demo/member-candidates'){
           const q=new URL(route.request().url()).searchParams.get('q');
-          body={candidates:q==='@ali'?[{identifier:'alice',handle:'alice',member:false}]:q==='friend@example.com'?[{identifier:q,handle:'friend',member:false}]:q==='@owner'?[{identifier:'owner',handle:'owner',member:true}]:[]};
+          searches.push(q);
+          if(q==='@slow'){
+            await new Promise(resolve=>{releaseSearch=resolve;});
+            await route.fulfill({json:{candidates:[{identifier:'stale',handle:'stale',member:false}]}});
+            searchFinished();return;
+          }
+          if(q==='@retry'&&!retrySearch){retrySearch=true;return route.fulfill({status:503,json:{error:{code:'UNAVAILABLE',message:'Search is unavailable.'}}});}
+          body={candidates:q==='@ali'?[{identifier:'alice',handle:'alice',member:false}]:q==='friend@example.com'?[{identifier:q,handle:'friend',member:false}]:q==='@owner'?[{identifier:'owner',handle:'owner',member:true}]:q==='@bob'?[{identifier:'bob',handle:'bob',member:false}]:q==='@retry'?[{identifier:'retry_user',handle:'retry_user',member:false}]:q==='legacy@example.com'?[{identifier:q,handle:null,member:false}]:[]};
         }
         else if(path==='/api/v1/orgs/ui_demo/members'){
-          const added=route.request().postDataJSON();members.push({account:added.account,role:added.role,added_at:stamp,added_by:`user:${owner}`});body={added:true};
+          const added=route.request().postDataJSON();grants.push(added);members.push({account:added.account,role:added.role,added_at:stamp,added_by:`user:${owner}`});body={added:true};
         }
         else if(path==='/api/v1/orgs/ui_demo/members/alice'){members=members.filter(m=>m.account!=='alice');body={removed:true};}
         else if(path==='/api/v1/orgs/ui_demo/repos')body={repos:mode==='empty'?[]:[{id:`r${'2'.repeat(20)}`,name:'active-service',created_at:stamp,owner:'ui_demo'}]};
@@ -78,18 +87,40 @@ test('organization layout, recovery focus and permission states in the served ap
       const accountInput=page.getByRole('combobox',{name:'Account',exact:true});
       assert.equal(await accountInput.count(),1,'Account must search for an existing user');
       const addMember=page.getByRole('button',{name:'Add member',exact:true});
+      await accountInput.fill('@al');await page.waitForTimeout(260);assert.deepEqual(searches,[],'short handles must not search');
+      await accountInput.fill('friend@');await page.waitForTimeout(260);assert.deepEqual(searches,[],'partial emails must not search');
+      await accountInput.fill('@ali');await accountInput.fill('@bob');
+      await page.getByRole('option',{name:'@bob',exact:true}).waitFor();
+      assert.deepEqual(searches,['@bob'],'typing is debounced to the last complete query');
       await accountInput.fill('@ali');
       await page.getByRole('option',{name:'@alice',exact:true}).waitFor();
+      await shot('member-search-results');
       assert.equal(await addMember.isDisabled(),true,'typing must not select or add an account');
+      await accountInput.press('Enter');assert.equal(await addMember.isDisabled(),true,'Enter without an active option must not select');
       await accountInput.press('ArrowDown');await accountInput.press('Enter');
       assert.equal(await addMember.isEnabled(),true);
+      await accountInput.press('Enter');assert.deepEqual(grants,[],'Enter selects only; a separate Add action grants membership');
       await addMember.click();
       const alice=page.getByRole('row').filter({has:page.getByText('alice',{exact:true})});
       await alice.waitFor();assert.equal(await accountInput.inputValue(),'');
       page.once('dialog',dialog=>dialog.accept());await alice.getByRole('button',{name:'Remove',exact:true}).click();await alice.waitFor({state:'detached'});
       await accountInput.fill('friend@example.com');await page.getByRole('option',{name:'@friend',exact:true}).click();assert.equal(await addMember.isEnabled(),true);
+      await addMember.click();await page.locator('.org-member-name').getByText('friend@example.com',{exact:true}).waitFor();
+      assert.deepEqual(grants.map(grant=>grant.account),['alice','friend@example.com'],'email selection must submit the resolved identifier, not the display handle');
+      await accountInput.fill('legacy@example.com');await page.getByRole('option',{name:'legacy@example.com',exact:true}).click();assert.equal(await addMember.isEnabled(),true);
       await accountInput.fill('@al');assert.equal(await addMember.isDisabled(),true,'editing clears the selected identity');
-      await accountInput.fill('@owner');await page.getByRole('option',{name:/@owner.*Already a member/}).waitFor();assert.equal(await addMember.isDisabled(),true);
+      await accountInput.fill('@owner');const existing=page.getByRole('option',{name:/@owner.*Already a member/});await existing.waitFor();assert.equal(await existing.getAttribute('aria-disabled'),'true');
+      await accountInput.press('ArrowDown');await accountInput.press('Enter');await existing.dispatchEvent('click');assert.equal(await addMember.isDisabled(),true,'an existing member cannot be selected');
+      await accountInput.press('Escape');assert.equal(await accountInput.getAttribute('aria-expanded'),'false');
+      await accountInput.fill('@ali');await page.getByRole('option',{name:'@alice',exact:true}).waitFor();await accountInput.press('Tab');assert.equal(await accountInput.getAttribute('aria-expanded'),'false','blur closes suggestions');
+      await accountInput.fill('@retry');await page.getByText('Could not search accounts.',{exact:true}).waitFor();await shot('member-search-error');
+      await page.locator('.org-member-search-error').getByRole('button',{name:'Retry',exact:true}).click();await page.getByRole('option',{name:'@retry_user',exact:true}).waitFor();
+      assert.equal(searches.filter(q=>q==='@retry').length,2,'failed searches retry only after the explicit Retry action');
+      const slowFinished=new Promise(resolve=>{searchFinished=resolve;});
+      await accountInput.fill('@slow');await page.waitForRequest(request=>new URL(request.url()).searchParams.get('q')==='@slow');await page.getByText('Searching accounts…',{exact:true}).waitFor();await shot('member-search-loading');
+      const aborted=page.waitForEvent('requestfailed',{predicate:request=>new URL(request.url()).searchParams.get('q')==='@slow'});
+      await accountInput.fill('@ali');await aborted;await page.getByRole('option',{name:'@alice',exact:true}).waitFor();releaseSearch();await slowFinished;
+      assert.equal(await page.getByRole('option',{name:'@stale',exact:true}).count(),0,'an aborted late result must never replace the current query');
       await accountInput.fill('absent@example.com');await page.getByText('No matching account.',{exact:true}).waitFor();assert.equal(await addMember.isDisabled(),true);await shot('member-search-empty');
       await accountInput.fill('');
       await shot('full');
