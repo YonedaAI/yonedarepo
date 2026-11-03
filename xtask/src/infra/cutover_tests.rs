@@ -316,14 +316,16 @@ fn dev_and_prod_never_share_a_rate_limit_namespace() {
 }
 
 #[test]
-fn shared_read_trees_have_dev_prod_parity() {
+fn read_performance_switches_have_dev_prod_parity() {
     for (_, workers) in [dev(), prod()] {
         for name in ["platform", "platform-weur"] {
-            assert_eq!(
-                role(&workers, name).config["vars"]["SHARED_READ_TREES"],
-                "on",
-                "{name} must inherit the same read configuration"
-            );
+            for flag in ["SHARED_READ_TREES", "JOINED_REPO_PATH"] {
+                assert_eq!(
+                    role(&workers, name).config["vars"][flag],
+                    "on",
+                    "{name} must inherit the same {flag} configuration"
+                );
+            }
         }
     }
 }
