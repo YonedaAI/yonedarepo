@@ -96,7 +96,7 @@ describe('a required agent check', () => {
       });
       expect(h.platform.comments).toHaveLength(1);
       expect(h.platform.comments[0].body).toContain('could not finish');
-      expect(h.platform.comments[0].body).toContain('Push again');
+      expect(h.platform.comments[0].body).toContain('Run now to retry');
       expect(h.platform.comments[0].body).not.toContain('codex exited');
     });
 

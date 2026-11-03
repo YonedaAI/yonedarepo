@@ -31,6 +31,20 @@ export function runById(sql: SqlStorage, id: string): ManagedRun | null {
   return row ? toRun(row) : null;
 }
 
+/** Snapshots retained when an owner explicitly retries a failed reading. */
+export function previousAttempts(sql: SqlStorage, id: string) {
+  return sql
+    .exec<{ attempt: number; result_json: string }>(
+      'SELECT attempt, result_json FROM run_attempts WHERE run = ? ORDER BY attempt',
+      id,
+    )
+    .toArray()
+    .map((row) => ({
+      attempt: row.attempt,
+      ...(JSON.parse(row.result_json) as { run: ManagedRun; findings: RunFinding[] }),
+    }));
+}
+
 export function listRuns(sql: SqlStorage, agent: string | null, limit: number): ManagedRun[] {
   const n = Math.min(Math.max(Math.trunc(limit) || 50, 1), 200);
   const rows = agent
@@ -60,7 +74,8 @@ export function agentSummary(
 
 /** A deleted repository's state: its runs (with their findings), switches and connection. */
 export function clearRepository(sql: SqlStorage) {
-  for (const table of ['runs', 'agents', 'connection']) sql.exec(`DELETE FROM ${table}`);
+  for (const table of ['run_attempts', 'runs', 'agents', 'connection'])
+    sql.exec(`DELETE FROM ${table}`);
 }
 
 const OPEN: RunStatus[] = ['queued', 'running', 'paused'];
@@ -72,7 +87,7 @@ export interface Claim {
   created: boolean;
   /** Still waiting for its Workflow instance (a lost start is retried). */
   queued: boolean;
-  /** A new attempt of a run a pause stopped: paid for again, unlike a start sent twice. */
+  /** A new authorized attempt: paid for again, unlike a start sent twice. */
   restarted?: boolean;
   superseded: string[];
 }
@@ -92,24 +107,41 @@ export function claimRun(
   change: number,
   head: string,
   choice: { harness: string; provider: string; model: string },
+  retryFailed = false,
 ): Claim | null {
   const on = sql
     .exec('SELECT 1 FROM agents WHERE agent = ? AND enabled = 1', agent)
     .toArray().length;
   if (!on) return null;
   const existing = sql
-    .exec<{ id: string; attempt: number; status: RunStatus; error: string | null }>(
-      'SELECT id, attempt, status, error FROM runs WHERE agent = ? AND change = ? AND head = ?',
+    .exec<RunRow>(
+      'SELECT * FROM runs WHERE agent = ? AND change = ? AND head = ?',
       agent,
       change,
       head,
     )
     .toArray()[0];
-  // A pause stopped this head before it had an answer: it gets another try.
-  if (existing?.error === notReviewed(AUTOMATION_PAUSED)) {
+  // Automatic recovery handles only an automation pause. An owner can explicitly retry a
+  // terminal failure; a webhook, active attempt or completed reading cannot authorize that.
+  if (
+    existing &&
+    ((retryFailed && existing.status === 'failed') ||
+      existing.error === notReviewed(AUTOMATION_PAUSED))
+  ) {
     sql.exec(
-      `UPDATE runs SET status = 'queued', attempt = attempt + 1, error = NULL, finished_at = NULL
+      'INSERT INTO run_attempts (run, attempt, result_json) VALUES (?, ?, ?)',
+      existing.id,
+      existing.attempt,
+      JSON.stringify({ run: toRun(existing), findings: runFindings(sql, existing.id) }),
+    );
+    sql.exec(
+      `UPDATE runs SET status = 'queued', attempt = attempt + 1, error = NULL, finished_at = NULL,
+         harness = ?, provider = ?, model = ?, fallback = NULL, value = NULL, summary = NULL,
+         findings = 0, findings_json = NULL, withheld = 0
        WHERE id = ?`,
+      choice.harness,
+      choice.provider,
+      choice.model,
       existing.id,
     );
     const attempt = existing.attempt + 1;

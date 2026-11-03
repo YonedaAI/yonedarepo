@@ -53,6 +53,8 @@ export async function runNow(
       [agent.id],
       open.filter((c) => typeof c.head === 'string'),
       true,
+      Number.POSITIVE_INFINITY,
+      true,
     );
     total.started += counts.started;
     total.already += counts.already;

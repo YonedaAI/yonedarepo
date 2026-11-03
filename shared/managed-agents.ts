@@ -518,6 +518,8 @@ export interface CostEntry {
 export interface RunDetail {
   run: ManagedRun;
   findings: RunFinding[];
+  /** Failed attempts retained before an explicit retry; costs are cumulative at that point. */
+  previous_attempts?: { attempt: number; run: ManagedRun; findings: RunFinding[] }[];
   /** The harness CLI's transcript tail, redacted; null when none was kept. */
   transcript: string | null;
   cost: CostEntry[];

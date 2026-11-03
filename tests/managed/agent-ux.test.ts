@@ -110,8 +110,8 @@ describe("a repository's Agents page", () => {
     expect(rows.map((r: any) => [r.id, r.status, r.harness])).toEqual([
       ['code-review', 'active', 'codex'],
       ['security-review', 'paused', 'claude-code'],
-      ['slop-review', 'off', 'opencode'],
-      ['intent-drift', 'off', 'opencode'],
+      ['slop-review', 'off', 'codex'],
+      ['intent-drift', 'off', 'codex'],
     ]);
     expect(rows[0].latest).toMatchObject({ change: 1, value: 'fail', status: 'findings' });
     expect(rows[1].latest).toBeNull();
