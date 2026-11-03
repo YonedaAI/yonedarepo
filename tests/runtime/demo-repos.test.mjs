@@ -73,6 +73,15 @@ test('a failed release-token revocation remains tracked for retry', async () => 
   assert.equal(tokens.paths.size, 0);
 });
 
+test('nested finalizers revoke each token once even when cleanup runs twice', async () => {
+  let calls = 0;
+  const tokens = new DemoTokens({ raw: async () => ({ ok: ++calls === 1 }) });
+  tokens.track('/tokens/fixture');
+  await finishDemoRun({ clean: tokens.cleanup(), check: async () => [] });
+  await finishDemoRun({ clean: tokens.cleanup(), check: async () => [] });
+  assert.equal(calls, 1);
+});
+
 test('a simulated final event without a newline is saved and included in the spend budget', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'demo-eof-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
