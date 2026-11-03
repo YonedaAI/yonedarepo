@@ -77,7 +77,9 @@ A team buying a code platform asks first whether it trains on their code. Entire
 
 ## Git, transactional
 
-Git's storage, history and the `git` command stay. What changes is the write: every push is a transaction on a log, merged on the server, so concurrent writers never collide.
+Git's storage, history and the `git` command stay. What changes is the write: every landing is a transaction on a log, merged on the server, so concurrent writers never collide.
+
+A stock `git push` straight to a branch someone else just moved is still refused, by the Git client itself, before anything is sent. The server merge happens when work lands: from a pushed branch, or through the `yoneda` CLI, MCP or the API.
 
 | | Plain Git | YonedaRepo |
 |---|---|---|
@@ -103,11 +105,24 @@ Searched 2026-11-02: papers, patents and other Git servers. Two passes of web se
 
 No system found does all of these together:
 
-1. Stock `git push`, where a push that would be rejected as non-fast-forward is instead merged on the server with **content-level** three-way merge, so two writers editing different lines of one file both land.
+1. Landing work from stock Git, merged on the server with **content-level** three-way merge, so two writers editing different lines of one file both land.
 2. A transaction log as the repository's authority, with the agent session recorded on each write.
 3. Measured for agents: 1,000 writers on one branch, 1,000 landed.
 
 Safe to say publicly: "Git, transactional" and "a new way to write to Git". "First" needs a patent search first.
+
+### How conflicts are handled
+
+Each landing is one transaction: a compare-and-swap on the branch, one hash-chained log entry and the landing record, all or nothing (`repo_store/land.rs`). Busy branches land in batches of up to 256 as one merge commit. When the branch moved since the writer's base, the log decides (`yoneda-core/src/txlog/occ.rs`):
+
+| Since the writer's base | Outcome |
+|---|---|
+| Nothing moved | Compare-and-swap |
+| Others wrote other files | Merge commit on the server, then combined checks |
+| Others wrote the same files, nothing this writer read | Three-way line merge; overlapping lines are a conflict |
+| Others wrote something this writer read (a file, or a symbol `path#symbol`) | Refused as a stale read: reconcile and check again |
+
+The read check is what stops write skew, where two landings each pass alone and go wrong together: 6,441 to 8,001 log entries checked per run, 0 found.
 
 ### Closest prior art, for the research paper
 
