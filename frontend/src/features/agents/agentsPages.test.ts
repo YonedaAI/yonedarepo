@@ -167,8 +167,8 @@ describe("an agent's pages", () => {
     expect(html).not.toContain('Reset to maintained defaults');
     for (const [label, value] of [
       ['Name', 'Slop review'],
-      ['Harness', 'opencode'],
-      ['Model', 'MiMo V2.6 Flash'],
+      ['Harness', 'Codex'],
+      ['Model', 'GPT-5.6 Luna'],
       ['Reasoning effort', 'Low'],
       ['Time limit', '15 minutes'],
       ['Result format', 'Low, medium or high'],

@@ -216,22 +216,21 @@ describe('the shared pipeline', () => {
     expect(await run(h, h.created[1])).toMatchObject({ status: 'findings' });
   });
 
-  it('falls back to the next listed model when the configured one fails, and records why', async () => {
-    const h = await ready('slop-review');
+  for (const agent of ['slop-review', 'intent-drift'] as const)
+  it(`an unavailable ${agent} fails without using an unvalidated fallback`, async () => {
+    const h = await ready(agent);
+    if (agent === 'intent-drift') h.platform.changes[0].flight_plan = { goal: 'Review this fixture', scope: 'src/' };
     fakeGateway();
-    h.harness.scripts = [{ error: 'opencode exited with 1' }, { result: result('slop-review') }];
+    h.harness.scripts = [{ error: 'codex exited with 1' }, { result: result('slop-review') }];
     await deliver(h, opened(h));
-    expect(await run(h, h.created[0])).toMatchObject({ status: 'findings' });
+    expect(await run(h, h.created[0])).toMatchObject({ status: 'failed', error: 'codex exited with 1' });
     expect(h.harness.started.map((s) => [s.spec.harness, s.spec.model])).toEqual([
-      ['opencode', 'mimo-v2.6-flash'],
-      ['opencode', 'glm-5.3-flash'],
+      ['codex', 'gpt-5.6-luna'],
     ]);
     const stored = await repoStub(h.env, h.platform.repo).run(h.created[0].run);
-    expect(stored).toMatchObject({ harness: 'opencode', model: 'glm-5.3-flash' });
-    expect(stored!.fallback).toBe('mimo-v2.6-flash failed (opencode exited with 1); used glm-5.3-flash');
-    expect(h.harness.ended.size).toBe(2);
-    // Every start used its own, fresh container.
-    expect(new Set(h.harness.started.map((x) => x.name)).size).toBe(2);
+    expect(stored).toMatchObject({ harness: 'codex', model: 'gpt-5.6-luna', fallback: null });
+    expect(h.harness.ended.size).toBe(1);
+    expect(h.platform.checks).toHaveLength(0);
   });
 
   it('code review lists no fallback: a failed run fails instead of trying another model', async () => {
@@ -424,7 +423,7 @@ describe('each agent on its fixtures', () => {
   const cases: [ManagedAgentId, string, string, string][] = [
     ['code-review', 'codex', 'codex', 'gpt-5.6-luna'],
     ['security-review', 'claude-code', 'claude', 'claude-sonnet-5-5'],
-    ['slop-review', 'opencode', 'mimo', 'mimo-v2.6-flash'],
+    ['slop-review', 'codex', 'codex', 'gpt-5.6-luna'],
   ];
   for (const [agent, harnessName, provider, model] of cases) {
     it(`${agent}: the trigger fixture is reported, the clean one passes`, async () => {
