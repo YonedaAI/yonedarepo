@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { AGENTS_BY_KIND, REPOS } from '../../tools/staging/demo-repos-plan.mjs';
 import { usageOf } from '../../tools/staging/demo-repos-run.mjs';
+import { readBack } from '../../tools/staging/demo-repos-report.mjs';
 import { runAgent, spendBudget } from '../../tools/staging/agent-run-flow.mjs';
 import { demoFlights } from '../../tools/staging/demo-repos-flights.mjs';
 import { assertFlight, finishDemoRun, removeOwnedContainer, DemoTokens } from '../../tools/staging/demo-repos-acceptance.mjs';
@@ -85,4 +86,13 @@ test('a simulated final event without a newline is saved and included in the spe
   const used = usageOf('claude', (await readFile(join(dir, 'fixture.events.jsonl'), 'utf8')).split('\n'));
   assert.equal(used.usd, 0.125);
   assert.equal(used.input, 20);
+});
+
+test('retained results from a retired provider remain readable without enabling that provider', async () => {
+  const owner = { get: async () => ({ memories: [], sessions: [], releases: [], refs: {}, changes: [] }) };
+  const account = { get: async () => ({ runs: [] }) };
+  const report = await readBack({ owner, account, managed: '/managed', origin: 'http://fixture.invalid' }, { key: 'click', id: 'fixture' }, { flights: { sloppy: { number: 1, outcome: 'landed', run: { kind: 'mimo', input: 12, output: 4, usd: 0.01, ms: 1000 } } } });
+  assert.match(report.agents.mimo.label, /historical/i);
+  assert.equal(report.agents.mimo.input_tokens, 12);
+  assert.equal(AGENTS_BY_KIND.mimo, undefined);
 });

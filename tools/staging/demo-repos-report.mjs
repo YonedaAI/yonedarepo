@@ -86,11 +86,11 @@ export async function readBack(ctx, r, state) {
     const trap = plan.flights[id]?.proof && plan.memories.find((m) => m.trapOf === plan.flights[id].proof);
     if (trap && flight.number) proofs[id] = await proofOn(ctx, r, flight, trap.text);
   }
-  const byAgent = {};
+  const byAgent = Object.create(null);
   for (const [id, flight] of Object.entries(state.flights ?? {})) {
     const kind = flight.run?.kind;
     if (!kind) continue;
-    byAgent[kind] ??= { label: AGENTS_BY_KIND[kind].label, runs: 0, landings: [], input_tokens: 0, cached_tokens: 0, output_tokens: 0, usd: 0, seconds: 0 };
+    byAgent[kind] ??= { label: AGENTS_BY_KIND[kind]?.label ?? `${kind} (historical)`, runs: 0, landings: [], input_tokens: 0, cached_tokens: 0, output_tokens: 0, usd: 0, seconds: 0 };
     const row = byAgent[kind];
     row.runs++;
     row.landings.push(`${id} #${flight.number} ${flight.outcome}`);
