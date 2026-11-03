@@ -1,8 +1,12 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
+import type { OverviewStatus } from './overviewBootstrap';
 
-const captured = vi.hoisted(() => ({ listing: [] as (string | undefined)[] }));
+const captured = vi.hoisted(() => ({
+  listing: [] as (string | undefined)[],
+  paths: [] as (string | null)[],
+}));
 vi.mock('./connect', async (original) => ({
   ...(await original<typeof import('./connect')>()),
   currentApiOrigin: () => 'https://yoneda.test',
@@ -15,28 +19,31 @@ vi.mock('./codeData', async (original) => ({
   },
 }));
 vi.mock('./useSource', () => ({
-  useSource: () => ({
-    loading: false,
-    reload: () => {},
-    data: {
-      name: 'demo',
-      refs: [
-        { name: 'refs/heads/main', commit_id: 'a'.repeat(40) },
-        { name: 'refs/heads/topic', commit_id: 'c'.repeat(40) },
-      ],
-      visibility: 'private',
-      viewer: { owner: true, public: false, principal: 'user:demo' },
-      policy: { required_checks: [], approvals: 0 },
-      overview: {
-        ref: 'main',
-        tree: { commit: 'a'.repeat(40), entries: [] },
-        readme: { content: 'Old README' },
-        activity: null,
-        latest: null,
-        empty: false,
+  useSource: (path: string | null) => {
+    captured.paths.push(path);
+    return {
+      loading: false,
+      reload: () => {},
+      data: {
+        name: 'demo',
+        refs: [
+          { name: 'refs/heads/main', commit_id: 'a'.repeat(40) },
+          { name: 'refs/heads/topic', commit_id: 'c'.repeat(40) },
+        ],
+        visibility: 'private',
+        viewer: { owner: true, public: false, principal: 'user:demo' },
+        policy: { required_checks: [], approvals: 0 },
+        overview: {
+          ref: 'main',
+          tree: { commit: 'a'.repeat(40), entries: [] },
+          readme: { content: 'Old README' },
+          activity: null,
+          latest: null,
+          empty: false,
+        },
       },
-    },
-  }),
+    };
+  },
 }));
 const { RepoPage } = await import('./RepoPage');
 it('suppresses the previous ref before the next request loading effect runs', () => {
@@ -44,6 +51,7 @@ it('suppresses the previous ref before the next request loading effect runs', ()
   const html = renderToStaticMarkup(
     createElement(RepoPage, {
       route: { view: 'overview', repo: 'r0123456789abcdef0123', ref: 'topic' },
+      initialStatus: { overview: { ref: 'main' } } as OverviewStatus,
       authenticated: true,
       username: 'demo',
       navigate: () => {},
@@ -53,4 +61,28 @@ it('suppresses the previous ref before the next request loading effect runs', ()
   );
   expect(captured.listing).toEqual([undefined]);
   expect(html).not.toContain('Old README');
+});
+
+function statusPath(initialStatus?: OverviewStatus) {
+  captured.paths.length = 0;
+  renderToStaticMarkup(
+    createElement(RepoPage, {
+      route: { view: 'overview', repo: 'r0123456789abcdef0123', ref: 'topic' },
+      initialStatus,
+      authenticated: true,
+      username: 'demo',
+      navigate: () => {},
+      onDeleted: () => {},
+      onMissing: () => {},
+    }),
+  );
+  return captured.paths[0];
+}
+it('keeps an unseeded picker or ID mount on the cheap progressive summary', () => {
+  expect(statusPath()).toBe('/repos/r0123456789abcdef0123?summary=true');
+});
+it('keeps a named bootstrap mount opted in for selected branch refreshes', () => {
+  expect(statusPath({ overview: { ref: 'main' } } as OverviewStatus)).toBe(
+    '/repos/r0123456789abcdef0123?summary=true&overview=true&ref=topic',
+  );
 });

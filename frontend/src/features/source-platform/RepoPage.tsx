@@ -2,7 +2,7 @@
 // trail names it). A public
 // repository opens for anyone; a viewer who reads only because it is public (or is signed
 // out) gets the read views, with no write or admin controls.
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { RepoSettings } from '../repo-settings/RepoSettings';
 import { type Navigate, showAddress } from '../shell/useRoute';
 import { ChangeView } from './ChangeView';
@@ -69,9 +69,13 @@ export function RepoPage({
   initialStatus?: OverviewStatus;
 }) {
   const repo = route.repo;
+  // Named navigation already has a full response; picker mounts keep the fast header path.
+  const bootstrap = useRef(initialStatus?.overview !== undefined).current;
   const refName = route.view === 'overview' ? (route.ref ?? chosenBranch(repo)) : undefined;
   const status = useSource<OverviewStatus>(
-    refName === undefined ? `/repos/${repo}?summary=true` : overviewStatusPath(repo, refName),
+    !bootstrap || refName === undefined
+      ? `/repos/${repo}?summary=true`
+      : overviewStatusPath(repo, refName),
     undefined,
     initialStatus,
   );
