@@ -3,6 +3,7 @@
 // built). What crosses is the caller's own request: their credentials, checked again there.
 import { homeCell, otherCells, placed } from './account-place';
 import { cellFetcher, cellOfRepo, cellsOn, repoInPath, thisCell } from './cells';
+import { forwardRequest } from './forward-request';
 import { log } from './log';
 import { ApiError, type Json } from './repo-ops';
 import { currentScope } from './request-scope';
@@ -48,7 +49,8 @@ const fetcherOf = (env: Env, cell: string) => {
 };
 
 /** `req`, whole, answered by `cell`. */
-export const forwardTo = (env: Env, cell: string, req: Request) => fetcherOf(env, cell).fetch(req);
+export const forwardTo = (env: Env, cell: string, req: Request) =>
+  forwardRequest(fetcherOf(env, cell), req);
 
 /** A request made here for the caller, answered by `cell`. */
 function cellRequest(env: Env, cell: string, path: string, init: RequestInit, here: boolean) {
@@ -60,7 +62,11 @@ function cellRequest(env: Env, cell: string, path: string, init: RequestInit, he
     if (value) headers.set(name, value);
   }
   if (here) headers.set(HERE_HEADER, HERE);
-  return fetcherOf(env, cell).fetch(new Request(new URL(path, from.url), { ...init, headers }));
+  // The original body may already be consumed. Copy only its trusted runtime metadata,
+  // rather than reconstructing from a body-used Request or accepting an HTTP region hint.
+  return fetcherOf(env, cell).fetch(
+    new Request(new URL(path, from.url), { ...init, headers, cf: from.cf }),
+  );
 }
 
 /** `cell`'s JSON answer to the caller's request, or its refusal. */

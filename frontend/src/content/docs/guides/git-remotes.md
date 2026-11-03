@@ -31,11 +31,11 @@ git fetch --unshallow
 
 ## SSH
 
-Git over SSH reaches the platform through Cloudflare Tunnel. Two commands set up a machine; neither needs admin rights.
+Git over SSH reaches the platform through our SSH gateway. Two commands set up a machine; neither needs admin rights.
 
 ### 1. Install the CLI
 
-It brings `cloudflared` along, unless you already have one that works. On macOS or Linux:
+It installs the required SSH transport helper, unless a working one is already installed. On macOS or Linux:
 
 ```sh
 curl -fsSL https://yonedarepo.com/install.sh | sh
@@ -64,15 +64,6 @@ git clone ssh://git@ssh.yonedarepo.com/<repo-id>.git
 ```
 
 `ssh -T git@ssh.yonedarepo.com` answers `Hi <account>! You've successfully authenticated, but YonedaRepo does not provide shell access.`
-
-### Manual setup
-
-Add the public key under **Settings → SSH keys** or with `yoneda ssh-key add ~/.ssh/id_ed25519.pub`, install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/), then add to `~/.ssh/config`:
-
-```text
-Host ssh.yonedarepo.com
-  ProxyCommand cloudflared access ssh --hostname %h
-```
 
 ### Keys
 
@@ -113,4 +104,4 @@ How a push to `main` lands next to other writers is on [Concurrent pushes](/docs
 | `REPO_SIZE_LIMIT` or `REPO_FULL` | The repository reached a [limit](/docs/reference/limits): start a new repository or contact support |
 | `secret detected in <path>:<line>` | A file holds a credential; see [Security](/docs/security#what-a-push-is-checked-for) |
 | `Not a Git repository URL: use /git/<repository id>.git` | The URL needs the repository's id, not its name |
-| `ssh: Could not resolve hostname` or a hang on connect | The `ProxyCommand` entry is missing, or `cloudflared` is not installed: run `yoneda ssh setup` |
+| `ssh: Could not resolve hostname` or a hang on connect | Run `yoneda ssh setup` to install the required helper and repair the SSH configuration |

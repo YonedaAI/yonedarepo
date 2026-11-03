@@ -68,6 +68,9 @@ fn committed(file: &str) -> Value {
         "wrangler.prod-platform.jsonc" => {
             include_str!("../../../cloudflare/wrangler.prod-platform.jsonc")
         }
+        "wrangler.prod-platform-weur.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-platform-weur.jsonc")
+        }
         "wrangler.prod-agents.jsonc" => {
             include_str!("../../../cloudflare/wrangler.prod-agents.jsonc")
         }
@@ -151,6 +154,7 @@ fn prod_spec_regenerates_the_committed_prod_configs() {
         [
             "yonedarepo-prod-superfan",
             "yonedarepo-prod-platform",
+            "yonedarepo-prod-platform-weur",
             "yonedarepo-prod-agents-managed",
             "yonedarepo-prod-agents",
             "yonedarepo-prod-deadman"
@@ -764,7 +768,7 @@ fn production_import_app_has_its_own_identity_and_key_binding() {
 /// Prod runs what dev runs. A variable may differ only for the reason given here.
 #[test]
 fn prod_has_every_switch_dev_has() {
-    const OWN: [(&str, &str); 15] = [
+    const OWN: [(&str, &str); 13] = [
         ("EMAIL_FROM", "its own sender"),
         ("ADMIN_NOTIFY_EMAIL", "dev mails nobody"),
         ("ADMIN_ACCOUNTS", "its own operators"),
@@ -776,8 +780,6 @@ fn prod_has_every_switch_dev_has() {
         ("WEB_ANALYTICS_TOKEN", "its own site"),
         ("SEO_INDEXING", "only prod is indexed"),
         ("REGION_HINT_TEST", "a dev test"),
-        ("REGION_SIGNALS", "dev first: prod with its first cell"),
-        ("CELLS", "dev first: prod with its first cell"),
         ("GITHUB_APP_ID", "its own import App"),
         ("GITHUB_APP_SLUG", "its own import App"),
     ];
@@ -811,6 +813,55 @@ fn prod_has_every_switch_dev_has() {
                 in_dev[&name],
                 in_prod[&name]
             );
+        }
+    }
+}
+
+#[test]
+fn dev_and_prod_share_edge_and_regional_backend_topology() {
+    for (text, resource_lock) in [(DEV, DEV_LOCK), (PROD, PROD_LOCK)] {
+        let spec = Spec::parse(text).unwrap();
+        assert_eq!(spec.cells.len(), 1);
+        assert!(spec.cells[0].bound);
+        assert_eq!(spec.cells[0].code, "weur");
+        let configs = spec.configs(&lock(resource_lock)).unwrap();
+        let role = |name: &str| &configs.iter().find(|(w, _)| w.role == name).unwrap().1;
+        let front = role("agents");
+        assert!(
+            front.get("placement").is_none(),
+            "frontend must run at the edge"
+        );
+        for config in [front, role("platform"), role("platform-weur")] {
+            assert_eq!(config["vars"]["CELLS"], "on");
+            assert_eq!(config["vars"]["AUTOMATIC_LOCALITY"], "on");
+            assert_eq!(config["vars"]["REGION_SIGNALS"], "on");
+        }
+        assert_eq!(role("platform")["placement"]["region"], "aws:us-east-1");
+        assert_eq!(
+            role("platform-weur")["placement"]["region"],
+            "aws:eu-central-1"
+        );
+        let european_service = format!("{}-platform-weur", spec.prefix);
+        assert!(
+            front["services"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|s| s["binding"] == "CELL_WEUR" && s["service"] == european_service)
+        );
+        assert_eq!(role("platform-weur")["vars"]["CELL_JURISDICTION"], "eu");
+        assert_eq!(
+            role("platform-weur")["vars"]["REGION_HINT_TEST"],
+            role("platform")["vars"]["REGION_HINT_TEST"],
+            "the owner-only dev location diagnostic must reach regional repositories"
+        );
+        for (_, config) in &configs {
+            for (name, _) in inventory::d1(config) {
+                assert!(
+                    name.starts_with(&spec.prefix),
+                    "cross-environment database {name}"
+                );
+            }
         }
     }
 }
@@ -856,11 +907,16 @@ mod cells {
         spec["cells"][0]["bound"] = json!(true);
         Spec::parse(&spec.to_string()).unwrap()
     }
+    fn unbound() -> Spec {
+        let mut spec: Value = serde_json::from_str(DEV).unwrap();
+        spec["cells"][0]["bound"] = json!(false);
+        Spec::parse(&spec.to_string()).unwrap()
+    }
 
     /// The gate of stage R5: a cell adds a Worker, and every Worker that was there is unchanged.
     #[test]
     fn a_cell_changes_no_other_worker() {
-        let (with, without) = (Spec::parse(DEV).unwrap(), without_cells());
+        let (with, without) = (unbound(), without_cells());
         let roles = |spec: &Spec| {
             spec.workers
                 .iter()
@@ -878,7 +934,7 @@ mod cells {
 
     #[test]
     fn shared_class_provider_deploys_before_regional_consumers() {
-        for spec in [Spec::parse(DEV).unwrap(), bound()] {
+        for spec in [unbound(), bound()] {
             let pos = |role: &str| spec.workers.iter().position(|w| w.role == role).unwrap();
             assert!(pos("superfan") < pos("platform"));
             assert!(

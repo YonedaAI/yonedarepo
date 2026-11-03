@@ -41,7 +41,7 @@ The analogy breaks in three places. Repository state is a ref map, not a set of 
 
 - **[Part I](/blog/a-transaction-log-for-source-control): the transaction log.** A hash-chained log of ref changes, snapshots and checkpoints, validation of declared reads and writes, and a serializability theorem. It also found where group landing fell short: two batch members that each read what the other wrote could land together (write skew). A pairwise check removes it.
 - **[Part II](/blog/partitioned-derived-data): derived data as views.** Search indexes, symbol tables and check results are partitioned jobs over immutable snapshots. A view is consistent at a snapshot when the key of each stored result determines that result. The Git commit of a branch is one of these views: a deterministic function of the log prefix.
-- **[Part III](/blog/serverless-git-on-cloud-primitives): the system on cloud primitives.** It builds the design on Cloudflare, measures it, and models where the serialized authority saturates.
+- **[Part III](/blog/serverless-git-on-cloud-primitives): the system on cloud primitives.** It measures the design on one cloud deployment, and models where the serialized authority saturates.
 
 The composed result is one no single part states. Every guarantee in Part I is written over log entries rather than Git objects, and Part II shows Git is a view of the log, so **Git objects can leave the landing path** without weakening any guarantee. The authority's work per landing shrinks to a validation query and an append, and Part III's capacity model says a branch is limited by one serial call per batch, not one per landing.
 
@@ -51,7 +51,7 @@ YonedaRepo is the reference implementation, first-party work that is still being
 
 ## What was measured
 
-All measurements come from one isolated Cloudflare deployment with a synthetic workload: each writer commits one new file on `main` and lands it, with no conflicting writes and no declared reads. Landing p95 is client-side, over successful requests.
+All measurements come from one isolated cloud deployment with a synthetic workload: each writer commits one new file on `main` and lands it, with no conflicting writes and no declared reads. Landing p95 is client-side, over successful requests.
 
 | Revision | Landing path | Writers | Landing p95 (s) | Landed |
 | --- | --- | --- | --- | --- |

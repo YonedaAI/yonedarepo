@@ -1,28 +1,28 @@
 ---
 title: Global network and data location
-summary: YonedaRepo runs on Cloudflare's global network, with no region to pick. Here is where requests are served, where your data is stored, and what leaves Cloudflare.
+summary: YonedaRepo runs on our global network, with no region to pick. Here is where requests are served, where your data is stored, and what leaves our infrastructure.
 ---
 
 ## No region to pick
 
-Requests are served from Cloudflare's global network: Git, the web app, the API and MCP all answer from it. You do not choose a region when you create an account or a repository, and there is nothing to configure.
+Requests are served from our global network: Git, the web app, the API and MCP all answer from it. You do not choose a region when you create an account or a repository, and there is nothing to configure.
 
 ## Where your data is stored
 
-Everything is stored and processed by Cloudflare. Our main storage is placed in eastern North America, so **your data is processed in the United States**. This covers your account, your repositories and their history, change requests, sessions and transcripts, memories, LFS files and release assets.
+We host the service on managed infrastructure. Our main storage is placed in eastern North America, so **your data is processed in the United States**. This covers your account, your repositories and their history, change requests, sessions and transcripts, memories, LFS files and release assets.
 
-Copies of content served to readers can be cached at other Cloudflare locations. This is why a [purge](/docs/guides/quarantine) cannot recall copies already cached elsewhere, and why a leaked credential should be rotated whatever else you do.
+Copies of content served to readers can be cached at other edge locations. This is why a [purge](/docs/guides/quarantine) cannot recall copies already cached elsewhere, and why a leaked credential should be rotated whatever else you do.
 
 ## Where work runs
 
 | Work | Where |
 |---|---|
-| Requests (Git, web app, API, MCP) | Cloudflare's global network |
-| Git over SSH | Through Cloudflare Tunnel; see [Git over HTTPS and SSH](/docs/guides/git-remotes#ssh) |
-| Checks you define | Containers on Cloudflare, with no network; their code is sent nowhere else |
-| Review agents | Containers on Cloudflare; their model calls go through our Cloudflare AI Gateway to the model's provider |
+| Requests (Git, web app, API, MCP) | our global network |
+| Git over SSH | Through our SSH gateway; see [Git over HTTPS and SSH](/docs/guides/git-remotes#ssh) |
+| Checks you define | Isolated containers, with no network; their code is sent nowhere else |
+| Review agents | Isolated containers; their model calls go through our model gateway to the model's provider |
 
-## What leaves Cloudflare
+## What leaves our infrastructure
 
 Some features send data to other providers, and those providers may process it in other countries:
 

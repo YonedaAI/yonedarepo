@@ -149,7 +149,9 @@ describe('docs search', () => {
 
   it('finds real pages by title, heading and body text', () => {
     expect(searchDocs('webhooks')[0].slug).toBe('guides/webhooks');
-    expect(searchDocs('cloudflared').some((h) => h.slug === 'guides/git-remotes')).toBe(true);
+    expect(searchDocs('SSH transport helper').some((h) => h.slug === 'guides/git-remotes')).toBe(
+      true,
+    );
     const hit = searchDocs('verify the signature')[0];
     expect([hit.slug, hit.anchor]).toEqual(['guides/webhooks', 'verify-the-signature']);
     expect(hit.snippet.length).toBeLessThan(160);

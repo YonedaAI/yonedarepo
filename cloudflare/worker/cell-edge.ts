@@ -16,6 +16,7 @@ import {
   repoInPath,
   tokenCell,
 } from './cells';
+import { forwardRequest } from './forward-request';
 import { error, response } from './http';
 import { GIT_PATH } from './readable-paths';
 import { regionOfRequest } from './region';
@@ -25,6 +26,7 @@ import { workspace } from './workspace';
 
 const RESOLVE = /^\/api\/v1\/resolve\/([^/]+)\/([^/]+)$/;
 const SIGN_IN = /^\/api\/auth\//;
+const CREATE = /^\/api\/v1\/repos(?:\/import)?$/;
 const NAME_MS = 60_000;
 const NAMES_KEPT = 10_000;
 
@@ -69,6 +71,11 @@ export async function cellOfRequest(req: Request, env: Env, url: URL): Promise<s
   if (repo) return cellOfRepo(repo);
   const named = GIT_PATH.exec(url.pathname) ?? RESOLVE.exec(url.pathname);
   if (named) return cellOfName(env, decodeURIComponent(named[1]), decodeURIComponent(named[2]));
+  // Creation follows this visitor, while account-wide reads still follow their home.
+  if (env.AUTOMATIC_LOCALITY === 'on' && req.method === 'POST' && CREATE.test(url.pathname)) {
+    const region = regionOfRequest(req);
+    if (region === 'enam' || region === 'weur') return cellOfRegion(env, region);
+  }
   const bearer = req.headers.get('authorization');
   if (bearer?.startsWith('Bearer ypat_')) return tokenCell(bearer.slice('Bearer '.length));
   const home = cookie(req, HOME_COOKIE);
@@ -81,10 +88,11 @@ export async function toCell(req: Request, env: Env, url = new URL(req.url)) {
   const cell = await cellOfRequest(req, env, url);
   const fetcher = cellFetcher(env, cell) ?? cellFetcher(env, FIRST_CELL);
   if (!fetcher) return error('NOT_FOUND', 'The source platform is not bound', 404);
-  return fetcher.fetch(carriedRequest(req));
+  return forwardRequest(fetcher, carriedRequest(req));
 }
 
 type NewAccounts = { accountCreated(account: string, details: object): Promise<void> };
+type PlacedLimiter = { authLimit(key: string): Promise<{ success: boolean }> };
 
 /** What the front's `PLATFORM` stands for with cells on: a request goes to its cell, a new
  * account's notice to the cell of its region, and anything else to `enam`, as it always did. */
@@ -106,7 +114,18 @@ function routedPlatform(env: Env, platform: Fetcher): Fetcher {
 /** The front's bindings: as they are, with cells off. */
 export function frontEnv(env: Env): Env {
   if (!cellsOn(env) || !env.PLATFORM) return env;
-  return { ...env, PLATFORM: routedPlatform(env, env.PLATFORM) };
+  const platform = env.PLATFORM;
+  return {
+    ...env,
+    PLATFORM: routedPlatform(env, platform),
+    // The front runs at many edge locations. Keep its existing shared auth keys at
+    // one placed backend counter; otherwise OAuth gets a fresh allowance per colo.
+    ...(env.AUTH_LIMITER && {
+      AUTH_LIMITER: {
+        limit: ({ key }: { key: string }) => (platform as unknown as PlacedLimiter).authLimit(key),
+      },
+    }),
+  };
 }
 
 /** A provider sign-in on the front: what it starts, it starts in the cell of the person's
