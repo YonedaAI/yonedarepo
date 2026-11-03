@@ -76,18 +76,17 @@ Turning copies off does not disable quarantine or registered-region purge fences
 
 Production currently lacks EU resources. Adding `bound=true` or copying dev resource IDs
 would make the ordinary deploy fail, so activation requires a staged provisioning path.
-The planned command is `cargo xtask infra bootstrap-regions --env prod --dry-run`; its
-confirmed form must run the existing ship/HEAD/container guards before any remote mutation.
-It derives an unbound bootstrap from the same desired topology, provisions only missing
-regional resources in their declared jurisdiction, records provider-issued identities, builds
-and deploys the primary shared-class provider before unbound regional Workers, then verifies
-those targets before normal binding activation. Reruns must be idempotent. Ship invokes this
-stage automatically; no operator hand-edit of config files is an acceptance path.
+Use `cargo xtask infra prepare --env prod --dry-run` to inspect missing resources without
+changing them. Its confirmed form prepares only declared missing resources and records real
+provider-issued identities; review and commit those identities before deployment. The normal
+guarded deployment then derives temporary unbound configurations from the same desired spec,
+deploys the primary class provider before missing regional Workers, verifies them, and performs
+the final bound rollout. It never requires hand-editing `bound`, `CELLS` or migration history.
 
-This bootstrap command and shared dev/prod topology parity gates are the next implementation
-boundary, not delivered by the request-preservation changes alone. A dry run must remain
-read-only and explain the resources/order while actual prod rollout stays gated on dev proof
-and the owner's ship instruction.
+Production release still requires its existing ship/HEAD/container guards, dev proof and the
+owner's ship instruction. Resource preparation is separate from release approval. See
+[the regional deploy procedure](regional-deploy.md) for the implemented commands, retry behavior,
+captured-revision checks and deployment source fence.
 
 ## Acceptance evidence
 
