@@ -28,6 +28,7 @@ mod deploy_timings;
 mod dev;
 mod downloads;
 mod erase_backfill;
+mod frontend_build;
 mod health;
 mod infra;
 mod internal_accounts;

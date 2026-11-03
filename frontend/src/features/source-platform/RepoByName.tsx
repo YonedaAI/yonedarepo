@@ -4,6 +4,7 @@
 // viewer: the repository not-found page.
 import { useEffect } from 'react';
 import type { Navigate } from '../shell/useRoute';
+import { preloadOverviewMarkdown } from './markdownLoader';
 import { namedOverviewRef, type OverviewStatus } from './overviewBootstrap';
 import { RepoNotFound, repoMissing } from './RepoNotFound';
 import { type NamedRoute, rememberRepoName } from './repoNames';
@@ -36,6 +37,10 @@ export function RepoByName({
   authenticated: boolean;
   onSignIn: () => void;
 }) {
+  const preloadsMarkdown = namedOverviewRef(route) !== undefined;
+  useEffect(() => {
+    if (preloadsMarkdown) preloadOverviewMarkdown();
+  }, [preloadsMarkdown]);
   const found = useSource<Resolved>(resolvePath(route.owner, route.name, namedOverviewRef(route)));
   const id = found.data?.id;
   // biome-ignore lint/correctness/useExhaustiveDependencies: once per resolved repository.

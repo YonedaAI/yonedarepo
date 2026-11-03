@@ -4,9 +4,10 @@
 // prerendered, and their content is ours.
 import { lazy, Suspense } from 'react';
 import { type ImageResolver, Markdown } from './markdown';
+import { loadRichMarkdown } from './markdownLoader';
 
 const GfmDocument = lazy(() =>
-  import('./GfmDocument').then(({ GfmDocument }) => ({ default: GfmDocument })),
+  loadRichMarkdown().then(({ GfmDocument }) => ({ default: GfmDocument })),
 );
 
 /** Past this a document is its text: a reader's tab should not parse a megabyte. */
