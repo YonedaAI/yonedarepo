@@ -101,7 +101,12 @@ export function HomeDashboard({
             </div>
             <div className="home-panel">
               {grid.total ? (
-                <ContributionChart grid={grid} />
+                <ContributionChart
+                  grid={grid}
+                  snapshots={activity.contributionSnapshots}
+                  onRefresh={onRetry}
+                  navigate={navigate}
+                />
               ) : (
                 <p className="home-empty">No commits yet.</p>
               )}
