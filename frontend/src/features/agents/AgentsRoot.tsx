@@ -39,7 +39,7 @@ function page(
   if (route.view === 'agent-settings' || route.view === 'agent-configure')
     return (
       <AgentSettingsPage
-        key={`${route.view}:${route.agent}`}
+        key={`${workspace}:${route.view}:${route.agent}`}
         workspace={workspace}
         agent={route.agent}
         account={account}
@@ -50,11 +50,18 @@ function page(
     );
   if (route.view === 'agent-runs')
     return (
-      <AgentRuns workspace={workspace} agent={route.agent} space={space} navigate={navigate} />
+      <AgentRuns
+        key={workspace}
+        workspace={workspace}
+        agent={route.agent}
+        space={space}
+        navigate={navigate}
+      />
     );
   if (route.view === 'agent-run')
     return (
       <AgentRunDetail
+        key={`${workspace}:${route.runRepo}:${route.run}`}
         workspace={workspace}
         repo={route.runRepo}
         run={route.run}

@@ -149,7 +149,7 @@ describe('the shared pipeline', () => {
     const rate = modelRate('codex', 'gpt-5.6-luna')!;
     const perCall = chargeMicrousd(usageCostMicrousd(rate, { input: 1000, cache_write: 0, cache_read: 0, output: 200 }));
     const stored = await repoStub(h.env, h.platform.repo).run(params.run);
-    expect(stored).toMatchObject({ status: 'findings', value: 'fail', calls: 2, findings: 1, harness: 'codex', summary: 'Reviewed.' });
+    expect(stored).toMatchObject({ status: 'findings', value: 'fail', calls: 2, input_tokens: 2000, output_tokens: 400, findings: 1, harness: 'codex', summary: 'Reviewed.' });
     const container = stored!.container_seconds;
     expect(container).toBeGreaterThan(0);
     const balance = await ledgerStub(h.env, h.platform.account).balance();

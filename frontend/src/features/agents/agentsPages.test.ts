@@ -284,6 +284,8 @@ describe("an agent's pages", () => {
     expect(html).toContain('2026-10-30 12:19 UTC');
     expect(html).toContain(`href="/agents/runs/${repoA}/${run.id}"`);
     expect(html).toContain('parser #2');
+    expect(html).toContain('aria-label="Agent usage"');
+    expect(html).toContain('Latest 1 run');
     expect(html).toContain('Codex · GPT-5.6 Luna');
     expect(html).toContain('On every push, changes ready for review');
     expect(html).toContain('Created by ada,');
