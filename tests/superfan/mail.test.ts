@@ -409,3 +409,19 @@ describe('copy', () => {
     }
   });
 });
+
+describe('SSH gateway lifecycle alerts', () => {
+  it('identifies gateway checks and alarms without claiming Git transfers failed', () => {
+    const finding = row('ssh_gateway:error_rate', { error_rate: 0.0213 }, {
+      signals: { signals: [{ name: 'error_rate', value: 0.0213, anomalous: true }], exception_samples: [{ name: 'Error', message: 'Connection closed: this Durable Object instance is no longer active. Reconnect or retry the request.' }] },
+    });
+    const mail = renderNotice({ ...DEV, env: 'prod' }, [finding]);
+    expect(mail.subject).toBe('[prod] 2.1% of SSH gateway checks failing');
+    expect(mail.text).toContain('Gateway checks include keep-alive calls and housekeeping alarms.');
+    expect(mail.text).toContain('Check alarm and container logs, then try a fresh SSH clone.');
+    expect(mail.text).not.toContain('of SSH calls failing');
+    // Reporting retains the original failure rate and finding identity.
+    expect(finding.dedup_key).toBe('ssh_gateway:error_rate');
+    expect((finding.signals as { signals: { value: number }[] }).signals[0].value).toBe(0.0213);
+  });
+});

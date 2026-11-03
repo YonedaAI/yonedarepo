@@ -104,3 +104,25 @@ A finding spells out 3 rows and counts the rest. `GET /findings` shows the same;
 ## Why the dead-man is a cron Worker
 
 Checked 2026-10-31. [Standalone Health Checks](https://developers.cloudflare.com/health-checks/) and their [status notification](https://developers.cloudflare.com/notifications/notification-available/) need a Pro zone or higher, and `yonedarepo.com` is on Free. Notifications has no type for Workers, cron or Queues. So a small Worker on its own cron does it, and Superfan watches it back. Upgrading the zone to Pro would remove the last row above: Health Checks don't depend on our crons.
+
+## SSH gateway checks
+
+The SSH gateway alert counts supervisor invocations: keep-alive calls and
+housekeeping alarms. It is not a count of Git clone, fetch or push failures.
+
+Check the event type and stack in Workers Logs before choosing a repair. An
+`alarm` exception saying the instance is no longer active identifies a failed
+supervisor callback; it does not establish why the instance was replaced or
+whether a Git transfer failed. Keep the exception and its alert visible.
+
+Run the small production SSH check from the Mac:
+
+```sh
+node tools/staging-realworld.mjs --prod --only 0,26
+```
+
+It uses new test fixtures and checks clone, push, access refusals and key
+revocation. A passing check proves that path works now; it does not prove the
+intermittent supervisor fault is repaired. Inspect later alarm and keep-alive
+outcomes to confirm recovery. Do not roll back a healthy release solely from a
+rate that mixes these different operations.
