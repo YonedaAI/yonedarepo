@@ -2,8 +2,8 @@
 # Agent half of the sandbox (no capabilities): refuses to start unless /work is the top level
 # of a clone whose only remote is $SANDBOX_EXPECTED_ORIGIN and egress reaches nothing but the
 # proxy's allowlist (egress-check.mjs), imports the model credential the
-# kit writes on stdin (if any) into this container's throwaway opencode store, and runs the
-# command in /work with PWD=/work: opencode takes its project directory from $PWD, not from
+# kit writes on stdin (if any) into this container's throwaway opencode store, starts the
+# gateway shim for Claude Code and Codex (if asked), and runs the command in /work with PWD=/work: opencode takes its project directory from $PWD, not from
 # the process's working directory.
 set -eu
 fail() {
@@ -21,5 +21,7 @@ node /opt/yoneda/egress-check.mjs || fail "egress reaches more than the proxy's 
 if [ "${SANDBOX_CREDENTIAL:-}" = stdin ]; then
   opencode auth import --standalone >/dev/null 2>&1 || fail "opencode auth import failed"
 fi
+# sandbox-init owns the model shim under another UID and strips its secret before exec.
+[ -z "${SANDBOX_GATEWAY_TOKEN:-}" ] || fail "a provider key reached the agent environment"
 unset SANDBOX_CREDENTIAL SANDBOX_EXPECTED_ORIGIN
 exec "$@" </dev/null

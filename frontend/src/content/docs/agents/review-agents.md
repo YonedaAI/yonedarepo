@@ -72,6 +72,22 @@ Nothing wakes an agent when findings arrive. The next session on the branch read
 | Replaced by a newer push | A newer head is being reviewed instead |
 | Stopped, Failed | Cancelled, or the run could not finish |
 
+## Request one review through the API
+
+Workspace owners can `POST /api/managed/workspaces/<workspace>/agents/<agent>/run`
+on the website origin, using their signed-in session. Send `{}` for the usual
+workspace-wide **Run now**, or select one current change head:
+
+```json
+{ "repo": "<repository id>", "change": 12, "head": "<40-character commit id>" }
+```
+
+The agent must be enabled on that repository. An exact request skips automatic
+trigger filters, but still respects drafts, automation pauses and credit limits.
+A stale head is refused. Repeating the same request reuses its run; it does not
+purchase another attempt. The workspace response lists `exact_head_review` in
+`capabilities` when this selection is supported.
+
 ## Pause or turn off
 
 - **Disable** on an agent's card turns it off everywhere and cancels its open runs. To stop it on one repository, **Edit** it and untick the repository.

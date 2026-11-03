@@ -494,6 +494,8 @@ export function readyForReview(change: { status?: unknown; title?: unknown }): b
 /** `GET /api/managed/workspaces/:ws`: the Agents overview. */
 export interface WorkspaceState {
   workspace: string;
+  /** Additive API features; absent on a deployment predating exact-head requests. */
+  capabilities?: 'exact_head_review'[];
   agents: AgentState[];
   credit: ManagedCredit;
   billing: BillingMode;
