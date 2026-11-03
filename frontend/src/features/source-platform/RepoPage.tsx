@@ -2,7 +2,7 @@
 // trail names it). A public
 // repository opens for anyone; a viewer who reads only because it is public (or is signed
 // out) gets the read views, with no write or admin controls.
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { RepoSettings } from '../repo-settings/RepoSettings';
 import { type Navigate, showAddress } from '../shell/useRoute';
 import { ChangeView } from './ChangeView';
@@ -74,13 +74,10 @@ export function RepoPage({
     if (preloadsMarkdown) preloadOverviewMarkdown();
   }, [preloadsMarkdown]);
   const repo = route.repo;
-  // Named navigation already has a full response; picker mounts keep the fast header path.
-  const bootstrap = useRef(initialStatus?.overview !== undefined).current;
+  // Every Overview asks for its current bundle; an old/OFF server returns a plain summary.
   const refName = route.view === 'overview' ? (route.ref ?? chosenBranch(repo)) : undefined;
   const status = useSource<OverviewStatus>(
-    !bootstrap || refName === undefined
-      ? `/repos/${repo}?summary=true`
-      : overviewStatusPath(repo, refName),
+    refName === undefined ? `/repos/${repo}?summary=true` : overviewStatusPath(repo, refName),
     undefined,
     initialStatus,
   );
@@ -92,8 +89,14 @@ export function RepoPage({
     if (handle) showAddress(route);
   }, [handle, route]);
   const gone = useRepoGone(repo);
-  const missing = gone || repoMissing(status.code);
+  const current = status.current !== false;
+  const error = current ? status.error : undefined;
+  const missing = gone || (current && repoMissing(status.code));
   const data = status.data;
+  const ready = current && !status.loading;
+  const selected =
+    ready && data?.overview && data.overview.ref === refName ? data.overview : undefined;
+  const mismatch = ready && !!data?.overview && data.overview.ref !== refName;
   const access = repoAccess(data?.viewer, authenticated);
   const owner = access.settings;
   const progress = useImportProgress(repo, data?.refs, status.reload);
@@ -121,24 +124,25 @@ export function RepoPage({
         <div className="repo-page">
           {/* The top bar's trail is what a sighted reader goes by; a screen reader gets the same. */}
           <h1 className="sr-only">{name ?? data?.name ?? repoNameOf(repo)?.name ?? repo}</h1>
-          {!data && !status.error && <Loading what="repository" />}
+          {!data && !error && <Loading what="repository" />}
           {data && <RepoHoldBanner repo={repo} />}
-          {status.error && (
-            <Failure error={status.error} what="this repository" onRetry={status.reload} />
-          )}
+          {error && <Failure error={error} what="this repository" onRetry={status.reload} />}
           {/* Settings stay open: deleting the repository is how a failed import is tried again. */}
-          {!status.error && progress.phase !== 'none' && route.view !== 'repo-settings' && (
+          {!error && progress.phase !== 'none' && route.view !== 'repo-settings' && (
             <ImportStatus repo={repo} progress={progress} owner={owner} navigate={navigate} />
           )}
-          {!status.error && (progress.phase === 'none' || route.view === 'repo-settings') && (
+          {!error && (progress.phase === 'none' || route.view === 'repo-settings') && (
             <div className="repo-view">
+              {route.view === 'overview' && mismatch && (
+                <Failure error="Couldn't load the selected branch." onRetry={status.reload} />
+              )}
               {route.view === 'overview' && data && (
                 <RepoOverview
                   repo={repo}
                   refName={route.ref ?? chosenBranch(repo)}
                   status={data}
-                  bootstrap={data.overview?.ref === refName ? data.overview : undefined}
-                  waiting={!!data.overview && data.overview.ref !== refName}
+                  bootstrap={selected}
+                  waiting={!ready || mismatch}
                   onRetry={status.reload}
                   facts={
                     <RepoFacts
