@@ -1,10 +1,53 @@
 # Handoff
 
+Updated 2026-11-03. This section supersedes the historical handoff below.
+
+## Current work
+
+Dev deployment `115e40db` completed, including its deployment smoke. Production
+still serves `de317bbda605`; source merges and resource preparation are not a
+production promotion. The latest production workflow did not complete its watch.
+
+| Task | Current evidence and next step |
+|---|---|
+| Repository loading | Lightweight metadata, independent activity/profile loading, fast signed-in HTML and fingerprinted asset caching are deployed on dev. Warm content still needs improvement. Request isolation exposed a cold concurrent-read regression; repair object-local duplicate-read sharing and repeat the performance measurements before promotion. |
+| SSH | The production clone/push/revocation smoke passed. Lifecycle failures remain under investigation; they are not evidence that the same percentage of Git operations failed. Alert wording is repaired on dev. |
+| Flight Path demos | Retained Click and Commander history is preserved. Nine coding phases remain. The safe harness and exact-head review API are merged and deployed on dev; live completion has not run. |
+| Release | A fresh CLI walk and full kit at the final dev tip remain required. The older 34/35 kit result cannot accept current source. Then push dev, record live-tests, open the ship PR, pass its checks, merge, watch production and run the Mac smoke. |
+| Global locality | Frontend/API are unpinned on dev. Automatic creation and nearby copies have live US/Europe evidence. Production Europe resources are prepared, without moving traffic. Promote the same validated configuration through the ship pipeline. |
+| Analytics | Site/platform traffic analytics is enabled in dev and prod. Per-repository usage analytics remains off. Contribution drill-down is implemented on dev; it is separate from usage analytics. |
+| Organization members | Handle and exact-email lookup, add/remove behavior and access boundaries have dev evidence. The tidied organization view is on dev. |
+
+The current global rule follows the requesting human or agent's location, not an
+account region picker. New unrestricted repository objects use nearby placement;
+an existing object's home does not move merely because Workers are unpinned.
+US/Europe copy validation does not prove EU-only residency or GDPR compliance.
+A real Asian-client placement check is explicitly deferred by the owner.
+
+The broad automated-QA expansion is paused. Continue feature acceptance and the
+required release checks. Preserve activity/contributors above the Overview README;
+optional activity must not block the repository header, files or README text.
+
+For retained demos, reserve maintained review maxima before each new head, run
+stock coding agents only in the Docker sandbox, and request reviews at the exact
+captured head after coding exits. Preserve the original $2.90 managed-review cap.
+Do not start paid coding while any source worktree or remote is changing. Restore
+temporary repository policies, revoke temporary tokens and verify host/remote
+state afterwards. An owner-requested review is not automatic-trigger evidence.
+
+Private run receipts and the changing work ledger are under
+`.local/implementation-20261103/`; do not publish their account or monitor data.
+
+## Historical handoff
+
+The following records the earlier state and superseded plan. It is retained for
+context, not as the current task list or deployment evidence.
+
 Written 2026-11-01, corrected 2026-11-02, at dev `a86ce1f0`, deployed to dev.
 
 Rules for this work are in `AGENTS.md`. Plans are linked under each task.
 
-## Bad news first
+## Earlier gaps
 
 1. **Regions are not on.** Every repository still lives in the US, so the site's "global" claim is false.
 2. **Your region rule isn't built.** Nobody gets a region at login, and nobody can change one.
