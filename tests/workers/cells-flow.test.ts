@@ -147,7 +147,7 @@ describe('a person who signs up in Europe', () => {
   });
 });
 
-it.each([['EU', undefined], ['NA', 'weur']])('keeps selected authority placement consistent for visitor %s and selected region %s', async (continent, region) => {
+it.each([['EU', undefined], ['NA', 'weur'], ['AS', 'weur'], ['OC', 'weur']])('keeps selected authority placement consistent for visitor %s and selected region %s', async (continent, region) => {
   const auth = await signupIn(enam, 'travelingcreator', 'NA');
   // In-process combiners need the placement method; physical location is a live proof.
   const placed = { idFromName: fakeCombiners.idFromName, get: (name: string) => ({ ...fakeCombiners.get(name), where: async () => 'TST' }) } as unknown as DurableObjectNamespace;
