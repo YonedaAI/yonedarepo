@@ -67,6 +67,12 @@ API selected North America. Three samples per regional destination observed:
 | South America | GRU | IAD |
 | Africa | CPT | IAD |
 
+Provider-owned invocation analytics independently corroborated all six execution
+colos for 18:23–18:27 UTC. Every returned script version matched this deployment;
+returned runtime error counts were zero. These are adaptive aggregates, distinct
+from original client geography and the outgoing `/where` trace. They establish
+observed execution, not six client origins or worldwide storage replication.
+
 The independent EU repository continued forwarding to its EU handler. Both
 repositories retained their refs, version, history chain and object store.
 Versions returned 50 rows per page, covering 503–454, 453–404 and 403–354.
@@ -100,6 +106,9 @@ session discovery. Starting that request earlier could overlap some Agents
 waiting; it would not by itself start Overview's independent resolver sooner.
 No speculative startup refactor was deployed in this routing change.
 Functional routing success is not worldwide performance acceptance.
+Use the [controlled baseline plan](regional-performance-baseline-plan.md) for
+the next placement decision; the old compute-only comparison cannot answer
+whether a complete nearby-data stack is faster.
 
 ## Concurrent writers
 

@@ -1,5 +1,12 @@
 # Dev performance figures
 
+Before drawing a placement conclusion, use the
+[controlled baseline plan](../regional-performance-baseline-plan.md). The earlier
+comparison below moved API execution while repository data stayed in US East;
+it did not compare complete regional stacks with both compute and data nearby.
+Historical and later connections also differ. The figures are dated observations,
+not a controlled worldwide performance result.
+
 The newer [global routing snapshot](2026-11-03-global/global-routing-validation.png)
 and [validation report](../global-routing-validation-20261103.md) record dev
 `c8d6d9ae` separately. Six API execution destinations and three 1,000-writer
