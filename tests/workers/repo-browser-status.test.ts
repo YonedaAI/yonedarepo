@@ -25,3 +25,18 @@ it('loads browser metadata without querying storage shards and keeps full diagno
   expect(full.status).toBe(200);
   expect(full.body.objects).toBeDefined();
 });
+
+it('keeps public access and deletion behavior identical to full status', async () => {
+  const owner = { cookie: await signup('browser-public') };
+  const made = await api('/repos', owner, { body: { name: 'public-browser', visibility: 'public', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', 'a\n')], author } });
+  const path = `/repos/${made.body.id}`;
+  const shown = await api(`${path}?summary=true`, {});
+  expect(shown.status).toBe(200);
+  expect(shown.body.viewer.public).toBe(true);
+  expect(shown.body).not.toHaveProperty('objects');
+  expect((await api(`${path}?confirm=public-browser`, owner, { method: 'DELETE' })).status).toBe(200);
+  const full = await api(path, owner);
+  const summary = await api(`${path}?summary=true`, owner);
+  expect(summary.status).toBe(full.status);
+  expect(summary.body.error.code).toBe(full.body.error.code);
+});

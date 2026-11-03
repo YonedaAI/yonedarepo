@@ -91,7 +91,18 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   }
   const value = await routed(req, env, url, auth);
   const repo = /^\/api\/v1\/repos\/(r[0-9a-f]{20})(?:\/|$)/.exec(url.pathname)?.[1];
-  return repo ? forViewer(env, value, () => caller(env, repo, auth)({ op: 'repo_status' })) : value;
+  const browserStatus =
+    repo &&
+    req.method === 'GET' &&
+    url.pathname === `/api/v1/repos/${repo}` &&
+    url.searchParams.get('summary') === 'true';
+  return repo
+    ? forViewer(env, value, () =>
+        browserStatus
+          ? Promise.resolve(value) // This answer already contains the freshly checked viewer.
+          : caller(env, repo, auth)({ op: 'repo_status' }),
+      )
+    : value;
 }
 
 async function routed(req: Request, env: Env, url: URL, auth: Credentials): Promise<Json> {
