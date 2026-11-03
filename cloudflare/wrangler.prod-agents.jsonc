@@ -92,10 +92,6 @@
   "observability": {
     "enabled": true
   },
-  "placement": {
-    "mode": "targeted",
-    "region": "aws:us-east-1"
-  },
   "preview_urls": false,
   "r2_buckets": [
     {
@@ -135,6 +131,10 @@
     {
       "binding": "MANAGED",
       "service": "yonedarepo-prod-agents-managed"
+    },
+    {
+      "binding": "CELL_WEUR",
+      "service": "yonedarepo-prod-platform-weur"
     }
   ],
   "tail_consumers": [
@@ -145,9 +145,11 @@
   "vars": {
     "ADMIN_ACCOUNTS": "magnetonio",
     "AUDIT_LOG": "off",
+    "AUTOMATIC_LOCALITY": "on",
+    "CELLS": "on",
     "CLIENT_ERRORS": "off",
     "PUBLIC_APP_ORIGIN": "https://yonedarepo.com",
-    "REGION_SIGNALS": "off",
+    "REGION_SIGNALS": "on",
     "REQUEST_IDS": "off",
     "SEO_INDEXING": "on",
     "TRAFFIC_EVENTS": "on",

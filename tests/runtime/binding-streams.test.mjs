@@ -2,6 +2,7 @@
 // Use Wrangler's pinned workerd/Miniflare and bundler so this follows our deployed toolchain.
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
@@ -11,11 +12,17 @@ const { Miniflare, Log, LogLevel, convertV4MiniflareOptions } = require('minifla
 const { build } = require('esbuild');
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
-test('slow uploads through a binding finish without post-response runtime exceptions', { timeout: 15_000 }, async () => {
+for (const [route, contents] of [
+  ['forward helper', `import { forwardRequest } from './cloudflare/worker/forward-request';
+    export default { fetch(req, env) { return forwardRequest(env.NEXT, req); } };`],
+  ['regional edge', `import { edgeFetch } from './cloudflare/worker/cell-edge';
+    export default { fetch(req, env) { return edgeFetch(req, {CELLS:'on', PLATFORM:env.NEXT}); } };`],
+  ['wrong first region', `import { forwardTo } from './cloudflare/worker/cell-route';
+    export default { fetch(req, env) { return forwardTo({CELL_WEUR:env.NEXT}, 'weur', req); } };`],
+]) test(`slow uploads through ${route} finish without post-response runtime exceptions`, { timeout: 15_000 }, async () => {
   const compiled = await build({
     stdin: {
-      contents: `import { forwardRequest } from './cloudflare/worker/forward-request';
-        export default { fetch(req, env) { return forwardRequest(env.NEXT, req); } };`,
+      contents,
       resolveDir: root,
       sourcefile: 'binding-test.ts',
       loader: 'ts',
@@ -24,6 +31,8 @@ test('slow uploads through a binding finish without post-response runtime except
     write: false,
     format: 'esm',
     platform: 'browser',
+    external: ['node:*', 'cloudflare:*'],
+    plugins: [{ name: 'runtime-wasm', setup(b) { b.onResolve({ filter: /\.wasm$/ }, () => ({ path: './index_bg.wasm', external: true })); } }],
   });
   const traces = [];
   let received;
@@ -31,8 +40,11 @@ test('slow uploads through a binding finish without post-response runtime except
     log: new Log(LogLevel.WARN),
     workers: [
       {
-        name: 'front', modules: true, compatibilityDate: '2026-10-07',
-        script: compiled.outputFiles[0].text,
+        name: 'front', modules: [
+          { type: 'ESModule', path: `${root}/front.mjs`, contents: compiled.outputFiles[0].text },
+          { type: 'CompiledWasm', path: `${root}/index_bg.wasm`, contents: readFileSync(`${root}/backend/crates/yoneda-worker/build/index_bg.wasm`) },
+        ], compatibilityDate: '2026-10-07',
+        compatibilityFlags: ['nodejs_compat'],
         serviceBindings: { NEXT: 'back' }, tails: ['tail'],
       },
       {

@@ -7,6 +7,8 @@ import test from 'node:test';
 const worker = 'cloudflare/worker';
 const neutral = new Set([
   './auth',
+  // Authenticated default-HTTP transport to the placed backend's existing auth limiter.
+  './auth-limit',
   './accounts',
   // Email sign-up/sign-in identifier resolution; account/identity infrastructure, no agent policy.
   './email-accounts',

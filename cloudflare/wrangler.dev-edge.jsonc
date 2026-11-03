@@ -37,6 +37,10 @@
     {
       "binding": "PLATFORM",
       "service": "yonedarepo-dev-platform"
+    },
+    {
+      "binding": "CELL_WEUR",
+      "service": "yonedarepo-dev-platform-weur"
     }
   ],
   "tail_consumers": [
@@ -45,6 +49,7 @@
     }
   ],
   "vars": {
+    "AUTOMATIC_LOCALITY": "on",
     "CELLS": "on"
   },
   "workers_dev": true

@@ -54,6 +54,26 @@ pub(crate) async fn snapshot(spec: &Spec, token: &str) -> Result<Live> {
     Ok(live)
 }
 
+/// Creates one declared missing resource; Workers and hosts are never touched here.
+pub(crate) fn create(spec: &Spec, item: &Create, dry_run: bool, token: Option<&str>) -> Result<()> {
+    let (mut args, name): (Vec<&str>, &String) = match item {
+        Create::D1(name) => (vec!["d1", "create", name], name),
+        Create::R2(name) => (vec!["r2", "bucket", "create", name], name),
+        Create::Queue(name) => (vec!["queues", "create", name], name),
+    };
+    // Fixed for life: a cell's resources are made in its jurisdiction, or not at all.
+    let place = spec.jurisdiction_of(name);
+    if let Some(place) = &place {
+        args.extend(["--jurisdiction", place]);
+    }
+    if dry_run {
+        println!("Dry run: would run wrangler {}", args.join(" "));
+    } else {
+        wrangler::run_with_token(&spec.account_id, &args, token)?;
+    }
+    Ok(())
+}
+
 pub(crate) async fn up(args: &[String]) -> Result<()> {
     let env = Env::from_args(args)?;
     let dry_run = args.iter().any(|a| a == "--dry-run");
@@ -80,21 +100,7 @@ pub(crate) async fn up(args: &[String]) -> Result<()> {
     let workers = inventory::deployables(&spec, &plan::effective_lock(&spec, &recorded, &live)?)?;
     let todo = creations(&plan::diff(&spec, &recorded, &workers, &live));
     for item in &todo {
-        let (mut args, name): (Vec<&str>, &String) = match item {
-            Create::D1(name) => (vec!["d1", "create", name], name),
-            Create::R2(name) => (vec!["r2", "bucket", "create", name], name),
-            Create::Queue(name) => (vec!["queues", "create", name], name),
-        };
-        // Fixed for life: a cell's resources are made in its jurisdiction, or not at all.
-        let place = spec.jurisdiction_of(name);
-        if let Some(place) = &place {
-            args.extend(["--jurisdiction", place]);
-        }
-        if dry_run {
-            println!("Dry run: would run wrangler {}", args.join(" "));
-        } else {
-            wrangler::run(&spec.account_id, &args)?;
-        }
+        create(&spec, item, dry_run, None)?;
     }
     let live = if todo.is_empty() || dry_run {
         live

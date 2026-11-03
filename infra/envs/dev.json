@@ -20,7 +20,7 @@
       "jurisdiction": "eu",
       "ratelimit": "2003",
       "public_ratelimit": "2004",
-      "bound": false
+      "bound": true
     }
   ],
   "workers": [
@@ -295,7 +295,8 @@
           "SPAN_SAMPLE": "off",
           "SERVICE_LEVELS": "on",
           "REQUEST_IDS": "off",
-          "AUTOMATIC_LOCALITY": "off"
+          "AUTOMATIC_LOCALITY": "on",
+          "CELLS": "on"
         },
         "secrets_store_secrets": [
           {
@@ -610,7 +611,8 @@
           }
         ],
         "vars": {
-          "CELLS": "on"
+          "CELLS": "on",
+          "AUTOMATIC_LOCALITY": "on"
         },
         "services": [
           {
@@ -886,10 +888,6 @@
         },
         "workers_dev": true,
         "preview_urls": false,
-        "placement": {
-          "mode": "targeted",
-          "region": "aws:us-east-1"
-        },
         "routes": [
           {
             "pattern": "dev.yonedarepo.com",
@@ -926,7 +924,9 @@
           "WEB_ANALYTICS_TOKEN": "70b90cc7e849429fa25cc64897ebfd2b",
           "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
           "REQUEST_IDS": "off",
-          "CLIENT_ERRORS": "off"
+          "CLIENT_ERRORS": "off",
+          "CELLS": "on",
+          "AUTOMATIC_LOCALITY": "on"
         },
         "services": [
           {

@@ -113,7 +113,7 @@ pub(crate) fn preflight(env: &Env, spec: &Spec, facts: &Facts, options: &Options
 pub(crate) fn refuse_pending(env: &Env, lock: &Lock) -> Result<()> {
     match lock.d1.iter().find(|(_, id)| id.as_str() == PENDING_D1) {
         Some((name, _)) => Err(format!(
-            "D1 {name} is not created yet (lock says {PENDING_D1}): run `cargo xtask infra up --env {}` first.",
+            "D1 {name} is not created yet (lock says {PENDING_D1}): run `cargo xtask infra prepare --env {} --confirm`, then review and commit its identities first.",
             env.name()
         )
         .into()),

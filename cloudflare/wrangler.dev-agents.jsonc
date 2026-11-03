@@ -101,10 +101,6 @@
       "head_sampling_rate": 0.01
     }
   },
-  "placement": {
-    "mode": "targeted",
-    "region": "aws:us-east-1"
-  },
   "preview_urls": false,
   "r2_buckets": [
     {
@@ -140,6 +136,10 @@
     {
       "binding": "MANAGED",
       "service": "yonedarepo-dev-agents-managed"
+    },
+    {
+      "binding": "CELL_WEUR",
+      "service": "yonedarepo-dev-platform-weur"
     }
   ],
   "tail_consumers": [
@@ -150,6 +150,8 @@
   "vars": {
     "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
     "AUDIT_LOG": "off",
+    "AUTOMATIC_LOCALITY": "on",
+    "CELLS": "on",
     "CLIENT_ERRORS": "off",
     "PUBLIC_APP_ORIGIN": "https://dev.yonedarepo.com",
     "REGION_SIGNALS": "on",
