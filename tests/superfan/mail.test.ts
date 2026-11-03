@@ -425,3 +425,16 @@ describe('SSH gateway lifecycle alerts', () => {
     expect((finding.signals as { signals: { value: number }[] }).signals[0].value).toBe(0.0213);
   });
 });
+
+describe('latency alert actions', () => {
+  it('retains production latency evidence and asks for measured routes without guessing a dev cause', () => {
+    const finding = row('front_worker:p95_wall_ms', { p95_wall_ms: 2189 }, {
+      signals: { signals: [{ name: 'p95_wall_ms', value: 2189, baseline: 117, anomalous: true }] },
+    });
+    const mail = renderNotice({ ...DEV, env: 'prod' }, [finding]);
+    expect(mail.subject).toBe('[prod] Website calls slowed to 2.2 s');
+    expect(mail.text).toContain('They usually take about 117 ms.');
+    expect(mail.text).toContain("First: Find the slowest requests and routes in this Worker's logs.");
+    expect(mail.text).not.toContain('A burst on dev explains most.');
+  });
+});

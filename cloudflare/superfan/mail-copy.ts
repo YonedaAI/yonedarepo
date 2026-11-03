@@ -225,7 +225,7 @@ export const COPY: Copy[] = [
     title: (f) => `${capital(f.word)} calls slowed to ${duration(count(f, 'p95_wall_ms'))}`,
     means: (f) =>
       f.baseline ? `They usually take about ${duration(f.baseline)}.` : 'Slower than usual.',
-    first: 'Find the slowest operations in the logs. A burst on dev explains most.',
+    first: "Find the slowest requests and routes in this Worker's logs.",
   },
   {
     signals: ['deadman_stale'],
