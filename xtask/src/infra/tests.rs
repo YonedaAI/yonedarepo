@@ -333,10 +333,13 @@ fn inventory_reads_resources_and_health_origins() {
     );
     assert_eq!(
         inventory::d1(&platform.config),
-        [(
-            "yonedarepo-dev-platform-index".to_string(),
-            Some("cloudflare/migrations".to_string())
-        )]
+        [
+            (
+                "yonedarepo-dev-platform-index".to_string(),
+                Some("cloudflare/migrations".to_string())
+            ),
+            ("yonedarepo-dev-platform-index-weur".to_string(), None)
+        ]
     );
     assert!(
         inventory::containers(&platform.config)
@@ -388,10 +391,24 @@ fn the_managed_worker_has_its_own_d1_and_not_the_platforms() {
         );
         assert_eq!(
             databases("platform"),
-            [(
-                format!("yonedarepo-{env}-platform-index"),
-                Some("cloudflare/migrations".to_string())
-            )]
+            [
+                (
+                    format!("yonedarepo-{env}-platform-index"),
+                    Some("cloudflare/migrations".to_string())
+                ),
+                (format!("yonedarepo-{env}-platform-index-weur"), None)
+            ]
+        );
+        assert_eq!(
+            databases("platform-weur"),
+            [
+                (
+                    format!("yonedarepo-{env}-platform-index-weur"),
+                    Some("cloudflare/migrations".to_string())
+                ),
+                (format!("yonedarepo-{env}-platform-index"), None)
+            ],
+            "only a database's owning Worker applies its migrations"
         );
     }
 }
@@ -897,9 +914,25 @@ fn imports_have_their_own_class_with_the_disk_and_checks_stay_on_their_price() {
             class("CheckContainer")["image"]
         );
         let migrations = config["migrations"].as_array().unwrap();
+        let import = migrations.iter().position(|m| m["tag"] == "v8").unwrap();
         assert_eq!(
-            migrations.last().unwrap()["new_sqlite_classes"],
-            json!(["ImportContainer"])
+            migrations[import],
+            json!({"tag": "v8", "new_sqlite_classes": ["ImportContainer"]})
+        );
+        assert_eq!(
+            migrations[import + 1],
+            json!({"tag": "v9", "new_sqlite_classes": ["RepositoryReadCopy"]}),
+            "read copies append to the existing class migration history"
+        );
+        assert_eq!(
+            migrations
+                .iter()
+                .filter(|migration| migration["new_sqlite_classes"]
+                    .as_array()
+                    .is_some_and(|classes| classes.iter().any(|c| c == "ImportContainer")))
+                .count(),
+            1,
+            "the import class must be introduced exactly once"
         );
     }
 }
