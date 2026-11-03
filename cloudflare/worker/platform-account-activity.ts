@@ -150,7 +150,7 @@ export async function accountActivity(
   };
   // Unread repositories first, then the most recently touched.
   const order = (id: string) =>
-    byRepo.get(id)?.summary ? (byRepo.get(id)?.touched_at ?? 0) : Infinity;
+    summaries.get(id)?.snapshot ? (byRepo.get(id)?.touched_at ?? 0) : Infinity;
   const read = ids
     .filter(due)
     .sort((a, b) => order(b) - order(a))
@@ -191,6 +191,7 @@ export function summarize(
       pending++;
       continue;
     }
+    if (!s.snapshot) pending++;
     for (const [hour, n] of s.commits)
       if (hour >= firstHour) hours.set(hour, (hours.get(hour) ?? 0) + n);
     if (s.last_session_at !== null && s.last_session_at >= since) capturing++;

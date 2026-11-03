@@ -57,7 +57,7 @@ export async function accountContributions(
     .map((repo) => ({ repo, summary: summaries.get(repo.id) as RepoActivity }))
     .map((row) => ({
       ...row,
-      count: row.summary.commits
+      count: (row.summary?.commits ?? [])
         .filter(([h]) => hours.includes(h))
         .reduce((n, [, count]) => n + count, 0),
     }))
