@@ -230,7 +230,7 @@
     },
     {
       "binding": "CELL_ENAM",
-      "service": "yonedarepo-dev-platform"
+      "service": "yonedarepo-dev-api-enam"
     }
   ],
   "tail_consumers": [
@@ -249,6 +249,7 @@
     "ADMIN_BILLING": "off",
     "ADMIN_NOTIFY_EMAIL": "",
     "AGENT_SIGNUP": "on",
+    "API_REGION": "weur",
     "AUDIT_LOG": "off",
     "AUTOMATIC_LOCALITY": "on",
     "BLOB_WRITE_THROUGH": "off",
@@ -275,6 +276,7 @@
     "PACK_CACHE": "on",
     "PUSH_BUNDLES": "on",
     "RECENT_VERSIONS": "on",
+    "REGIONAL_API": "on",
     "REGION_HINT_TEST": "on",
     "REGION_SIGNALS": "on",
     "REPO_ERASE": "on",

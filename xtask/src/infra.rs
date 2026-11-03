@@ -1,6 +1,7 @@
 //! Infrastructure as code: `cargo xtask infra gen|plan|up|down|smoke --env <env>`.
 //! Specs live in `infra/envs/`; generated wrangler configs in `cloudflare/`.
 pub(crate) mod api_origin;
+pub(crate) mod api_regions;
 pub(crate) mod apply;
 pub(crate) mod cells;
 pub(crate) mod consumers;
@@ -19,6 +20,7 @@ pub(crate) mod secrets;
 pub(crate) mod smoke;
 pub(crate) mod spec;
 mod spec_checks;
+mod spec_ephemeral;
 pub(crate) mod teardown;
 pub(crate) mod template;
 pub(crate) mod wrangler;
@@ -46,6 +48,9 @@ pub(crate) async fn execute(args: &[String]) -> Result<()> {
 #[cfg(test)]
 #[path = "infra/api_origin_tests.rs"]
 mod api_origin_tests;
+#[cfg(test)]
+#[path = "infra/api_regions_tests.rs"]
+mod api_regions_tests;
 #[cfg(test)]
 #[path = "infra/cutover_tests.rs"]
 mod cutover_tests;

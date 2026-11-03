@@ -139,6 +139,34 @@
     {
       "binding": "CELL_WEUR",
       "service": "yonedarepo-prod-platform-weur"
+    },
+    {
+      "binding": "CELL_ENAM",
+      "service": "yonedarepo-prod-api-enam"
+    },
+    {
+      "binding": "API_ENAM",
+      "service": "yonedarepo-prod-api-enam"
+    },
+    {
+      "binding": "API_WEUR",
+      "service": "yonedarepo-prod-api-weur"
+    },
+    {
+      "binding": "API_APAC",
+      "service": "yonedarepo-prod-api-apac"
+    },
+    {
+      "binding": "API_OC",
+      "service": "yonedarepo-prod-api-oc"
+    },
+    {
+      "binding": "API_SAM",
+      "service": "yonedarepo-prod-api-sam"
+    },
+    {
+      "binding": "API_AFR",
+      "service": "yonedarepo-prod-api-afr"
     }
   ],
   "tail_consumers": [
@@ -156,6 +184,7 @@
     "GLOBAL_AUTH_LIMITS": "on",
     "OVERVIEW_MARKDOWN_PRELOAD": "on",
     "PUBLIC_APP_ORIGIN": "https://yonedarepo.com",
+    "REGIONAL_API": "on",
     "REGION_SIGNALS": "on",
     "REQUEST_IDS": "off",
     "SEO_INDEXING": "on",

@@ -3,6 +3,7 @@
 //! A spec holds one wrangler config fragment per Worker, in cutover order. Strings may use
 //! `{prefix}`, `{account_id}`, `{subdomain}`, `{zone}` and the spec's own `vars`; D1
 //! `database_id`s come from the lock, so resource identities are never hand-edited.
+use super::api_regions::ApiRegion;
 use super::cells::CellSpec;
 use super::retired::Retired;
 use super::spec_checks::derive_checks;
@@ -18,8 +19,6 @@ pub(crate) use super::env::Env;
 pub(crate) const SPEC_DIR: &str = "infra/envs";
 /// Generated configs live next to the hand-written ones, so relative paths stay identical.
 pub(crate) const CONFIG_DIR: &str = "cloudflare";
-const EPHEMERAL_RATE_LIMIT: &str = "2900";
-const EPHEMERAL_PUBLIC_RATE_LIMIT: &str = "2901";
 /// Lock entry of a D1 database the spec declares but `infra up` has not created yet. Configs
 /// generate with it; a deploy refuses it (deploy_env::run).
 pub(crate) const PENDING_D1: &str = "pending";
@@ -46,6 +45,9 @@ pub(crate) struct Spec {
     /// Regions with a whole copy of the platform, each a Worker made from the platform's.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cells: Vec<CellSpec>,
+    /// API execution regions; these aliases own no repository storage or jobs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub api_regions: Vec<ApiRegion>,
     /// The env's previous names: `infra plan` orphans, deleted by `infra prune`.
     #[serde(default, skip_serializing_if = "Retired::is_empty")]
     pub retired: Retired,
@@ -134,96 +136,8 @@ impl Spec {
             return Err("A spec needs at least one Worker".into());
         }
         super::cells::expand(&mut spec)?;
+        super::api_regions::expand(&mut spec)?;
         Ok(spec)
-    }
-    /// The dev stack under its own prefix: workers.dev only, its own resources and secrets,
-    /// one container instance per class.
-    pub(crate) fn ephemeral(mut self, env: &Env) -> Self {
-        let prefix = format!("yonedarepo-{}", env.name().replace("ephemeral", "eph"));
-        self.env = env.name();
-        self.git_ref = None;
-        self.secrets_file = env.state_dir().join("secrets.env").display().to_string();
-        self.vars
-            .insert("ratelimit".into(), EPHEMERAL_RATE_LIMIT.into());
-        self.vars.insert(
-            "public_ratelimit".into(),
-            EPHEMERAL_PUBLIC_RATE_LIMIT.into(),
-        );
-        self.vars.insert(
-            "origin".into(),
-            format!(
-                "https://{prefix}-agents.{}.workers.dev",
-                self.workers_subdomain
-            ),
-        );
-        self.prefix = prefix;
-        self.workers.retain(|w| w.ephemeral);
-        // A copy has one cell: what names another goes with it.
-        self.cells.clear();
-        for worker in &mut self.workers {
-            if let Some(databases) = worker
-                .config
-                .get_mut("d1_databases")
-                .and_then(Value::as_array_mut)
-            {
-                databases.retain(|d| {
-                    !d["binding"]
-                        .as_str()
-                        .is_some_and(|b| b.starts_with("INDEX_"))
-                });
-            }
-        }
-        // A service binding to a Worker the copy leaves out would fail its deploy; the binder
-        // treats a missing binding as the feature being off (the front's MANAGED).
-        let kept: Vec<Value> = self
-            .workers
-            .iter()
-            .map(|w| w.config["name"].clone())
-            .collect();
-        for worker in &mut self.workers {
-            if let Some(services) = worker
-                .config
-                .get_mut("services")
-                .and_then(Value::as_array_mut)
-            {
-                services.retain(|s| kept.contains(&s["service"]));
-            }
-        }
-        self.retired = Retired::default();
-        self.check_instances = self.check_instances.map(|_| 1);
-        for worker in &mut self.workers {
-            worker.file = format!("wrangler.{}-{}.jsonc", env.name(), worker.role);
-            // Its generated secrets file has no R2 S3 key pair: Git LFS answers 501 there. Git
-            // over SSH stays off: the host name, tunnel and host keys belong to one env.
-            worker
-                .secrets
-                .retain(|s| !s.starts_with("LFS_S3_") && !s.starts_with("SSH_"));
-            worker.notes = vec![format!(
-                "Ephemeral stack {}: removed by `cargo xtask infra down --env {} --confirm --purge`.",
-                env.name(),
-                env.name()
-            )];
-            if let Some(config) = worker.config.as_object_mut() {
-                config.remove("routes");
-                config.remove("tail_consumers");
-                config.insert("workers_dev".into(), json!(true));
-                if let Some(vars) = config.get_mut("vars").and_then(Value::as_object_mut) {
-                    vars.remove("SSH_HOST");
-                    // The sender is one env's verified domain (and email is off here).
-                    vars.remove("EMAIL_FROM");
-                    if vars.contains_key("SSH_FRONT_DOOR") {
-                        vars.insert("SSH_FRONT_DOOR".into(), json!("off"));
-                    }
-                }
-                if let Some(containers) = config.get_mut("containers").and_then(Value::as_array_mut)
-                {
-                    for container in containers {
-                        container["max_instances"] = json!(1);
-                    }
-                }
-            }
-        }
-        self
     }
     pub(crate) fn secrets_path(&self) -> PathBuf {
         match (

@@ -86,9 +86,9 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     );
     assert_eq!(platform["vars"]["WEB_ORIGIN"], "https://yonedarepo.com");
     assert_eq!(platform["ratelimits"][0]["namespace_id"], "1001");
-    assert_eq!(
-        platform["placement"],
-        json!({"mode": "targeted", "region": "aws:us-east-1"})
+    assert!(
+        platform.get("placement").is_none(),
+        "the public API entry stays global"
     );
     assert_eq!(platform["vars"]["TRAFFIC_EVENTS"], "on");
     assert_eq!(platform["vars"]["TRAFFIC_REPORT"], "on");
@@ -136,10 +136,11 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
         "STATIC_ASSET_CACHE",
         "FAST_APP_HEAD",
         "OVERVIEW_MARKDOWN_PRELOAD",
+        "REGIONAL_API",
     ] {
         assert_eq!(vars[switch], "on", "{switch}");
     }
-    assert_eq!(vars.as_object().map(|v| v.len()), Some(16));
+    assert_eq!(vars.as_object().map(|v| v.len()), Some(17));
     assert!(
         agents.get("placement").is_none(),
         "frontend runs at the edge"
@@ -355,6 +356,12 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
             "yonedarepo-dev-superfan",
             "yonedarepo-dev-platform",
             "yonedarepo-dev-platform-weur",
+            "yonedarepo-dev-api-enam",
+            "yonedarepo-dev-api-weur",
+            "yonedarepo-dev-api-apac",
+            "yonedarepo-dev-api-oc",
+            "yonedarepo-dev-api-sam",
+            "yonedarepo-dev-api-afr",
             "yonedarepo-dev-edge",
             "yonedarepo-dev-agents-managed",
             "yonedarepo-dev-agents",
@@ -377,6 +384,12 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
                 host("api.dev.yonedarepo.com", true),
                 host("https://api.dev.yonedarepo.com/*", false)
             ],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
             vec![],
             vec![host("edge.dev.yonedarepo.com", true)],
             vec![host("managed.dev.yonedarepo.com", true)],
@@ -808,10 +821,10 @@ fn managed_list_speed_switch_has_dev_prod_parity() {
 }
 
 #[test]
-fn api_placement_follows_data_while_front_stays_global() {
+fn api_alias_and_authority_placement_leave_public_entries_global() {
     for (_, workers) in [dev(), prod()] {
         for (name, region) in [
-            ("platform", "aws:us-east-1"),
+            ("api-enam", "aws:us-east-1"),
             ("platform-weur", "aws:eu-central-1"),
         ] {
             assert_eq!(
