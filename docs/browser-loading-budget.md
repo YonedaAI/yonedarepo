@@ -26,3 +26,7 @@ timing. Run the required 1,000-writer burst three times on dedicated retained de
 never use or delete the owner's retained repositories as load-test scratch data. Record any
 unmet load or latency target explicitly. Target useful repository content under one second
 on warm navigation; a loading state must render immediately and must not blank the page.
+
+Readable-name requests now reach the unpinned API without a frontend directory read.
+The API still resolves ownership and access and forwards to the correct repository
+authority. Known repository IDs continue routing directly.

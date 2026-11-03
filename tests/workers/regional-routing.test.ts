@@ -59,3 +59,14 @@ describe('actual visitor location through edge and internal service hops', () =>
     expect(result).toMatchObject({ continent: 'EU', colo: 'FRA', body: { name: 'forwarded' } });
   });
 });
+
+it('leaves readable name resolution to the API without a duplicate edge directory read', async () => {
+  let reads = 0;
+  const noDirectory = { idFromName() { reads++; throw new Error('edge must not resolve the directory'); } } as unknown as DurableObjectNamespace;
+  for (const path of ['/api/v1/resolve/owner/project', '/owner/project.git/info/refs?service=git-upload-pack']) {
+    const req = new Request(`https://yoneda${path}`, { cf: { continent: 'EU', colo: 'FRA' } });
+    const response = await toCell(req, { ...env, WORKSPACES: noDirectory });
+    expect(response.status).toBe(200);
+  }
+  expect(reads).toBe(0);
+});
