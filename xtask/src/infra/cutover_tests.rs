@@ -321,6 +321,7 @@ fn read_performance_switches_have_dev_prod_parity() {
         for name in ["platform", "platform-weur"] {
             for flag in [
                 "SHARED_READ_TREES",
+                "EDGE_FIRST_READS",
                 "JOINED_REPO_PATH",
                 "OVERVIEW_BOOTSTRAP",
             ] {

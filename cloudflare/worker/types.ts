@@ -84,6 +84,8 @@ export interface Env {
   AUTOMATIC_LOCALITY?: string;
   /** Off by default: authorized same-cell file walks reuse the existing tree holder. */
   SHARED_READ_TREES?: string;
+  /** Probe local immutable bytes before the regional read copy; defer bounded fills. */
+  EDGE_FIRST_READS?: string;
   /** Off by default: status owner/path decoration uses one local joined projection read. */
   JOINED_REPO_PATH?: string;
   /** Off by default: one fresh response supplies the full selected Overview. */
