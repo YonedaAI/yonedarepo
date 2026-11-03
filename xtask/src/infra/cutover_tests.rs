@@ -86,10 +86,10 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     );
     assert_eq!(platform["vars"]["WEB_ORIGIN"], "https://yonedarepo.com");
     assert_eq!(platform["ratelimits"][0]["namespace_id"], "1001");
-    assert_eq!(platform["placement"]["region"], "aws:us-east-1");
+    assert!(platform.get("placement").is_none(), "API runs at the edge");
     assert_eq!(platform["vars"]["TRAFFIC_EVENTS"], "on");
     assert_eq!(platform["vars"]["TRAFFIC_REPORT"], "on");
-    assert_eq!(platform["vars"]["REGION_SIGNALS"], "off");
+    assert_eq!(platform["vars"]["REGION_SIGNALS"], "on");
     assert_eq!(
         platform["analytics_engine_datasets"],
         json!([{"binding": "SITE_EVENTS", "dataset": "yonedarepo_prod_site_events"}])
@@ -121,12 +121,25 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     assert_eq!(vars["TRAFFIC_EVENTS"], "on");
     // Internal accounts leave the ping too, so it is set with the platform Worker's.
     assert_eq!(vars["TRAFFIC_REPORT"], "on");
-    // Sign-ups run here too; off until the owner clears the privacy text.
-    assert_eq!(vars["REGION_SIGNALS"], "off");
+    // Sign-ups and repository requests share the approved locality behavior.
+    assert_eq!(vars["REGION_SIGNALS"], "on");
     // Observability O1's two switches stay off until dev has run them.
     assert_eq!(vars["REQUEST_IDS"], "off");
     assert_eq!(vars["CLIENT_ERRORS"], "off");
-    assert_eq!(vars.as_object().map(|v| v.len()), Some(10));
+    for switch in [
+        "CELLS",
+        "AUTOMATIC_LOCALITY",
+        "GLOBAL_AUTH_LIMITS",
+        "STATIC_ASSET_CACHE",
+        "FAST_APP_HEAD",
+    ] {
+        assert_eq!(vars[switch], "on", "{switch}");
+    }
+    assert_eq!(vars.as_object().map(|v| v.len()), Some(15));
+    assert!(
+        agents.get("placement").is_none(),
+        "frontend runs at the edge"
+    );
     assert_eq!(
         agents["analytics_engine_datasets"],
         json!([{"binding": "SITE_EVENTS", "dataset": "yonedarepo_prod_site_events"}])
@@ -282,10 +295,24 @@ fn dev_and_prod_never_share_a_rate_limit_namespace() {
             .filter_map(|r| r["namespace_id"].as_str().map(str::to_owned))
             .collect()
     };
-    let (dev, prod) = (namespaces(&dev().1), namespaces(&prod().1));
-    assert_eq!(prod, BTreeSet::from(["1001".to_owned(), "1002".to_owned()]));
+    let (dev_namespaces, prod_namespaces) = (namespaces(&dev().1), namespaces(&prod().1));
+    let prod_ids = ["1001", "1002", "1003", "1004"].map(str::to_owned);
+    assert_eq!(prod_namespaces, BTreeSet::from(prod_ids));
     let dev_ids = ["2001", "2002", "2003", "2004"].map(str::to_owned);
-    assert_eq!(dev, BTreeSet::from(dev_ids));
+    assert_eq!(dev_namespaces, BTreeSet::from(dev_ids));
+    assert!(dev_namespaces.is_disjoint(&prod_namespaces));
+    for (_, workers) in [dev(), prod()] {
+        let ids = |name| {
+            role(&workers, name).config["ratelimits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|limit| limit["namespace_id"].as_str().unwrap().to_owned())
+                .collect::<BTreeSet<_>>()
+        };
+        assert!(ids("platform").is_disjoint(&ids("platform-weur")));
+        assert!(ids("agents").is_subset(&ids("platform")));
+    }
 }
 
 #[test]
@@ -297,8 +324,8 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
         spec.worker_names().unwrap(),
         [
             "yonedarepo-dev-superfan",
-            "yonedarepo-dev-platform-weur",
             "yonedarepo-dev-platform",
+            "yonedarepo-dev-platform-weur",
             "yonedarepo-dev-edge",
             "yonedarepo-dev-agents-managed",
             "yonedarepo-dev-agents",
@@ -317,11 +344,11 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
         hosts,
         [
             vec![],
-            vec![],
             vec![
                 host("api.dev.yonedarepo.com", true),
                 host("https://api.dev.yonedarepo.com/*", false)
             ],
+            vec![],
             vec![host("edge.dev.yonedarepo.com", true)],
             vec![host("managed.dev.yonedarepo.com", true)],
             vec![
@@ -668,27 +695,38 @@ fn hosts_held_by_old_workers_are_moved_and_own_hosts_are_left_alone() {
 
 #[test]
 fn pending_d1_entries_generate_but_count_as_not_created() {
-    // The lock as it is before the first `infra up` records the real D1 ids.
+    // A new regional database is pending while the existing identities stay recorded.
+    let database = "yonedarepo-prod-platform-index-weur";
     let mut pending: serde_json::Value = serde_json::from_str(PROD_LOCK).unwrap();
-    for id in pending["d1"].as_object_mut().unwrap().values_mut() {
-        *id = json!(PENDING_D1);
-    }
+    pending["d1"][database] = json!(PENDING_D1);
     let (spec, workers) = workers(PROD, &pending.to_string());
     let lock: Lock = serde_json::from_value(pending).unwrap();
-    let platform = role(&workers, "platform");
-    assert_eq!(
-        platform.config["d1_databases"][0]["database_id"],
-        PENDING_D1
-    );
+    for worker in [role(&workers, "platform"), role(&workers, "platform-weur")] {
+        let binding = worker.config["d1_databases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|binding| binding["database_name"] == database)
+            .unwrap();
+        assert_eq!(binding["database_id"], PENDING_D1);
+    }
     let mut live = Live::default();
-    live.d1
-        .insert("yonedarepo-prod-platform-index".into(), "real-id".into());
+    live.d1.insert(database.into(), "real-id".into());
     let effective = effective_lock(&spec, &lock, &live).unwrap();
-    assert_eq!(effective.d1["yonedarepo-prod-platform-index"], "real-id");
+    let mut expected = lock.d1.clone();
+    expected.insert(database.into(), "real-id".into());
+    assert_eq!(
+        effective.d1, expected,
+        "existing identities must stay unchanged"
+    );
     let error = crate::deploy_guard::refuse_pending(&super::spec::Env::Prod, &lock)
         .unwrap_err()
         .to_string();
-    assert!(error.contains("infra up --env prod"), "{error}");
+    assert!(error.contains(database), "{error}");
+    assert!(
+        error.contains("infra prepare --env prod --confirm"),
+        "{error}"
+    );
     crate::deploy_guard::refuse_pending(&super::spec::Env::Prod, &effective).unwrap();
 }
 
