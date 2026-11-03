@@ -12,6 +12,41 @@ usePlatformFixture();
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
 
+it('explains a chart snapshot without later commits, other accounts or forged cursors', async () => {
+  const cookie = await signup('contribution_owner');
+  const made = await api('/repos', { cookie }, { body: { name: 'contribution-fixture', files: [file('a.md', 'a')], author } });
+  const other = await api('/repos', { cookie }, { body: { name: 'contribution-second', files: [file('a.md', 'second')], author } });
+  const repo = made.body.id;
+  const activity = (await api('/activity', { cookie })).body;
+  const hours = activity.commits.map(([hour]: [number, number]) => hour);
+  const query = new URLSearchParams({ hours: hours.join(','), snapshots: JSON.stringify(activity.contributionSnapshots) });
+  const read = () => api(`/activity/contributions?${query}`, { cookie });
+  const first = await read();
+  expect(first.status, JSON.stringify(first.body)).toBe(200);
+  expect(first.body.total).toBe(2);
+  expect(first.body.items).toHaveLength(1);
+  const expected = new Map([[repo, made.body.commit], [other.body.id, other.body.commit]]);
+  expect(first.body.items[0].commit).toBe(expected.get(first.body.items[0].repo));
+  query.set('cursors', JSON.stringify(first.body.cursors));
+  const next = await read();
+  expect(next.status).toBe(200);
+  expect(next.body.items).toHaveLength(1);
+  expect(new Set([...first.body.items, ...next.body.items].map(item => item.repo)).size).toBe(2);
+  expect(Object.values(next.body.cursors)).toEqual([null]);
+  query.delete('cursors');
+  const extra = await api(`/repos/${repo}/commits`, { cookie }, { body: { ref: 'main', changes: [file('b.md', 'b')], message: 'Later', author } });
+  expect(extra.status).toBe(200);
+  expect((await api(`/repos/${repo}/refs/batch`, { cookie }, { body: { updates: [{ ref: 'later', commit: extra.body.commit, expected: null }] } })).status).toBe(200);
+  expect((await read()).body.items).toHaveLength(1);
+  const stranger = await signup('contribution_stranger');
+  expect((await api(`/activity/contributions?${query}`, { cookie: stranger })).status).toBe(409);
+  query.set('cursors', JSON.stringify({ enam: 'not-a-cursor' }));
+  expect((await read()).status).toBe(400);
+  query.delete('cursors');
+  await api('/activity', { cookie });
+  expect((await read()).status).toBe(409);
+});
+
 it('summarizes the account from bounded authority reads', async () => {
   const cookie = await signup('activity_owner');
   const make = async (name: string, visibility = 'private') =>
