@@ -15,6 +15,8 @@ const neutral = new Set([
   './email-accounts',
   './http',
   './types',
+  // Type-only request identities and queue envelopes, independent of bindings.
+  './transport-types',
   './check-container',
   './import-container',
   // waitUntil plumbing (AsyncLocalStorage), no agent-layer knowledge.
@@ -66,6 +68,8 @@ const neutral = new Set([
   // A digest of an account or token; imports nothing.
   './storage',
   '../../shared/site-traffic',
+  // Dependency-free raster signatures shared with browser previews; no platform policy.
+  '../../shared/raster-image',
   // What's measured for service targets, and its point; imports nothing.
   '../../shared/service-levels',
   // The Insights page's and admin reports' wire shapes; types only.
