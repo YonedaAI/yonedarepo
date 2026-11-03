@@ -37,9 +37,13 @@ impl Run<'_> {
         summary: &mut BTreeMap<usize, Vec<String>>,
     ) -> Result<()> {
         for step in plan {
+            crate::deploy_source::verify(self.head)?;
             let label = self.label(&step);
             let started = Instant::now();
-            let outcome = self.step(step, summary).await;
+            let outcome = self
+                .step(step, summary)
+                .await
+                .and_then(|()| crate::deploy_source::verify(self.head));
             self.timings.record(&label, started, outcome.is_ok());
             outcome?;
         }
@@ -182,9 +186,17 @@ impl Run<'_> {
                 summary.insert(worker, row(w, state, "-"));
             }
             Step::Bootstrap { worker, config } => {
-                self.rollout_started.get_or_insert_with(crate::deploy_ledger::now_ms);
-                crate::deploy_bootstrap::deploy(env,spec,&workers[worker],config,self.image.as_deref(),head)?;
-                summary.insert(worker,row(&workers[worker],"bootstrapped","-"));
+                self.rollout_started
+                    .get_or_insert_with(crate::deploy_ledger::now_ms);
+                crate::deploy_bootstrap::deploy(
+                    env,
+                    spec,
+                    &workers[worker],
+                    config,
+                    self.image.as_deref(),
+                    head,
+                )?;
+                summary.insert(worker, row(&workers[worker], "bootstrapped", "-"));
             }
             Step::Secrets { worker } => crate::deploy_secrets::ensure(spec, &workers[worker])?,
             Step::Health { worker } => {
@@ -196,7 +208,7 @@ impl Run<'_> {
                 guard::revision_gate(&w.name, head, live.as_deref())?;
             }
             Step::Smoke => {
-                crate::infra::smoke::run(&["--env".to_owned(), env.name()]).await?;
+                crate::infra::smoke::captured_run(env, spec, workers, head).await?;
             }
         }
         Ok(())

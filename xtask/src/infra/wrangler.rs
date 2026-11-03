@@ -22,8 +22,17 @@ fn describe(args: &[&str]) -> String {
 
 /// Runs with inherited output; fails on a non-zero exit.
 pub(crate) fn run(account_id: &str, args: &[&str]) -> Result<()> {
+    run_with_token(account_id, args, None)
+}
+
+/// Use the same in-memory credential for provisioning reads and writes. Never an argument.
+pub(crate) fn run_with_token(account_id: &str, args: &[&str], token: Option<&str>) -> Result<()> {
     println!("$ {}", describe(args));
-    let status = command(account_id, args)
+    let mut command = command(account_id, args);
+    if let Some(token) = token {
+        command.env(crate::deploy_credentials::TOKEN_VAR, token);
+    }
+    let status = command
         .status()
         .map_err(|error| format!("Cannot start {WRANGLER}: {error}"))?;
     if !status.success() {

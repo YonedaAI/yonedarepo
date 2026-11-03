@@ -30,12 +30,13 @@ pub(crate) async fn execute(args: &[String]) -> Result<()> {
         Some("gen") => generate::command(args),
         Some("plan") => plan::command(args).await,
         Some("up") => apply::up(args).await,
+        Some("prepare") => prepare::run(args).await,
         Some("down") => teardown::down(args).await,
         Some("prune") => prune::command(args).await,
         Some("smoke") => smoke::run(args).await,
         _ => {
             println!(
-                "cargo xtask infra <gen|plan|up|down|prune|smoke> --env dev|prod|ephemeral-<id>\n  gen [--check]          write cloudflare/wrangler.*.jsonc from infra/envs/<env>.json\n  plan [--strict]        live vs declared: create / unchanged / drift / extra / orphan (read-only)\n  up [--dry-run]         create missing D1/R2/queues, record ids, generate, move hosts, deploy\n  down --confirm [--purge]  delete Workers (+ data with --purge); never prod\n  prune --confirm|--dry-run [--allow-active]  delete the plan's orphan rows (the spec's retired names)\n  smoke                  frontend, /health revisions, owner API\nLive reads need CLOUDFLARE_API_TOKEN or --token-file <file> (read-only token is enough for plan)."
+                "cargo xtask infra <gen|plan|prepare|up|down|prune|smoke> --env dev|prod|ephemeral-<id>\n  gen [--check]          write cloudflare/wrangler.*.jsonc from infra/envs/<env>.json\n  plan [--strict]        live vs declared: create / unchanged / drift / extra / orphan (read-only)\n  prepare --dry-run|--confirm  provision resources and real identity lock only; then commit\n  up [--dry-run]         create missing D1/R2/queues, record ids, generate, move hosts, deploy\n  down --confirm [--purge]  delete Workers (+ data with --purge); never prod\n  prune --confirm|--dry-run [--allow-active]  delete the plan's orphan rows (the spec's retired names)\n  smoke                  frontend, /health revisions, owner API\nLive reads need CLOUDFLARE_API_TOKEN or --token-file <file> (read-only token is enough for plan)."
             );
             Ok(())
         }

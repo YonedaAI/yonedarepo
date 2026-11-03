@@ -268,6 +268,7 @@ fn prod_checks_active_runs_right_before_each_container_rollout() {
         [
             "superfan",
             "platform",
+            "platform-weur",
             "agents-managed",
             "agents",
             "deadman"
@@ -289,8 +290,24 @@ fn prod_checks_active_runs_right_before_each_container_rollout() {
             );
         }
     }
-    assert!(workers[1].has_containers && workers[2].has_containers);
-    assert!(!workers[0].has_containers && !workers[3].has_containers);
+    for role in ["platform", "platform-weur", "agents-managed"] {
+        assert!(
+            workers
+                .iter()
+                .find(|w| w.role == role)
+                .unwrap()
+                .has_containers
+        );
+    }
+    for role in ["superfan", "agents", "deadman"] {
+        assert!(
+            !workers
+                .iter()
+                .find(|w| w.role == role)
+                .unwrap()
+                .has_containers
+        );
+    }
 }
 
 #[test]

@@ -87,9 +87,14 @@ impl Client {
     /// Raw status for a presence check: callers distinguish a missing script from an
     /// authorization or provider failure instead of parsing an error string.
     pub(crate) async fn get_status(&self, path: &str) -> Result<(reqwest::StatusCode, Value)> {
-        let response = self.http.get(format!("{API}{path}")).bearer_auth(&self.token).send().await?;
+        let response = self
+            .http
+            .get(format!("{API}{path}"))
+            .bearer_auth(&self.token)
+            .send()
+            .await?;
         let status = response.status();
-        Ok((status,response.json().await.unwrap_or(Value::Null)))
+        Ok((status, response.json().await.unwrap_or(Value::Null)))
     }
     /// A read of R2 in one jurisdiction.
     async fn get_in(&self, path: &str, jurisdiction: &str) -> Result<Value> {
