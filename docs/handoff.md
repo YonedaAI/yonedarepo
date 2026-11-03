@@ -4,17 +4,17 @@ Updated 2026-11-03. This section supersedes the historical handoff below.
 
 ## Current work
 
-Dev deployment `115e40db` completed, including its deployment smoke. Production
+Dev deployment `b38706d6` completed, including its deployment smoke. Production
 still serves `de317bbda605`; source merges and resource preparation are not a
 production promotion. The latest production workflow did not complete its watch.
 
 | Task | Current evidence and next step |
 |---|---|
-| Repository loading | Lightweight metadata, independent activity/profile loading, fast signed-in HTML and fingerprinted asset caching are deployed on dev. Warm content still needs improvement. Request isolation exposed a cold concurrent-read regression; repair object-local duplicate-read sharing and repeat the performance measurements before promotion. |
+| Repository loading | Combined authorized Overview loading, bounded immutable content reuse, early Markdown loading and edge-first bytes are deployed. Regional API placement keeps repeated calls near data; Smart Placement was rejected after a live slowdown. Three repeat Overview samples completed in 409–513 ms (424 ms median); visible images can still take over a second. Agents fast-list is deployed; Search reuse and bounded recent Versions remain separate candidates. |
 | SSH | The production clone/push/revocation smoke passed. Lifecycle failures remain under investigation; they are not evidence that the same percentage of Git operations failed. Alert wording is repaired on dev. |
-| Flight Path demos | Retained Click and Commander history is preserved. Nine coding phases remain. The safe harness and exact-head review API are merged and deployed on dev; live completion has not run. |
+| Flight Path demos | Retained Click and Commander history is preserved. Eight coding phases remain. The safe harness and exact-head review API are merged and deployed on dev; live completion has not run. |
 | Release | A fresh CLI walk and full kit at the final dev tip remain required. The older 34/35 kit result cannot accept current source. Then push dev, record live-tests, open the ship PR, pass its checks, merge, watch production and run the Mac smoke. |
-| Global locality | Frontend/API are unpinned on dev. Automatic creation and nearby copies have live US/Europe evidence. Production Europe resources are prepared, without moving traffic. Promote the same validated configuration through the ship pipeline. |
+| Global locality | Frontend remains global. Dev API compute is placed near US East and Frankfurt; production source config matches, but has not been promoted. Existing repository identities and authority locations are unchanged. Automatic creation and nearby copies have prior US/Europe evidence; the new origin guard has targeted runtime coverage. A regional client Worker preserves the original caller geography, so a Worker running in Frankfurt is not proof of a European creator. |
 | Analytics | Site/platform traffic analytics is enabled in dev and prod. Per-repository usage analytics remains off. Contribution drill-down is implemented on dev; it is separate from usage analytics. |
 | Organization members | Handle and exact-email lookup, add/remove behavior and access boundaries have dev evidence. The tidied organization view is on dev. |
 
