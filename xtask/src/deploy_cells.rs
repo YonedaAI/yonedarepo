@@ -1,5 +1,6 @@
 //! Regional Workers share classes exported by the primary Worker. Existing bound regions
 //! can be upgraded primary-first; a new region must first be deployed without back-bindings.
+use crate::deploy_secret_preflight::Inventory;
 use crate::infra::live::Client;
 use crate::infra::spec::{Env, Spec};
 use crate::process::Result;
@@ -40,14 +41,15 @@ fn present(status: reqwest::StatusCode, body: &Value) -> Result<bool> {
     .into())
 }
 
-/// Before any migration/deploy, identify only genuinely absent bound targets.
-/// Front-only and offline dry runs skip this read in deploy_env.
-pub(crate) async fn missing(env: &Env, spec: &Spec) -> Result<BTreeSet<String>> {
-    let required = targets(spec);
-    let mut missing = BTreeSet::new();
+/// Name inventory and proven missing targets, before any rollout or migration.
+pub(crate) async fn inventory(env: &Env, spec: &Spec) -> Result<Inventory> {
+    let mut required = targets(spec);
+    let mut inventory = Inventory::default();
     if required.is_empty() {
-        return Ok(missing);
+        return Ok(inventory);
     }
+    let primary = format!("{}-platform", spec.prefix);
+    required.insert(0, primary.clone());
     crate::deploy_credentials::load(&env.name(), &spec.account_id)?;
     let token = crate::deploy_credentials::current()
         .ok_or("Verifying bound regions needs a Cloudflare API token with Workers Scripts Read")?;
@@ -60,14 +62,46 @@ pub(crate) async fn missing(env: &Env, spec: &Spec) -> Result<BTreeSet<String>> 
         let (status, body) =
             tokio::time::timeout(Duration::from_secs(15), client.get_status(&path))
                 .await
-                .map_err(|_| {
-                    format!("Timed out verifying region {target}; deployment has not started")
-                })??;
-        if !present(status, &body)? {
-            missing.insert(target);
+                .map_err(
+                    |_| "Timed out checking regional credentials; deployment has not started",
+                )??;
+        match secret_names(status, &body)? {
+            Some(names) => {
+                inventory.secrets.insert(target, names);
+            }
+            None => {
+                if target != primary {
+                    inventory.missing.insert(target.clone());
+                }
+                inventory.secrets.insert(target, BTreeSet::new());
+            }
         }
     }
-    Ok(missing)
+    Ok(inventory)
+}
+
+/// Only names are retained; plaintext values and binding contents never reach a report.
+fn secret_names(status: reqwest::StatusCode, body: &Value) -> Result<Option<BTreeSet<String>>> {
+    if !present(status, body)? {
+        return Ok(None);
+    }
+    let bindings = body["result"]["bindings"]
+        .as_array()
+        .ok_or("Malformed Worker binding inventory; deployment has not started")?;
+    let mut names = BTreeSet::new();
+    for binding in bindings {
+        let kind = binding["type"]
+            .as_str()
+            .ok_or("Malformed Worker binding type; deployment has not started")?;
+        if kind == "secret_text" {
+            let name = binding["name"]
+                .as_str()
+                .filter(|name| !name.is_empty())
+                .ok_or("Malformed secret-name inventory; deployment has not started")?;
+            names.insert(name.to_owned());
+        }
+    }
+    Ok(Some(names))
 }
 
 #[cfg(test)]
@@ -99,6 +133,44 @@ mod tests {
             (StatusCode::OK, json!({"success":true,"result":null})),
         ] {
             assert!(present(status, &body).is_err());
+        }
+    }
+
+    #[test]
+    fn name_inventory_refuses_malformed_success_and_retains_no_values() {
+        use reqwest::StatusCode;
+        let names = secret_names(
+            StatusCode::OK,
+            &json!({"success":true,"result":{"bindings":[
+                {"type":"secret_text","name":"OWNER_TOKEN","text":"NEVER_KEEP_THIS"},
+                {"type":"plain_text","name":"FEATURE","text":"on"},
+                {"type":"secrets_store_secret","name":"MODEL_KEY"}
+            ]}}),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(names, BTreeSet::from(["OWNER_TOKEN".to_owned()]));
+        assert!(
+            secret_names(
+                StatusCode::NOT_FOUND,
+                &json!({"success":false,"errors":[{"code":10007}]})
+            )
+            .unwrap()
+            .is_none()
+        );
+        for bindings in [
+            Value::Null,
+            json!({}),
+            json!([{"name":"OWNER_TOKEN"}]),
+            json!([{"type":"secret_text"}]),
+        ] {
+            assert!(
+                secret_names(
+                    StatusCode::OK,
+                    &json!({"success":true,"result":{"bindings":bindings}})
+                )
+                .is_err()
+            );
         }
     }
 
