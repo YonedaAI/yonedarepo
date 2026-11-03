@@ -788,6 +788,15 @@ fn an_empty_2xx_answer_counts_as_success() {
 }
 
 #[test]
+fn search_code_memo_has_dev_prod_and_cell_parity() {
+    for (_, workers) in [dev(), prod()] {
+        for worker in workers.iter().filter(|w| w.role.starts_with("platform")) {
+            assert_eq!(worker.config["vars"]["SEARCH_CODE_MEMO"], "on");
+        }
+    }
+}
+
+#[test]
 fn managed_list_speed_switch_has_dev_prod_parity() {
     for (_, workers) in [dev(), prod()] {
         assert_eq!(

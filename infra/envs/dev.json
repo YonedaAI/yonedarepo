@@ -297,7 +297,8 @@
           "SHARED_READ_TREES": "on",
           "JOINED_REPO_PATH": "on",
           "OVERVIEW_BOOTSTRAP": "on",
-          "EDGE_FIRST_READS": "on"
+          "EDGE_FIRST_READS": "on",
+          "SEARCH_CODE_MEMO": "on"
         },
         "secrets_store_secrets": [
           {

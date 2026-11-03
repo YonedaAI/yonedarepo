@@ -6,29 +6,23 @@ import { touchActivity } from './repo-activity';
 import { noteBundles } from './repo-bundles';
 import { emitChangeLog } from './repo-changelog';
 import { compactAfterLanding } from './repo-compaction';
-import { compute } from './repo-compute';
-import { keepAllowed, requirePath } from './repo-grants';
+import { requirePath } from './repo-grants';
 import { fanoutHooks } from './repo-hooks';
 import { memoryMatches } from './repo-memories';
 import { withObjects } from './repo-object-compute';
-import { blobWaves } from './repo-object-waves';
-import { toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, RepoContext, target } from './repo-ops';
 import { schedulePackBuild } from './repo-pack-jobs';
-import { searchSegments, segmentsIn } from './repo-search-index';
+import { searchCode } from './repo-search-code';
+import { searchSegments } from './repo-search-index';
+import { codeKey, completedCode } from './repo-search-memo';
 import { refreshSummary } from './repo-search-summary';
 import { writeSeed } from './repo-seed';
 import { sampleStorage } from './repo-storage';
-import { timed } from './repo-timing';
+import { record } from './repo-timing';
 import { viewFacts } from './repo-view-facts';
 import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 
-const MAX_RESULTS = 200;
-/** Candidate files whose content one grep wave reads. */
-const GREP_WAVE = 128;
-/** Files not content-searched that an answer names (all are counted). */
-const SKIPPED_LISTED = 50;
 /** `{ at }` when the caller asked for an earlier log version (time travel). */
 const asOf = (args: Json) =>
   args.at === undefined || args.at === null || args.at === '' ? {} : { at: Number(args.at) };
@@ -63,27 +57,6 @@ const raised = async <T>(work: Promise<{ found: T } | { error: unknown }>) => {
   if ('error' in outcome) throw outcome.error;
   return outcome.found;
 };
-
-/** Result tiers, best first: the query as a whole word in the content, in the path, or
- * only inside longer words. */
-const TIERS = ['word', 'path', 'substring'];
-/** Candidate files read and ranked per search, and lines listed per file. */
-const SCAN_FILES = 1000;
-const SHOWN_LINES = 20;
-
-/** Whether `path` holds `query` (as a whole word, with `word`). */
-function inPath(path: string, query: string, ignoreCase: boolean, word: boolean) {
-  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = word ? `(^|[^A-Za-z0-9_])${escaped}([^A-Za-z0-9_]|$)` : escaped;
-  return new RegExp(pattern, ignoreCase ? 'i' : '').test(path);
-}
-
-/** A file's tier (see TIERS) from its matches, or null when it does not match. */
-function matchOf(path: string, query: string, found: Json, ignoreCase: boolean, word: boolean) {
-  if (found.word_hits > 0) return 'word';
-  if (inPath(path, query, ignoreCase, word)) return 'path';
-  return !word && found.hits > 0 ? 'substring' : null;
-}
 
 export async function search(ctx: RepoContext, args: Json) {
   const query = String(args.query ?? args.q ?? '');
@@ -125,86 +98,24 @@ export async function search(ctx: RepoContext, args: Json) {
       skipped_count: 0,
     });
   const where = await target(ctx, args.commit ?? args.ref, args.at);
-  const { indexes, built } = await searchSegments(ctx, where.tree);
-  const objects = await ctx.objects();
-  const prefix = String(args.path ?? '');
-  const limit = Math.min(Number(args.limit ?? 50) || 50, MAX_RESULTS);
-  const results: Json[] = [];
-  // Files whose content is not searched (too large, binary), and why.
-  const skipped: Json[] = [];
-  let skippedCount = 0;
-  const under = (path: unknown) => !prefix || String(path).startsWith(prefix);
-  // Candidates of every partition first (grants filter them before any content is read or
-  // counted), then their files a wave at a time in a few ranged reads, in order, until the
-  // limit: read one by one, each file waited on its own walk down the read tiers.
-  const files: Json[] = [];
-  for (const index of indexes)
-    if (index.refused) {
-      skippedCount++;
-      skipped.push({ path: index.partition.prefix || '/', reason: index.refused });
-    }
-  for await (const { partition, segment } of segmentsIn(ctx, indexes)) {
-    const { candidates, unindexed } = compute({
-      op: 'search_segment',
-      segment_b64: toBase64(segment),
-      prefix: partition.prefix,
-      query,
-    });
-    for (const file of await keepAllowed(
-      ctx,
-      (unindexed as Json[]).filter((f) => under(f.path)),
-    )) {
-      skippedCount++;
-      if (skipped.length < SKIPPED_LISTED) skipped.push(file);
-    }
-    for (const file of await keepAllowed(ctx, candidates as Json[]))
-      if (under(file.path)) files.push(file);
+  let key: string | null = null;
+  if (ctx.env.SEARCH_CODE_MEMO === 'on') {
+    // Exact target admission above and this authority answer are fresh on every hit.
+    const status = await ctx.call({ op: 'repo_status' });
+    ctx.retainStatus(status);
+    key = codeKey(ctx.repo, status, where, query, args);
   }
-  // Every candidate up to SCAN_FILES is read and ranked before the best `limit` are kept
-  // (in segment order, the first `limit` found were A→Z by path, whatever they held).
-  const ignoreCase = args.ignore_case === true || args.ignore_case === 'true';
-  const word = args.word === true || args.word === 'true';
-  const scan = files.slice(0, SCAN_FILES);
-  for (let i = 0; i < scan.length; i += GREP_WAVE) {
-    const wave = scan.slice(i, i + GREP_WAVE);
-    const content = new Map<string, Uint8Array>();
-    const indexed = wave.filter((f) => f.indexed).map((f) => String(f.id));
-    await timed('search.files', async () => {
-      for await (const read of blobWaves(objects, indexed))
-        for (const [id, data] of read) content.set(id, data);
-    });
-    for (const file of wave) {
-      const data = content.get(file.id);
-      const found = data
-        ? compute({
-            op: 'grep',
-            id: file.id,
-            query,
-            ignore_case: ignoreCase,
-            word,
-            max: SHOWN_LINES,
-            blobs: { [file.id]: toBase64(data) },
-          })
-        : { lines: [], hits: 0, word_hits: 0 };
-      const match = matchOf(String(file.path), query, found, ignoreCase, word);
-      if (match)
-        results.push({ path: file.path, id: file.id, match, hits: found.hits, lines: found.lines });
-    }
+  const cached = key && completedCode.get(key);
+  if (cached) {
+    record('search.code.hit', 0);
+    return answer(cached);
   }
-  results.sort(
-    (a, b) =>
-      TIERS.indexOf(a.match) - TIERS.indexOf(b.match) ||
-      b.hits - a.hits ||
-      (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
-  );
-  return answer({
-    commit: where.commit,
-    results: results.slice(0, limit),
-    truncated: files.length > SCAN_FILES,
-    partitions_built: built,
-    skipped_files: skipped,
-    skipped_count: skippedCount,
-  });
+  record('search.code.miss', 0);
+  const { value: code, reusable } = await searchCode(ctx, args, query, where);
+  const result = await answer(code);
+  // A failed record/memory group, segment or file read must not publish a partial result.
+  if (key && reusable) completedCode.put(key, { ...code, partitions_built: 0 });
+  return result;
 }
 
 export async function blame(ctx: RepoContext, args: Json) {
