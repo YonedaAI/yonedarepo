@@ -130,20 +130,6 @@
   flex-direction: column;
   gap: 8px;
 }
-.sidebar-foot {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: auto 10px 0;
-  color: var(--faint);
-  font-size: var(--text-sm);
-}
-.sidebar-foot i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--success);
-}
 main {
   flex: 1;
   min-width: 0;

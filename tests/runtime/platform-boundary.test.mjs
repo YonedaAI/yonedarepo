@@ -8,6 +8,8 @@ const worker = 'cloudflare/worker';
 const neutral = new Set([
   './auth',
   './accounts',
+  // Email sign-up/sign-in identifier resolution; account/identity infrastructure, no agent policy.
+  './email-accounts',
   './http',
   './types',
   './check-container',
