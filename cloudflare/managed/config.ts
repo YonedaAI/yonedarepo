@@ -15,6 +15,8 @@ import type { WorkspaceAgents } from './workspace-agents';
 export interface ManagedEnv {
   /** The deployed commit, set by `cargo xtask deploy`; /health reports it. */
   BUILD_REVISION?: string;
+  /** Overlap list state/credit after fresh owner proof while discovery completes. */
+  FAST_AGENTS_LIST?: string;
   /** `on`: the request id goes on every response and travels with each hop
    * (worker/request-scope.ts). */
   REQUEST_IDS?: string;

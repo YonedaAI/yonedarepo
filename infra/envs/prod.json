@@ -619,7 +619,8 @@
           "PROMO_CREDIT_USD": "100",
           "REFUND_MAX_USD": "500",
           "REFUND_DAILY_USD": "1000",
-          "REQUEST_IDS": "off"
+          "REQUEST_IDS": "off",
+          "FAST_AGENTS_LIST": "on"
         },
         "secrets_store_secrets": [
           {
