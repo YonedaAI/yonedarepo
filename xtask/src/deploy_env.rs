@@ -196,6 +196,9 @@ pub(crate) async fn run(
         crate::deploy_evidence::prod_facts(&mut facts, options).await?;
     }
     guard::preflight(env, spec, &facts, options)?;
+    if !options.front_only && !options.dry_run {
+        crate::deploy_cells::verify(env, spec).await?;
+    }
     timings.record("preflight: clean tree, branch tip", started, true);
     let head = facts.head.clone();
     let prebuilt = match &options.prebuilt {

@@ -146,8 +146,8 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
     assert_eq!(
         migrations,
         [
-            "yonedarepo-dev-platform-index-weur",
             "yonedarepo-dev-platform-index",
+            "yonedarepo-dev-platform-index-weur",
             "yonedarepo-dev-managed-revenue"
         ]
     );
@@ -921,12 +921,12 @@ fn each_d1_database_migrates_under_its_own_workers_config() {
         migrations,
         [
             (
-                "yonedarepo-dev-platform-index-weur",
-                "cloudflare/wrangler.dev-platform-weur.jsonc"
-            ),
-            (
                 "yonedarepo-dev-platform-index",
                 "cloudflare/wrangler.dev-platform.jsonc"
+            ),
+            (
+                "yonedarepo-dev-platform-index-weur",
+                "cloudflare/wrangler.dev-platform-weur.jsonc"
             ),
             (
                 "yonedarepo-dev-managed-revenue",

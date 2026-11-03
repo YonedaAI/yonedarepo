@@ -249,17 +249,17 @@ fn cell_role(cell: &CellSpec) -> String {
     format!("{PLATFORM}{}", cell.suffix())
 }
 
-/// Adds each cell's Worker, ahead of the platform's: a binding to a Worker that isn't there yet
-/// fails a deploy.
+/// Shared class exports must exist before a regional Worker's cross-script bindings.
+/// Bootstrap regional Workers unbound before enabling service bindings back to them.
 pub(super) fn expand(spec: &mut Spec) -> Result<()> {
-    for cell in spec.cells.clone() {
+    for (offset, cell) in spec.cells.clone().into_iter().enumerate() {
         let at = spec
             .workers
             .iter()
             .position(|w| w.role == PLATFORM)
             .ok_or("A cell copies the platform Worker, and the spec has none")?;
         let worker = cell_worker(&spec.workers[at], spec, &cell)?;
-        spec.workers.insert(at, worker);
+        spec.workers.insert(at + offset + 1, worker);
     }
     for cell in spec.cells.clone() {
         if cell.bound {
