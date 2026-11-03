@@ -6,7 +6,7 @@ import type { Policy } from '../repo-settings/policy';
 import type { Viewer } from './RepoMembers';
 
 /** Browser metadata deliberately excludes expensive storage diagnostics. */
-export type RepoStatus = Omit<FullRepoStatus, 'objects'>;
+export type RepoStatus = Omit<FullRepoStatus, 'objects'> & { recent_versions?: boolean };
 
 /** Whether the viewer may create and delete branches and create tags: the write role and
  * above (the server decides each request; this only hides controls). */
