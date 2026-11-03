@@ -26,3 +26,14 @@ store/quarantine fences, current access, restricted/fork bypass, mutable groups,
 errors and independent pending requests. Keep dev/prod generated configuration
 in parity. Root measures three live samples after placement validation/deployment
 so this slice's effects are separate. No live expensive query is run by this slice.
+
+Local evidence: the initial real-workerd regression failed because a repeat read
+still fetched two stored segments. It now fetches zero R2 objects and keeps the
+same code payload, with zero new partitions built. After merging current dev,
+19 targeted tests across five files, 17 infrastructure tests and six runtime
+boundary/logging checks pass. Type/style, format/xtask Clippy, this worktree's
+Wasm/frontend builds, generated config parity and size/line budgets pass.
+The refused-partition test injects that one refusal; the cache read count,
+history reset/import, authorization, quarantine and public reads use workerd.
+No frontend layout changes, deployment, live query timings or load burst are
+claimed here; those remain the integration/deployment owner's validation.
