@@ -2,7 +2,7 @@
 use crate::process::Result;
 use serde_json::Value;
 
-fn switches(vars: Option<&Value>) -> [(&'static str, &str); 2] {
+fn switches(vars: Option<&Value>) -> [(&'static str, &str); 3] {
     let get = |key| {
         vars.and_then(|v| v.get(key))
             .and_then(Value::as_str)
@@ -14,6 +14,7 @@ fn switches(vars: Option<&Value>) -> [(&'static str, &str); 2] {
             "VITE_OVERVIEW_MARKDOWN_PRELOAD",
             get("OVERVIEW_MARKDOWN_PRELOAD"),
         ),
+        ("VITE_EARLY_READS", get("EARLY_READS")),
     ]
 }
 
@@ -55,7 +56,8 @@ mod tests {
             switches(None),
             [
                 ("VITE_STATIC_ASSET_CACHE", "off"),
-                ("VITE_OVERVIEW_MARKDOWN_PRELOAD", "off")
+                ("VITE_OVERVIEW_MARKDOWN_PRELOAD", "off"),
+                ("VITE_EARLY_READS", "off")
             ]
         );
     }
@@ -66,7 +68,8 @@ mod tests {
             switches(Some(&vars)),
             [
                 ("VITE_STATIC_ASSET_CACHE", "on"),
-                ("VITE_OVERVIEW_MARKDOWN_PRELOAD", "off")
+                ("VITE_OVERVIEW_MARKDOWN_PRELOAD", "off"),
+                ("VITE_EARLY_READS", "off")
             ]
         );
         let vars = json!({"OVERVIEW_MARKDOWN_PRELOAD":"on"});
@@ -74,8 +77,17 @@ mod tests {
             switches(Some(&vars)),
             [
                 ("VITE_STATIC_ASSET_CACHE", "off"),
-                ("VITE_OVERVIEW_MARKDOWN_PRELOAD", "on")
+                ("VITE_OVERVIEW_MARKDOWN_PRELOAD", "on"),
+                ("VITE_EARLY_READS", "off")
             ]
+        );
+    }
+    #[test]
+    fn early_reads_are_an_independent_declared_build_switch() {
+        let vars = json!({"EARLY_READS":"on"});
+        assert_eq!(
+            switches(Some(&vars)).last(),
+            Some(&("VITE_EARLY_READS", "on"))
         );
     }
 }

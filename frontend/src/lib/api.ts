@@ -1,3 +1,5 @@
+import { clearEarlyReads, takeEarlyResponse } from './earlyReads';
+
 export class ApiError extends Error {
   constructor(
     public code: string,
@@ -23,6 +25,7 @@ export async function api<T>(
 ): Promise<T> {
   // Repository navigation may cancel reads, never an in-flight owner mutation.
   const readSignal = body === undefined ? options?.signal : undefined;
+  if (body !== undefined || options?.method) clearEarlyReads();
   if (readSignal?.aborted) throw new DOMException('Read cancelled', 'AbortError');
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   const controller = new AbortController();
@@ -46,13 +49,18 @@ export async function api<T>(
       reject(timeoutError);
     }, options?.timeout ?? 20_000);
   });
+  const early =
+    body === undefined && !options?.method
+      ? takeEarlyResponse(`/api/${path}`, controller.signal)
+      : undefined;
   const request = (async () => {
-    const response = await fetch(`/api/${path}`, {
-      method: options?.method ?? (body === undefined ? 'GET' : 'POST'),
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: controller.signal,
-    });
+    const response = await (early?.response ??
+      fetch(`/api/${path}`, {
+        method: options?.method ?? (body === undefined ? 'GET' : 'POST'),
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: controller.signal,
+      }));
     const value = await response.json();
     if (!response.ok) {
       const error = new ApiError(
@@ -72,6 +80,7 @@ export async function api<T>(
     if (controller.signal.aborted) throw controller.signal.reason;
     throw error;
   } finally {
+    early?.release();
     clearTimeout(timer);
     readSignal?.removeEventListener('abort', cancelRead);
   }

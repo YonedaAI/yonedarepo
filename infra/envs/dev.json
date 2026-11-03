@@ -939,6 +939,7 @@
           "STATIC_ASSET_CACHE": "on",
           "FAST_APP_HEAD": "on",
           "OVERVIEW_MARKDOWN_PRELOAD": "on",
+          "EARLY_READS": "on",
           "REGIONAL_API": "on"
         },
         "services": [

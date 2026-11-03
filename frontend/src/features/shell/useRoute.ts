@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { clearEarlyReads } from '../../lib/earlyReads';
 import { isEmailLink } from '../account-settings/emailLinkRoute';
 import type { NavigationOverview } from '../source-platform/overviewBootstrap';
 import {
@@ -25,7 +26,10 @@ export type Navigate = (
 export function useRoute(): [SourceRoute, Navigate] {
   const [route, setRoute] = useState<SourceRoute>(current);
   useEffect(() => {
-    const sync = () => setRoute(current());
+    const sync = () => {
+      clearEarlyReads();
+      setRoute(current());
+    };
     window.addEventListener('popstate', sync);
     const parsed = current();
     // Home keeps its query: the workspace's `?repo=&run=` link is read from it.
@@ -41,6 +45,7 @@ export function useRoute(): [SourceRoute, Navigate] {
     return () => window.removeEventListener('popstate', sync);
   }, []);
   const navigate = useCallback<Navigate>((next, options) => {
+    clearEarlyReads();
     const url = formatSourceRoute(next);
     if (options?.replace) window.history.replaceState(null, '', url);
     else {
