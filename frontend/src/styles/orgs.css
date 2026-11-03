@@ -183,7 +183,7 @@
 }
 .org-deleted > summary::before {
   content: "›";
-  font-size: 22px;
+  font-size: var(--text-2xl);
 }
 .org-deleted[open] > summary::before {
   transform: rotate(90deg);

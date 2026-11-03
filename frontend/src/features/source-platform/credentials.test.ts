@@ -120,7 +120,7 @@ describe('delete organization', () => {
     expect(orgDeletePath('acme', 'a&b c')).toBe('/orgs/acme?confirm=a%26b%20c');
     const form = html(DeleteOrganization, { org: 'acme', repoCount: 2, onDeleted: () => {} });
     expect(form).toContain('Type <strong>acme</strong> to confirm');
-    expect(form).toContain('It owns 2 repositories you can see');
+    expect(form).toContain('Delete its 2 repositories first.');
     expect(form).toMatch(/<button[^>]*disabled[^>]*>Delete this organization/);
   });
   it('is offered to owners only, with the repositories it still owns', () => {
@@ -131,11 +131,15 @@ describe('delete organization', () => {
     const props = { org: 'acme', navigate: () => {}, onDeleted: () => {} };
     const owner = html(OrgPage, props);
     expect(owner).toContain('Delete organization');
-    expect(owner).toContain('It owns 1 repository you can see');
+    expect(owner).toContain('Delete its 1 repository first.');
+    expect(owner).toMatch(/<button[^>]*disabled[^>]*>Delete this organization/);
     state.value['/orgs/acme'] = loaded({ ...org, role: 'member' });
     expect(html(OrgPage, props)).not.toContain('Delete this organization');
     state.value['/orgs/acme'] = loaded(org);
     state.value['/orgs/acme/repos'] = loaded({ repos: [] });
-    expect(html(OrgPage, props)).not.toContain('It owns');
+    const empty = html(OrgPage, props);
+    expect(empty).not.toContain('Delete its');
+    // Even an empty organization still requires the owner to type its name.
+    expect(empty).toMatch(/<button[^>]*disabled[^>]*>Delete this organization/);
   });
 });
