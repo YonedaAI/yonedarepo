@@ -49,9 +49,10 @@ mod tests {
     #[test]
     fn only_bound_regions_require_existing_targets() {
         let text = include_str!("../../infra/envs/dev.json");
-        let unbound = Spec::parse(text).unwrap();
-        assert!(targets(&unbound).is_empty());
         let mut value: Value = serde_json::from_str(text).unwrap();
+        value["cells"][0]["bound"] = json!(false);
+        let unbound = Spec::parse(&value.to_string()).unwrap();
+        assert!(targets(&unbound).is_empty());
         value["cells"][0]["bound"] = json!(true);
         let bound = Spec::parse(&value.to_string()).unwrap();
         assert_eq!(targets(&bound), ["yonedarepo-dev-platform-weur"]);

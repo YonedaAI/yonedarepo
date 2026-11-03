@@ -230,7 +230,7 @@
           "AUDIT_LOG": "off",
           "TRAFFIC_EVENTS": "on",
           "TRAFFIC_REPORT": "on",
-          "REGION_SIGNALS": "off",
+          "REGION_SIGNALS": "on",
           "PUSH_BUNDLES": "on",
           "WEB_ORIGIN": "{origin}",
           "WORKERS_SUBDOMAIN": "{subdomain}",
@@ -261,7 +261,8 @@
           "PACK_CACHE": "on",
           "GITHUB_APP_ID": "5583304",
           "GITHUB_APP_SLUG": "yonedarepo-import",
-          "AUTOMATIC_LOCALITY": "off"
+          "AUTOMATIC_LOCALITY": "on",
+          "CELLS": "on"
         },
         "secrets_store_secrets": [
           {
@@ -784,10 +785,6 @@
         },
         "workers_dev": true,
         "preview_urls": false,
-        "placement": {
-          "mode": "targeted",
-          "region": "aws:us-east-1"
-        },
         "routes": [
           {
             "pattern": "yonedarepo.com",
@@ -815,13 +812,15 @@
           "AUDIT_LOG": "off",
           "TRAFFIC_EVENTS": "on",
           "TRAFFIC_REPORT": "on",
-          "REGION_SIGNALS": "off",
+          "REGION_SIGNALS": "on",
           "PUBLIC_APP_ORIGIN": "{origin}",
           "WEB_ANALYTICS_TOKEN": "fd30d727a0dc4d4c949dee535977d1b2",
           "SEO_INDEXING": "on",
           "ADMIN_ACCOUNTS": "magnetonio",
           "REQUEST_IDS": "off",
-          "CLIENT_ERRORS": "off"
+          "CLIENT_ERRORS": "off",
+          "CELLS": "on",
+          "AUTOMATIC_LOCALITY": "on"
         },
         "services": [
           {
@@ -1009,5 +1008,16 @@
     "artifacts": [
       "yoneda-dev"
     ]
-  }
+  },
+  "cells": [
+    {
+      "code": "weur",
+      "placement": "aws:eu-central-1",
+      "containers": "WEUR",
+      "jurisdiction": "eu",
+      "ratelimit": "1003",
+      "public_ratelimit": "1004",
+      "bound": true
+    }
+  ]
 }

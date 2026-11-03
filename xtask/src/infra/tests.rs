@@ -856,11 +856,16 @@ mod cells {
         spec["cells"][0]["bound"] = json!(true);
         Spec::parse(&spec.to_string()).unwrap()
     }
+    fn unbound() -> Spec {
+        let mut spec: Value = serde_json::from_str(DEV).unwrap();
+        spec["cells"][0]["bound"] = json!(false);
+        Spec::parse(&spec.to_string()).unwrap()
+    }
 
     /// The gate of stage R5: a cell adds a Worker, and every Worker that was there is unchanged.
     #[test]
     fn a_cell_changes_no_other_worker() {
-        let (with, without) = (Spec::parse(DEV).unwrap(), without_cells());
+        let (with, without) = (unbound(), without_cells());
         let roles = |spec: &Spec| {
             spec.workers
                 .iter()
@@ -878,7 +883,7 @@ mod cells {
 
     #[test]
     fn shared_class_provider_deploys_before_regional_consumers() {
-        for spec in [Spec::parse(DEV).unwrap(), bound()] {
+        for spec in [unbound(), bound()] {
             let pos = |role: &str| spec.workers.iter().position(|w| w.role == role).unwrap();
             assert!(pos("superfan") < pos("platform"));
             assert!(
