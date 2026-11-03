@@ -80,4 +80,4 @@ Nothing wakes an agent when findings arrive. The next session on the branch read
 
 ## Where the review runs
 
-Each run uses a fresh container on Cloudflare. Its model calls go through our Cloudflare AI Gateway to the model's provider, which receives the code and text the agent reads; see [Global network and data location](/docs/guides/global#what-leaves-cloudflare).
+Each run uses a fresh isolated container. Its model calls go through our model gateway to the model's provider, which receives the code and text the agent reads; see [Global network and data location](/docs/guides/global#what-leaves-our-infrastructure).

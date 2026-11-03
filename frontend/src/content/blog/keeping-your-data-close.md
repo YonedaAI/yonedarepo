@@ -41,7 +41,7 @@ File storage is the largest piece left. One read from the US bucket took 140 ms 
 
 ## Asia is best effort
 
-Europe could have a guarantee, because Cloudflare offers an EU jurisdiction. Nothing like that exists for Asia. There we can only ask for a location with a hint. The hints landed in Singapore in all 3 runs, but a hint isn't a promise. Queues and our Git object store have no Asian placement at all, so background work there needs another way to run, and that path hasn't been tried on dev.
+Europe could have a guarantee, because our hosting platform supports an EU jurisdiction. Nothing like that exists for Asia. There we can only ask for a location with a hint. The hints landed in Singapore in all 3 runs, but a hint isn't a promise. Queues and our Git object store have no Asian placement at all, so background work there needs another way to run, and that path hasn't been tried on dev.
 
 ## What's next
 

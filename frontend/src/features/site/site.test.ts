@@ -666,7 +666,7 @@ describe('content', () => {
       'country',
       'device type',
       'campaign tags',
-      'Cloudflare Web Analytics',
+      'cookieless website analytics',
       'sessionStorage',
     ])
       expect(body).toContain(field);
