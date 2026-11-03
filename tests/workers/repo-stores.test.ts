@@ -3,6 +3,7 @@
 // that is (or becomes) readable is success, never a failed commit. R2's transient internal
 // error (10001) and service-unavailable (10043) are retried.
 import { expect, it } from 'vitest';
+import { inScope } from '../../cloudflare/worker/request-scope';
 import { putObjects } from '../../cloudflare/worker/repo-stores';
 import type { Env } from '../../cloudflare/worker/types';
 import { bindings } from './repo-fixture';
@@ -35,10 +36,11 @@ function r2(rule: (key: string, attempt: number) => 'ok' | 'busy' | 'busy-writte
 const blob = (id: string) => ({ id, kind: 'blob' as const, data_b64: btoa(id) });
 const key = (prefix: string) => (id: string) => `${prefix}/${id}`;
 
-it('joins concurrent writes of one object and skips objects already written', async () => {
+it('joins concurrent writes within one request and reuses completed writes afterwards', async () => {
   const { env, puts } = r2(() => 'ok');
   const k = key(`join-${crypto.randomUUID()}`);
-  await Promise.all(Array.from({ length: 20 }, () => putObjects(env, k, [blob('a'.repeat(40))])));
+  await inScope({ req: new Request('https://yoneda/api/v1/repos/write') }, () =>
+    Promise.all(Array.from({ length: 20 }, () => putObjects(env, k, [blob('a'.repeat(40))]))));
   await putObjects(env, k, [blob('a'.repeat(40))]);
   expect([...puts.values()]).toEqual([1]);
 });

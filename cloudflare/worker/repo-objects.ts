@@ -61,7 +61,7 @@ export type TierHits = { edge: number; r2: number; store: number };
 type Tier = keyof TierHits;
 /** A walk's answer, and its fills of the tiers above (pending only without a waitUntil). */
 type Walked = { bytes: Uint8Array; tier: Tier; filled: Promise<unknown>; nearby?: boolean };
-/** Object reads in flight in this isolate, by repository, kind and id. */
+/** Request-local unfinished object reads, by repository, kind and id. */
 const inFlight = new Flights<Walked>();
 
 /**
@@ -174,7 +174,7 @@ export class RepoObjects {
   }
 
   /** Raw tier bytes for `id` (JSON for trees/commits, content for blobs). Concurrent
-   * reads of one object in this isolate share one walk down the tiers; only the read that
+   * reads of one object in this request share one walk down the tiers; only the read that
    * started it waits for its fills (`read.joined`: the time a read waited on another's). */
   async read(id: string, kind: ObjectKind, stagedWith?: string): Promise<Uint8Array> {
     if (kind === 'blob') await this.refuse(id);

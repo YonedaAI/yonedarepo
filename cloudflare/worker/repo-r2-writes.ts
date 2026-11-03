@@ -1,11 +1,11 @@
-// Writes of Git objects to R2, each confirmed: once per key per isolate (concurrent writers
-// of one object share a write), retried through R2's transient errors.
+// Writes of Git objects to R2, each confirmed. A request coalesces its unfinished writes;
+// completed writes are remembered per isolate. R2 transient errors remain retried.
 import { Flights } from './flights';
 import type { CachedObject } from './repo-stores';
 import { fromBase64 } from './repo-stores';
 import type { Env } from './types';
 
-/** R2 writes in flight in this isolate, and keys known written, by key. */
+/** Request-local unfinished writes, and isolate-wide keys already written. */
 const writing = new Flights<void>();
 const written = new Set<string>();
 const WRITTEN_KEYS = 50_000;
@@ -19,7 +19,7 @@ export type RawObject = { id: string; kind: 'commit' | 'tree' | 'blob'; data_b64
 /**
  * Writes content-addressed objects. Concurrent commits write the same ids (a shared tree,
  * the same blob), and R2 allows one write per key at a time (10058): a write already in
- * flight here is joined, a key written here is skipped, and a 10058 counts as written
+ * flight in this request is joined, a key already written is skipped, and a 10058 counts as written
  * once the object is readable (another writer holds identical bytes), else it is retried.
  * R2's transient internal (10001) and unavailable (10043) errors are retried the same way.
  */
