@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile, rm, realpath } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { chromium } from 'playwright-core';
@@ -14,10 +14,17 @@ const repo = 'r00000000000000000001';
 const activity = { now: Date.UTC(2026, 10, 2, 18), since: Date.UTC(2026, 9, 3), repositories: 1, public: 0, capturing: 0, landed: 0, commits: hours.map(h => [h, 1]), sessions: [], pending: 0, contributionSnapshots: { enam: 'fixture-snapshot' }, steps: {} };
 
 test('contribution details work by keyboard in four served-app views', { timeout: 60_000 }, async () => {
-  const vite = spawn(process.execPath, [`${root}/node_modules/vite/bin/vite.js`, '--host', '127.0.0.1', '--port', '0'], { cwd: `${root}/frontend`, stdio: ['ignore', 'pipe', 'pipe'] });
+  await mkdir(`${root}/.local`, {recursive:true});
+  const viteConfig=`${root}/.local/contribution-vite-${process.pid}.mjs`;
+  await writeFile(viteConfig, `import config from '${root}/frontend/vite.config.ts'; export default {...config,server:{...config.server,fs:{allow:${JSON.stringify([root,await realpath(`${root}/node_modules`)])}}}};`);
+  const vite = spawn(process.execPath, [`${root}/node_modules/vite/bin/vite.js`, '--host', '127.0.0.1', '--port', '0', '--config', viteConfig], { cwd: `${root}/frontend`, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = '';
-  const origin = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Vite did not start: ${log}`)), 10_000);
+  let browser;
+  let startupTimer;
+  const fixture = `${root}/frontend/.local/contribution-props-${process.pid}.tsx`;
+  try {
+    const origin = await new Promise((resolve, reject) => {
+    const timer = startupTimer = setTimeout(() => reject(new Error(`Vite did not start: ${log}`)), 10_000);
     vite.on('error', reject);
     vite.stdout.on('data', data => {
       log += data;
@@ -26,8 +33,6 @@ test('contribution details work by keyboard in four served-app views', { timeout
     });
     vite.stderr.on('data', data => { log += data; });
   });
-  let browser;
-  try {
     browser = await chromium.launch({ channel: 'chrome' });
     const evidence = `${root}/.local/contribution-drilldown`;
     await mkdir(evidence, { recursive: true });
@@ -56,9 +61,11 @@ test('contribution details work by keyboard in four served-app views', { timeout
         }
         return route.fulfill({ json: body });
       });
+      await page.route('**/health', route=>route.fulfill({json:{service:'simulated'}}));
       await page.goto(origin);
       const bubble = page.getByRole('button', { name: /Nov 1, 01:00: 2 commits/ });
       await bubble.waitFor();
+      await page.evaluate(()=>document.fonts.ready);
       await bubble.focus(); await page.keyboard.press('Enter');
       const dialog = page.getByRole('dialog');
       await dialog.getByRole('link', { name: /First contribution/ }).waitFor();
@@ -92,9 +99,51 @@ test('contribution details work by keyboard in four served-app views', { timeout
       assert.ok(requests >= 5);
       await context.close();
     }
+    // React props may refresh behind an open dialog. The clicked chart is a snapshot.
+    await mkdir(`${root}/frontend/.local`, {recursive:true});
+    await writeFile(fixture, `import React, {useState} from 'react';
+      import {createRoot} from 'react-dom/client';
+      import {HomeDashboard} from '../src/features/shell/HomeDashboard';
+      import '../src/styles.css';
+      const initial=${JSON.stringify(activity)};
+      function Fixture(){const [activity,setActivity]=useState(initial);
+        window.refreshContributionFixture=()=>setActivity({...initial,now:initial.now+86400000,commits:[[initial.now,9]],contributionSnapshots:{enam:'new-snapshot'}});
+        return <HomeDashboard activity={activity} loading={false} error="" onRetry={()=>{}} navigate={()=>{}} onNew={()=>{}}/>;}
+      createRoot(document.getElementById('root')).render(<Fixture/>);`);
+    const context = await browser.newContext({ timezoneId: 'America/New_York' });
+    const page = await context.newPage();
+    const snapshots = [];
+    await page.route(`${origin}/props-fixture`, async route => {const response=await route.fetch();return route.fulfill({response,body:(await response.text()).replace('/src/main.tsx',`/@fs${fixture}`)});});
+    await page.route('**/api/v1/activity/contributions?**', route => {
+      const query = new URL(route.request().url()).searchParams;
+      snapshots.push(JSON.parse(query.get('snapshots')));
+      if (query.has('cursors')) return route.fulfill({status:409,json:{error:{code:'ACTIVITY_CHANGED',message:'Activity changed. Refresh to see the latest contributions.'}}});
+      return route.fulfill({json:{total:2,items:[{repo,name:'fixture-repo',commit:'a'.repeat(40),subject:'Original contribution',at:hours[0]}],cursors:{enam:'next'}}});
+    });
+    const fixtureErrors=[];
+    page.on('pageerror', error=>fixtureErrors.push(error.message));
+    await page.goto(`${origin}/props-fixture`);
+    await page.waitForSelector('.chart-bubble', {timeout:5000}).catch(error=>{throw new Error(`${error.message}; fixture errors: ${fixtureErrors.join('; ')}; ${log}`)});
+    await page.getByRole('button', {name:/Nov 1, 01:00: 2 commits/}).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('link').waitFor();
+    await page.evaluate(()=>window.refreshContributionFixture());
+    await page.waitForFunction(()=>document.querySelector('.chart-bubble')?.getAttribute('aria-label')?.includes('9 commits'));
+    assert.equal(await dialog.locator('h2').innerText(),'Nov 1, 01:00','the clicked hour must not change with live props');
+    assert.ok(snapshots.every(snapshot=>snapshot.enam==='fixture-snapshot'),'the open dialog must retain its clicked snapshot');
+    await dialog.getByRole('button',{name:'Load more'}).click();
+    await dialog.getByRole('button',{name:'Refresh activity'}).waitFor();
+    assert.equal(snapshots.at(-1).enam,'fixture-snapshot');
+    await context.close();
   } finally {
+    clearTimeout(startupTimer);
     await browser?.close();
-    vite.kill('SIGTERM');
-    await once(vite, 'close');
+    await rm(fixture, {force:true});
+    if (vite.exitCode === null && vite.signalCode === null) {
+      const closed = once(vite, 'close');
+      vite.kill('SIGTERM');
+      await closed;
+    }
+    await rm(viteConfig,{force:true});
   }
 });

@@ -30,9 +30,24 @@ export function ContributionChart({
 }) {
   const frame = useRef<HTMLDivElement>(null);
   const trigger = useRef<SVGCircleElement | null>(null);
-  const [selected, setSelected] = useState<ContributionCell | null>(null);
+  const [selected, setSelected] = useState<{
+    cell: ContributionCell;
+    title: string;
+    snapshots: Record<string, string>;
+  } | null>(null);
+  const open = (cell: ContributionCell, element: SVGCircleElement) => {
+    trigger.current = element;
+    setSelected({
+      cell: { ...cell, buckets: [...cell.buckets] },
+      title: `${grid.days[cell.day]?.label}, ${hourLabel(cell.hour)}`,
+      snapshots: { ...snapshots },
+    });
+  };
   useEffect(() => {
-    if (!selected) trigger.current?.focus();
+    if (!selected && trigger.current) {
+      if (trigger.current.isConnected) trigger.current.focus();
+      else frame.current?.querySelector<SVGCircleElement>('.chart-bubble')?.focus();
+    }
   }, [selected]);
   // Where the chart scrolls (a phone), it opens on today, the right end.
   useEffect(() => {
@@ -92,14 +107,12 @@ export function ContributionChart({
               aria-label={`${grid.days[cell.day]?.label}, ${hourLabel(cell.hour)}: ${cell.count} ${cell.count === 1 ? 'commit' : 'commits'}`}
               aria-haspopup="dialog"
               onClick={(event) => {
-                trigger.current = event.currentTarget;
-                setSelected(cell);
+                open(cell, event.currentTarget);
               }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
-                  trigger.current = event.currentTarget;
-                  setSelected(cell);
+                  open(cell, event.currentTarget);
                 }
               }}
               cx={x(cell.day)}
@@ -115,10 +128,10 @@ export function ContributionChart({
       </div>
       {selected && (
         <ContributionDetails
-          title={`${grid.days[selected.day]?.label}, ${hourLabel(selected.hour)}`}
-          count={selected.count}
-          buckets={selected.buckets}
-          snapshots={snapshots}
+          title={selected.title}
+          count={selected.cell.count}
+          buckets={selected.cell.buckets}
+          snapshots={selected.snapshots}
           onClose={() => setSelected(null)}
           onRefresh={onRefresh}
           navigate={navigate}
