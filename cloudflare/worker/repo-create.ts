@@ -102,8 +102,8 @@ export async function createRepository(env: Env, requester: Credentials, body: J
     });
   const local = localityRegion(env);
   const experiment = regionHint(env, body);
-  const hint = experiment ?? (local && cellsOn(env) ? cell : local) ?? creationOrigin(env, cell);
-  const eager = experiment !== null || local !== null;
+  const hint = experiment ?? creationOrigin(env, cell);
+  const eager = experiment !== null || local === 'enam' || local === 'weur';
   if (!hint) {
     const created = await create(env, requester, body);
     return cellsOn(env) ? { ...created, region: cell } : created;
@@ -185,8 +185,9 @@ export async function importRepository(env: Env, requester: Credentials, body: J
       body: JSON.stringify({ ...body, region: cell }),
     });
   const local = localityRegion(env);
-  const hint = (local && cellsOn(env) ? cell : local) ?? creationOrigin(env, cell);
-  if (hint) env = hintedEnv(env, hint, local !== null);
+  const hint = creationOrigin(env, cell);
+  const eager = local === 'enam' || local === 'weur';
+  if (hint) env = hintedEnv(env, hint, eager);
   const auth = await timed('import.owner', () => owning(env, requester, body));
   const asked_at = Date.now();
   const { url, github, hidden } = await timed('import.source', () =>
@@ -216,7 +217,7 @@ export async function importRepository(env: Env, requester: Credentials, body: J
       }),
   );
   if (hint) {
-    if (local) {
+    if (eager) {
       await shardOutboxes(env, id);
       await placeCombiners(env, id);
     } else {

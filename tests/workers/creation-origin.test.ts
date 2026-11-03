@@ -50,6 +50,29 @@ it.each([['AS', 'apac'], ['OC', 'oc']])('places a fresh %s repository from origi
   }
 });
 
+it.each([['AS', 'apac'], ['OC', 'oc'], ['SA', 'sam'], ['AF', 'afr']])('keeps default %s creation near its origin with authority routing enabled', async (continent, hint) => {
+  const cookie = await signup(`origin_global_${continent.toLowerCase()}`);
+  const r = recording({ ...scoped, CELLS: 'on', AUTOMATIC_LOCALITY: 'on',
+    CELL_WEUR: { fetch: async () => Response.json({ error: { code: 'WRONG_AUTHORITY', message: 'Default non-EU creation must not enter the EU authority' } }, { status: 409 }) } as Fetcher,
+  });
+  const made = await create(r.env, cookie, `origin-global-${continent.toLowerCase()}`, continent);
+  expect(made.status, JSON.stringify(made.body)).toBe(200);
+  expect(made.body.id.endsWith('eea001')).toBe(false);
+  expect(made.body.region_hint).toBe(hint);
+  expect(r.gets.length).toBeGreaterThan(0);
+  expect(r.gets.every((g) => g.hint === hint)).toBe(true);
+});
+
+it('an explicit legacy authority selection preserves its identity while first placement follows the origin', async () => {
+  const cookie = await signup('origin_explicit_authority');
+  const r = recording({ ...scoped, CELLS: 'on', AUTOMATIC_LOCALITY: 'on' });
+  const made = await create(r.env, cookie, 'origin-explicit-authority', 'AS', { region: 'enam' });
+  expect(made.status, JSON.stringify(made.body)).toBe(200);
+  expect(made.body.id.endsWith('eea001')).toBe(false);
+  expect(made.body.region_hint).toBe('apac');
+  expect(r.gets.every((g) => g.hint === 'apac')).toBe(true);
+});
+
 it.each([['NA', 'enam'], ['EU', 'weur']])('keeps existing %s origin behavior', async (continent, hint) => {
   const cookie = await signup(`origin_existing_${continent.toLowerCase()}`);
   const r = recording({ ...scoped, AUTOMATIC_LOCALITY: 'on' });
@@ -88,18 +111,18 @@ it('keeps the explicit development hint override independent of automatic origin
   expect(r.gets.every((g) => g.hint === 'apac')).toBe(true);
 });
 
-it('new origin warmup captures every first get without waiting for all64 shards or combiners', async () => {
+it.each([['AS', 'apac'], ['OC', 'oc'], ['SA', 'sam'], ['AF', 'afr']])('%s origin warmup captures first gets without blocking on shards or combiners', async (continent, hint) => {
   const cookie = await signup('origin_background');
   let release!: () => void; const held = new Promise<void>((done) => { release = done; });
   const r = recording({ ...scoped, AUTOMATIC_LOCALITY: 'on' }, held); const ctx = createExecutionContext();
-  const work = create(r.env, cookie, 'origin-background', 'AS', { files: [] }, {}, (p) => ctx.waitUntil(p));
+  const work = create(r.env, cookie, 'origin-background', continent, { files: [] }, {}, (p) => ctx.waitUntil(p));
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const result = await Promise.race([work, new Promise<null>((done) => { timer = setTimeout(() => done(null), 1000); })]);
     expect(result?.status).toBe(200);
     expect(new Set(r.gets.filter((g) => g.binding === 'shard').map((g) => g.name)).size).toBe(64);
     expect(new Set(r.gets.filter((g) => g.binding === 'combiner').map((g) => g.name)).size).toBe(3);
-    expect(r.gets.every((g) => g.hint === 'apac')).toBe(true);
+    expect(r.gets.every((g) => g.hint === hint)).toBe(true);
     expect(r.env.SHARD_START).toBeUndefined();
   } finally { clearTimeout(timer); release(); await work; await waitOnExecutionContext(ctx); }
 });
@@ -116,7 +139,7 @@ it('subsequent reads from a different origin keep the existing identity and use 
   expect(r.env.SOURCE_REPOS.idFromName(made.body.id).toString()).toBe(identity);
 });
 
-it.each([['AS', 'apac'], ['OC', 'oc']])('fresh imports allocate %s objects before Workflow execution, ignoring test body hints', async (continent, hint) => {
+it.each([['AS', 'apac'], ['OC', 'oc'], ['SA', 'sam'], ['AF', 'afr']])('fresh imports allocate %s objects before Workflow execution, ignoring test body hints', async (continent, hint) => {
   const cookie = await signup(`origin_import_${continent.toLowerCase()}`); const workflows: any[] = [];
   const r = recording({ ...scoped, AUTOMATIC_LOCALITY: 'on', REGION_HINT_TEST: 'on',
     PLATFORM_IMPORT: { create: async (value: unknown) => { workflows.push(value); return {}; } } } as unknown as Env);
@@ -145,20 +168,20 @@ it('the hint adapter preserves an already-restricted namespace and its distinct 
   expect(near.CELL_JURISDICTION).toBe('eu');
 });
 
-it('an import starts hinted objects before its deferred Workflow while warmup remains held', async () => {
+it.each([['AS', 'apac'], ['OC', 'oc'], ['SA', 'sam'], ['AF', 'afr']])('a %s import starts hinted objects before its deferred Workflow while warmup remains held', async (continent, hint) => {
   const cookie = await signup('origin_import_background');
   let release!: () => void; const held = new Promise<void>((done) => { release = done; });
   const atWorkflow: Seen[][] = [];
   const r = recording({ ...scoped, AUTOMATIC_LOCALITY: 'on', PLATFORM_IMPORT: { create: async () => { atWorkflow.push([...r.gets]); return {}; } } } as unknown as Env, held);
   const ctx = createExecutionContext();
-  const work = create(r.env, cookie, 'origin-import-background', 'OC', { url: 'https://github.com/example/demo.git' }, {}, (p) => ctx.waitUntil(p), '/repos/import');
+  const work = create(r.env, cookie, 'origin-import-background', continent, { url: 'https://github.com/example/demo.git' }, {}, (p) => ctx.waitUntil(p), '/repos/import');
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const answer = await Promise.race([work, new Promise<null>((done) => { timer = setTimeout(() => done(null), 1000); })]);
     expect(answer?.status).toBe(200); expect(atWorkflow).toHaveLength(1);
     expect(new Set(atWorkflow[0].filter((g) => g.binding === 'shard').map((g) => g.name)).size).toBe(64);
     expect(new Set(atWorkflow[0].filter((g) => g.binding === 'combiner').map((g) => g.name)).size).toBe(3);
-    expect(atWorkflow[0].every((g) => g.hint === 'oc')).toBe(true);
+    expect(atWorkflow[0].every((g) => g.hint === hint)).toBe(true);
   } finally { clearTimeout(timer); release(); await work; await waitOnExecutionContext(ctx); }
 });
 
@@ -171,4 +194,32 @@ it.each(['NA', 'AS'])('a %s import respects the selected EU authority instead of
   expect(made.status, JSON.stringify(made.body)).toBe(200);
   expect(made.body.id.endsWith('eea001')).toBe(true);
   expect(r.gets.every((g) => g.hint === 'weur')).toBe(true);
+});
+
+it.each([['enam', 'apac'], ['weur', 'weur']])('a foreign-origin fork retains the %s authority and uses its permitted hint', async (cell, hint) => {
+  const cookie = await signup(`origin_fork_${cell}`);
+  const r = recording({ ...scoped, CELLS: 'on', AUTOMATIC_LOCALITY: 'on', CELL: cell,
+    ...(cell === 'weur' && { CELL_HINT: 'weur', CELL_JURISDICTION: 'eu' }),
+  });
+  const parent = await create(r.env, cookie, 'origin-fork-parent', cell === 'weur' ? 'EU' : 'NA', { region: cell });
+  expect(parent.status, JSON.stringify(parent.body)).toBe(200);
+  r.gets.length = 0;
+  const request = new Request(`https://yoneda/api/v1/repos/${parent.body.id}/fork`, {
+    method: 'POST', headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'origin-fork-child', policy: { approvals: 0, required_checks: [] } }), cf: { continent: 'AS' },
+  });
+  const answer = await inScope({ env: r.env, req: request }, () => platformFetch(request, r.env));
+  const fork = await answer.json<any>();
+  expect(answer.status, JSON.stringify(fork)).toBe(200);
+  expect(fork.id.endsWith('eea001')).toBe(cell === 'weur');
+  const own = r.gets.filter((get) => get.name === fork.id || get.name.startsWith(`${fork.id}:`) || get.name.startsWith(`${fork.id}#`));
+  expect(own.some((get) => get.binding === 'source')).toBe(true);
+  expect(own.every((get) => get.hint === hint)).toBe(true);
+  let copies = 0;
+  const ns = bindings.READ_COPIES!;
+  const watched = { idFromName: (name: string) => ns.idFromName(name), get: (id: DurableObjectId, options?: DurableObjectNamespaceGetDurableObjectOptions) => { copies++; return ns.get(id, options); } } as DurableObjectNamespace;
+  const read = new Request(`https://yoneda/api/v1/repos/${fork.id}/blob?path=a.txt`, { headers: { cookie }, cf: { continent: 'AS' } });
+  const response = await platformFetch(read, { ...r.env, READ_COPIES: watched });
+  expect(response.status).toBe(200); expect((await response.json<any>()).content).toBe('a\n');
+  expect(copies).toBe(0);
 });

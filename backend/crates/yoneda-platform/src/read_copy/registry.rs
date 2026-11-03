@@ -39,7 +39,7 @@ pub(super) fn execute<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
                 return Err(Error::new("COPY_FENCED", "The repository copy was deleted"));
             }
             let region = string(c, "region")?;
-            if !["enam", "weur"].contains(&region.as_str()) {
+            if !yoneda_core::account::ACCOUNT_REGIONS.contains(&region.as_str()) {
                 return Err(bad("Unsupported copy region"));
             }
             db.query(
