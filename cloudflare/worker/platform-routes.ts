@@ -27,7 +27,8 @@ export function platformFetch(req: Request, env: Env): Promise<Response> {
   if (regional) return regional;
   const url = new URL(req.url);
   // Shared sign-in allowances survive API unpinning; other API work stays local.
-  if (url.pathname.startsWith('/api/auth/')) env = authCounterEnv(env);
+  if (url.pathname.startsWith('/api/auth/') || url.pathname === AUTH_LIMIT_PATH)
+    env = authCounterEnv(env);
   const elsewhere = repoElsewhere(env, url);
   if (elsewhere) return forwardTo(env, elsewhere, req);
   // New-account discovery and notices remain in its chosen storage cell. API
