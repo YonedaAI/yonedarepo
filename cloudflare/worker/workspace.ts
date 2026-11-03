@@ -1,5 +1,4 @@
-import { timed } from './repo-timing';
-import { carriedHeaders } from './request-scope';
+import { carriedHeaders, timed } from './request-scope';
 import type { Env, Json } from './types';
 
 async function authority(env: Env, name: string, command: Json): Promise<Json> {

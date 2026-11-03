@@ -10,6 +10,7 @@ import { CommitView } from './CommitView';
 import { HistoryTab } from './HistoryTab';
 import { ImportStatus } from './ImportStatus';
 import { RepoHoldBanner } from './LegalHold';
+import { preloadOverviewMarkdown } from './markdownLoader';
 import { type OverviewStatus, overviewStatusPath } from './overviewBootstrap';
 import { ShowEmailsContext } from './people';
 import { ReleaseView } from './ReleaseView';
@@ -68,6 +69,10 @@ export function RepoPage({
   /** The fresh response from this exact named-route navigation, never a stored cache. */
   initialStatus?: OverviewStatus;
 }) {
+  const preloadsMarkdown = route.view === 'overview';
+  useEffect(() => {
+    if (preloadsMarkdown) preloadOverviewMarkdown();
+  }, [preloadsMarkdown]);
   const repo = route.repo;
   // Named navigation already has a full response; picker mounts keep the fast header path.
   const bootstrap = useRef(initialStatus?.overview !== undefined).current;
