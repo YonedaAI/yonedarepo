@@ -37,7 +37,7 @@ test('repository loading does not wait for storage diagnostics or offscreen READ
    await p.goto(`${origin}/repositories`);await p.getByRole('link',{name:/demo yours/}).waitFor({timeout:5000});assert.equal(sessionSummary,true);assert.equal(activity,0);await p.getByRole('link',{name:/demo yours/}).click();
    await p.getByText('Loading repository…',{exact:true}).waitFor();assert.equal(summary,true);assert.equal(activity,0,'optional activity must wait for repository metadata');releaseStatus();
    await p.getByRole('heading',{name:/^Visible repository\b/}).waitFor({timeout:5000}).catch(async e=>{await p.screenshot({path:`${root}/.local/repo-loading-ui/failed.png`});console.log(JSON.stringify({errors,text:(await p.locator('body').innerText()).slice(0,2000)}));throw e;});
-   await p.locator('.repo-image').waitFor();assert.equal(logs,0,'activity waits for README layout and proximity');assert.equal(activity,0,'home feed is not fetched on repository routes');assert.equal(images,0,'offscreen image must not start a request');
+   await p.locator('.repo-image').waitFor();assert.ok(await p.evaluate(()=>Boolean(document.querySelector('.overview-numbers').compareDocumentPosition(document.querySelector('.readme')) & Node.DOCUMENT_POSITION_FOLLOWING)),'activity belongs above README');assert.equal(activity,0,'home feed is not fetched on repository routes');assert.equal(images,0,'offscreen image must not start a request');
    assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
    await p.screenshot({path:`${root}/.local/repo-loading-ui/${width}-${colorScheme}.png`});
    await p.locator('.repo-image').scrollIntoViewIfNeeded();await p.getByAltText('Deferred diagram',{exact:true}).waitFor({state:'attached'});assert.equal(images,1);

@@ -1,5 +1,4 @@
 // A directory's README, rendered under its files and on the repository's Overview.
-import type { ReactNode } from 'react';
 import { readQuery } from './codeData';
 import { RepoMarkdown } from './RepoMarkdown';
 import { Failure, Loading } from './SourceStatus';
@@ -16,36 +15,24 @@ export function Readme({
   ref,
   path,
   at,
-  after,
 }: {
   repo: string;
   ref: string;
   path: string;
   at?: number;
-  /** Optional sections start only after README content or its error is ready. */
-  after?: ReactNode;
 }) {
   const file = useSource<{ encoding: string; content: string }>(
     `/repos/${repo}/blob?${readQuery(ref, path, at)}`,
   );
-  if (file.error)
-    return (
-      <>
-        <Failure error={file.error} onRetry={file.reload} />
-        {after}
-      </>
-    );
+  if (file.error) return <Failure error={file.error} onRetry={file.reload} />;
   if (!file.data) return <Loading what="README" />;
-  if (file.data.encoding !== 'utf-8') return after ?? null;
+  if (file.data.encoding !== 'utf-8') return null;
   return (
-    <>
-      <article className="source-file readme" aria-label={path}>
-        <header>
-          <code>{path.split('/').pop()}</code>
-        </header>
-        <RepoMarkdown source={file.data.content} place={{ repo, ref, path, at }} />
-      </article>
-      {after}
-    </>
+    <article className="source-file readme" aria-label={path}>
+      <header>
+        <code>{path.split('/').pop()}</code>
+      </header>
+      <RepoMarkdown source={file.data.content} place={{ repo, ref, path, at }} />
+    </article>
   );
 }
