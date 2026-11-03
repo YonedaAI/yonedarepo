@@ -311,6 +311,8 @@ describe('home', () => {
       ),
     ];
     expect(rows).toHaveLength(5);
+    expect(rows.filter(([, , panel]) => panel === 'memory')).toHaveLength(1);
+    expect(rows.filter(([, , panel]) => panel === 'ci')).toHaveLength(1);
     for (const [, , panel, chip] of rows)
       expect(BUILD_ON.find((b) => b.id === panel)?.title).toBe(chip.replace('&amp;', '&'));
   });

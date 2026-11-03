@@ -28,9 +28,9 @@ const PROBLEMS: { problem: string; answer: string; panel: string }[] = [
     panel: 'memory',
   },
   {
-    problem: 'No record of which session wrote what',
-    answer: 'Every commit carries the session that made it.',
-    panel: 'memory',
+    problem: 'Manually checking every agent change',
+    answer: 'Every push runs checks on the exact commit before it can land.',
+    panel: 'ci',
   },
   {
     problem: 'Cloning everything to read three files',
