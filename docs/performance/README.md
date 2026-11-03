@@ -9,6 +9,8 @@ image supplies only the dark/emerald visual style; its claims are not test data.
   median and maximum values, sample sizes, revisions and per-run read timings.
 
 Loading bars and the table show medians from three browser runs per condition.
+Cold Overview means a fresh browser context; backend/CDN caches may already
+be warm. The driver does not establish a full cold-storage startup.
 Selected dev `b38706d6` improved repeat Overview from 551 to 424 ms and cold
 Overview from 891 to 692 ms. Reloads and visible images were slower; Agents
 has no clear improvement. Smart Placement `d9d3f693` was rejected after its
