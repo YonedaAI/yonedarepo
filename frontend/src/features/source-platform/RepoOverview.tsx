@@ -2,6 +2,7 @@
 // who wrote it and its README. A repository with no commits yet gets the Files page's first steps.
 import { ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useNearViewport } from '../../hooks/useNearViewport';
 import { TimeChart } from '../admin/TimeChart';
 import { Avatar, avatarOf } from '../shell/Avatar';
 import { linkTo, type Navigate } from '../shell/useRoute';
@@ -101,8 +102,11 @@ export function RepoOverview({
   account?: string;
 }) {
   const listing = useListing(repo, refName, '');
+  const activity = useNearViewport<HTMLDivElement>();
   const log = useSource<{ commits: LogCommit[] }>(
-    `/repos/${repo}/log?ref=${encodeURIComponent(refName)}&limit=${OVERVIEW_COMMITS}`,
+    activity.near
+      ? `/repos/${repo}/log?ref=${encodeURIComponent(refName)}&limit=${OVERVIEW_COMMITS}`
+      : null,
   );
   const files = { view: 'files', repo, path: '', ref: refName } as const;
   if (listing.empty)
@@ -155,13 +159,13 @@ export function RepoOverview({
           </a>
         </div>
       )}
-      <div className="overview-numbers">
+      {readme && <Readme repo={repo} ref={refName} path={readme.name} />}
+      <div className="overview-numbers" ref={activity.ref}>
         {log.error && <Failure error={log.error} what="activity" onRetry={log.reload} />}
         {!log.data && !log.error && <Loading what="activity" />}
         {commits && <Activity commits={commits} />}
         {commits && <Contributors people={contributors(commits)} cut={logCut(commits)} />}
       </div>
-      {readme && <Readme repo={repo} ref={refName} path={readme.name} />}
     </section>
   );
 }

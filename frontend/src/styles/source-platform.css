@@ -447,3 +447,11 @@ button.danger:not(:disabled) {
 .source-danger h2 {
   color: var(--danger);
 }
+
+/* An unloaded repository image still has an observable place in the document. */
+.repo-image {
+  display: inline-block;
+  min-width: 1px;
+  min-height: 1em;
+  max-width: 100%;
+}
