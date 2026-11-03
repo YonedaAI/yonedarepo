@@ -40,6 +40,7 @@ export function useNotifications(enabled: boolean) {
       return;
     }
     let stopped = false;
+    const startupUntil = Date.now() + 5000;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let idle: number | undefined;
     const schedule = () => {
@@ -47,8 +48,9 @@ export function useNotifications(enabled: boolean) {
       if (idle !== undefined) window.cancelIdleCallback(idle);
       idle = undefined;
       if (stopped || document.visibilityState === 'hidden' || request.current) return;
-      // Application loading indicators, not network idle: optional images need not finish.
+      // Give core reads a bounded startup grace; a stuck section cannot starve the inbox.
       if (
+        Date.now() < startupUntil &&
         document.querySelector(
           '#workspace .source-empty[aria-busy="true"], #workspace .latest-commit[aria-busy="true"]',
         )
