@@ -9,7 +9,7 @@
 // isolate already served, and never older than this isolate's own ref writes. A reader that
 // must see a write made elsewhere passes its version as `min_version`.
 
-import { Flights } from './flights';
+import { type DurableFlightOwner, Flights } from './flights';
 import { readFromHead } from './repo-head';
 import { ApiError, caller, type Json, type RepoContext, target, writesTo } from './repo-ops';
 import { repoRpcValue } from './repo-rpc';
@@ -197,12 +197,17 @@ async function refsSnapshot(env: Env, repo: string, minVersion: number): Promise
 }
 
 /** The head holder's completed refs cache, shared for `REFS_MS`. Unfinished loads stay
- * within their owning request. */
+ * within their owning request, or the explicit Durable Object lifetime. */
 export class RefsHolder {
   #refs: { value: Json; at: number } | null = null;
-  #loads = new Flights<Json>();
+  #loads: Flights<Json>;
 
-  constructor(private readonly env: Env) {}
+  constructor(
+    private readonly env: Env,
+    private readonly owner?: DurableFlightOwner,
+  ) {
+    this.#loads = new Flights<Json>(owner);
+  }
 
   async refs(repo: string, minVersion: number): Promise<Json> {
     const held = this.#refs;
@@ -220,7 +225,7 @@ export class RefsHolder {
   /** Refs moved (a landing, projection or access change): the next reader reloads. */
   forget() {
     this.#refs = null;
-    this.#loads = new Flights();
+    this.#loads = new Flights(this.owner);
   }
 
   #load(repo: string): Promise<Json> {

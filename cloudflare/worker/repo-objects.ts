@@ -5,7 +5,7 @@
 // 300 lines: every tier of one read stays in this one place.)
 
 import { afterAnswer } from './background';
-import { Flights } from './flights';
+import { type DurableFlightOwner, Flights } from './flights';
 import { type Location, platformCall, readBundled, readKnown, SMALL_RANGE } from './repo-bundles';
 import { cachedCopy, edgePut } from './repo-cache-tiers';
 import { compute } from './repo-compute';
@@ -82,6 +82,7 @@ export class RepoObjects {
   knowsWithheld = false;
   /** A fork's parent objects (repo-inherit), asked when this repository's tiers miss. */
   readonly inherited?: Inherited;
+  readonly #pending: Flights<Walked>;
   /** Ids a bulk locate of this reader's just found in no bundle (a projection's plan):
    * reads of the store of record go straight to their R2 keys, not asking again. */
   readonly unbundled = new Set<string>();
@@ -90,11 +91,13 @@ export class RepoObjects {
     readonly repo: string,
     readonly store: ObjectStore,
     private readonly trees: TreeMemo = isolateTrees,
+    owner?: DurableFlightOwner,
   ) {
+    this.#pending = owner ? new Flights<Walked>(owner) : inFlight;
     const parent = store.inherits;
     if (parent)
       this.inherited = new Inherited(
-        new RepoObjects(env, parent.repo, parseStore(env, parent.spec), trees),
+        new RepoObjects(env, parent.repo, parseStore(env, parent.spec), trees, owner),
       );
   }
 
@@ -181,7 +184,7 @@ export class RepoObjects {
     // A guarded read never joins an unguarded one (which may serve inherited bytes).
     const region = localityRegion(this.env);
     const key = `${this.repo}/${kind}/${id}${this.inherited?.guard ? '/guarded' : ''}${region ? `/copy:${region}` : ''}`;
-    const { work, joined } = inFlight.join(key, () => this.walk(id, kind, stagedWith));
+    const { work, joined } = this.#pending.join(key, () => this.walk(id, kind, stagedWith));
     const { bytes, tier, filled, nearby } = joined
       ? await timed('read.joined', () => work)
       : await work;
