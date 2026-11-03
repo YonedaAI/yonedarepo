@@ -4,17 +4,19 @@ Updated 2026-11-03. This section supersedes the historical handoff below.
 
 ## Current work
 
-Dev deployment `b38706d6` completed, including its deployment smoke. Production
-still serves `de317bbda605`; source merges and resource preparation are not a
-production promotion. The latest production workflow did not complete its watch.
+Dev global routing deployment `c8d6d9ae` completed, including its deployment
+smoke and the bounded live checks below. Production still serves `de317bbda605`;
+source merges and resource preparation are not a production promotion. The
+latest production workflow did not complete its watch.
 
 | Task | Current evidence and next step |
 |---|---|
-| Repository loading | Combined authorized Overview loading, bounded immutable content reuse, early Markdown loading and edge-first bytes are deployed. Regional API placement keeps repeated calls near data; Smart Placement was rejected after a live slowdown. Three repeat Overview samples completed in 409–513 ms (424 ms median); visible images can still take over a second. Agents fast-list is deployed; Search reuse and bounded recent Versions remain separate candidates. |
+| Repository loading | Overview, immutable content reuse, early Markdown, edge-first bytes, Search reuse and recent Versions are deployed. New Versions paging and selected-revision UI passed. Current repeat Overview is 494–762 ms (562 median), fresh-context Overview 1,049–2,226 ms and Agents 1,123–1,319 ms. Speed remains open. Transport/startup also changed; the dated measurements do not isolate a code regression. See the new validation report. |
 | SSH | The production clone/push/revocation smoke passed. Lifecycle failures remain under investigation; they are not evidence that the same percentage of Git operations failed. Alert wording is repaired on dev. |
 | Flight Path demos | Retained Click and Commander history is preserved. Eight coding phases remain. The safe harness and exact-head review API are merged and deployed on dev; live completion has not run. |
 | Release | A fresh CLI walk and full kit at the final dev tip remain required. The older 34/35 kit result cannot accept current source. Then push dev, record live-tests, open the ship PR, pass its checks, merge, watch production and run the Mac smoke. |
-| Global locality | Frontend remains global. Dev API compute is placed near US East and Frankfurt; production source config matches, but has not been promoted. Existing repository identities and authority locations are unchanged. Automatic creation and nearby copies have prior US/Europe evidence; the new origin guard has targeted runtime coverage. A regional client Worker preserves the original caller geography, so a Worker running in Frankfurt is not proof of a European creator. |
+| Global locality | Global entries now select six API destinations from original caller geography. Dev observed IAD/FRA/SIN/SYD/GRU/CPT in three samples each; EU forwarding and retained authority/ref/history state stayed correct. Two new fixtures followed the observed US caller. The shared sign-in counter passed across all six aliases and the entry. Three independent 1,000-writer runs passed every commit, landing and exact readback; temporary tokens were revoked. These are not worldwide speed or universal storage-residency proof. |
+| Regional monitoring | Native alias/EU failures and EU resources are covered in merged source, with 131 runtime and 68 infrastructure cases passing. Customer HTTP denominators stay unchanged. Shared customer death-point attribution is still limited; see the monitoring report. Source verification is distinct from deployment and live alert delivery. |
 | Analytics | Site/platform traffic analytics is enabled in dev and prod. Per-repository usage analytics remains off. Contribution drill-down is implemented on dev; it is separate from usage analytics. |
 | Organization members | Handle and exact-email lookup, add/remove behavior and access boundaries have dev evidence. The tidied organization view is on dev. |
 
@@ -23,6 +25,13 @@ account region picker. New unrestricted repository objects use nearby placement;
 an existing object's home does not move merely because Workers are unpinned.
 US/Europe copy validation does not prove EU-only residency or GDPR compliance.
 A real Asian-client placement check is explicitly deferred by the owner.
+
+Current evidence: [global routing and loading validation](global-routing-validation-20261103.md),
+[dated performance figure](performance/2026-11-03-global/global-routing-validation.png)
+and [regional monitoring coverage](regional-monitoring.md). Read p95 under the
+three bursts was 1,703 / 2,807 / 1,569 ms; correctness passed, subsecond loaded
+reads did not. The earlier 424 ms Overview observation remains in its dated
+snapshot rather than being presented as the current result.
 
 The broad automated-QA expansion is paused. Continue feature acceptance and the
 required release checks. Preserve activity/contributors above the Overview README;

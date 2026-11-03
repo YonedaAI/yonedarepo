@@ -1,5 +1,20 @@
 # Dev performance figures
 
+The newer [global routing snapshot](2026-11-03-global/global-routing-validation.png)
+and [validation report](../global-routing-validation-20261103.md) record dev
+`c8d6d9ae` separately. Six API execution destinations and three 1,000-writer
+correctness runs passed. Page speed remains open; this snapshot does not claim
+a controlled improvement over the earlier connection. Its full ranges and
+scope are in [the dated JSON](2026-11-03-global/api-routing-data.json).
+
+```sh
+node tools/render-global-validation.mjs --data docs/performance/2026-11-03-global/api-routing-data.json
+node tools/render-global-validation.mjs --data docs/performance/2026-11-03-global/api-routing-data.json --check
+```
+
+The dated renderer verifies exact metric text, text bounds and 1600×1250 PNG
+dimensions. The earlier figures below remain unchanged.
+
 These figures summarize the validated 2026-11-03 dev runs. The atomic-landings
 image supplies only the dark/emerald visual style; its claims are not test data.
 
