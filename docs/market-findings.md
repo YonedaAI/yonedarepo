@@ -2,10 +2,12 @@
 
 Researched 2026-11-02 from public sources, linked at the end. Where only one source says something, it says so.
 
+**Positioning (owner, 2026-11-02): YonedaRepo refactors Git.** The comparison is plain Git, not Entire or any other company. Entire is here as research only.
+
 ## Next steps
 
 1. Turn on prod analytics (`docs/analytics-plan.md`, phases 1 and 2), so usage and Landing outcomes are counted.
-2. Run forgemark, Entire's open-source benchmark, against YonedaRepo and publish the result.
+2. Measure plain Git against YonedaRepo on the same test: 1,000 writers pushing to one branch of a stock Git server with fetch, rebase and retry, against 1,000 on YonedaRepo. Count retries and the time until all 1,000 have landed.
 3. Write up the home page's "One branch. A thousand writers. No retries." as one post, with a fresh 3-run measure through `git push`. Today's 1,000 of 1,000 (2026-10-30) went through the API.
 4. Ship a free first step that works with GitHub, as Entire did: for example, `yoneda` importing a GitHub repository in one command so agents have somewhere to push.
 5. Line up 5 teams running agents as design partners, and quote them.
@@ -71,12 +73,7 @@ A team buying a code platform asks first whether it trains on their code. Entire
 2. Customers opt in to share outcome data, in return for credits or a benchmark report on their own agents.
 3. YonedaRepo publishes aggregate findings, such as which agents land the most code. That is marketing and data at once.
 
-"Newer technology" is a claim until it's measured. Two measures answer different questions:
-
-| Measure | Question | Who wins today |
-|---|---|---|
-| One branch, many writers (ours) | Do concurrent agents all land without retrying? | YonedaRepo by design: Git rejects all but the first push |
-| forgemark `branch` mode | How many pushes per second, each agent on its own branch? | Unknown until we run it. This is where Entire claims 89× over GitHub |
+"Newer technology" is shown against plain Git (next step 2), not against another product.
 
 ## Sources
 
