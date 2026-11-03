@@ -75,7 +75,7 @@ impl Run<'_> {
                     if *dry_run { " (dry run)" } else { "" }
                 )
             }
-            Step::Bootstrap { worker, .. } => format!("bootstrap {} (unbound)", name(worker)),
+            Step::Bootstrap { worker, .. } => format!("bootstrap {}", name(worker)),
             Step::Secrets { worker } => format!("secrets {}", name(worker)),
             Step::Health { worker } => format!("/health {}", name(worker)),
             Step::Smoke => "smoke".into(),

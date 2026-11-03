@@ -182,26 +182,36 @@ fn first_rollout_stages_original_providers_then_aliases_before_bound_entries() {
                 }
             })
             .collect();
-        assert_eq!(boots.len(), 8);
+        assert_eq!(boots.len(), 15);
         assert_eq!(workers[boots[0].1].role, "platform");
         assert_eq!(workers[boots[1].1].role, "platform-weur");
-        for (at, index, c) in boots {
+        for (stage, (at, index, c)) in boots.into_iter().enumerate() {
             assert!(at < bound);
-            assert_eq!(c["vars"]["REGIONAL_API"], "off");
+            if stage < 8 {
+                assert_eq!(c["vars"]["REGIONAL_API"], "off");
+            } else {
+                assert!(
+                    c == &workers[index].config,
+                    "nonentry handler must have its exact final bindings"
+                );
+                assert!(c["vars"].get("API_REGION").is_some());
+            }
             assert_eq!(
                 c["durable_objects"],
                 workers[index].config["durable_objects"]
             );
             assert_eq!(c.get("migrations"), workers[index].config.get("migrations"));
-            assert_eq!(
-                c["services"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .filter(|s| s["binding"].as_str().is_some_and(|b| b.starts_with("API_")))
-                    .count(),
-                0
-            );
+            if stage < 8 {
+                assert_eq!(
+                    c["services"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter(|s| s["binding"].as_str().is_some_and(|b| b.starts_with("API_")))
+                        .count(),
+                    0
+                );
+            }
         }
         assert_eq!(workers[primary].config["vars"]["REGIONAL_API"], "on");
         assert!(plan.iter().all(
@@ -377,6 +387,129 @@ fn api_only_bootstrap_preserves_creator_locality_but_missing_authorities_disable
                     ["AUTOMATIC_LOCALITY"],
                 "off"
             );
+        }
+    }
+}
+
+#[test]
+fn every_nonentry_handler_is_fully_bound_before_global_entry_activation() {
+    use crate::deploy_env::{Source, Step, steps};
+    use crate::infra::spec::Env;
+    use std::collections::{BTreeMap, BTreeSet};
+    for (prod, env) in [(false, Env::Dev), (true, Env::Prod)] {
+        for missing_eu in [false, true] {
+            let workers = configured(prod);
+            let primary = workers.iter().position(|w| w.role == "platform").unwrap();
+            let missing: BTreeSet<_> = workers
+                .iter()
+                .filter(|w| w.role.starts_with("api-") || (missing_eu && w.role == "platform-weur"))
+                .map(|w| w.name.clone())
+                .collect();
+            let plan = crate::deploy_bootstrap::insert(
+                steps(&env, &workers, false, &Source::Dockerfile),
+                &workers,
+                &missing,
+            )
+            .unwrap();
+            let mut staged = BTreeMap::new();
+            for (at, step) in plan.iter().enumerate() {
+                if let Step::Bootstrap { worker, config } = step {
+                    staged.insert(*worker, config);
+                    if config == &workers[*worker].config {
+                        assert_eq!(plan[at - 1], Step::RolloutGate);
+                        if prod && workers[*worker].has_containers {
+                            assert_eq!(plan[at - 2], Step::ActiveGate { worker: *worker });
+                        }
+                        assert_eq!(plan[at + 1], Step::Secrets { worker: *worker });
+                        assert_eq!(plan[at + 2], Step::Health { worker: *worker });
+                    }
+                }
+                if matches!(step,Step::Deploy{worker,..} if *worker==primary) {
+                    assert_eq!(workers[primary].config["vars"]["REGIONAL_API"], "on");
+                    for (index, w) in workers
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, w)| w.role == "platform-weur" || w.role.starts_with("api-"))
+                    {
+                        assert!(
+                            staged.get(&index).copied() == Some(&w.config),
+                            "{} is still staged with incomplete authority bindings",
+                            w.role
+                        );
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn retry_restores_existing_but_unbound_receivers_before_entry_activation() {
+    use crate::deploy_env::{Source, Step, steps};
+    use crate::infra::spec::Env;
+    use std::collections::{BTreeMap, BTreeSet};
+    for (prod, env) in [(false, Env::Dev), (true, Env::Prod)] {
+        let workers = configured(prod);
+        let primary = workers.iter().position(|w| w.role == "platform").unwrap();
+        let formerly_missing: BTreeSet<_> = workers
+            .iter()
+            .filter(|w| w.role.starts_with("api-"))
+            .map(|w| w.name.clone())
+            .collect();
+        let mut active: BTreeMap<_, _> = workers
+            .iter()
+            .enumerate()
+            .filter(|(_, w)| w.role == "platform-weur" || w.role.starts_with("api-"))
+            .map(|(i, w)| {
+                (
+                    i,
+                    crate::deploy_bootstrap::configuration(&w.config, &formerly_missing).unwrap(),
+                )
+            })
+            .collect();
+        // Every script exists after the interrupted first stage. Presence alone cannot
+        // tell the ordinary primary-first retry that those receivers remain unbound.
+        let plan = crate::deploy_bootstrap::insert(
+            steps(&env, &workers, false, &Source::Dockerfile),
+            &workers,
+            &BTreeSet::new(),
+        )
+        .unwrap();
+        let first = plan
+            .iter()
+            .find_map(|s| {
+                if let Step::Bootstrap { worker, config } = s {
+                    Some((*worker, config))
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert_eq!(
+            first.0, primary,
+            "provider new source must precede all receivers"
+        );
+        assert_eq!(first.1["vars"]["REGIONAL_API"], "off");
+        assert_eq!(first.1["vars"]["AUTOMATIC_LOCALITY"], "on");
+        for step in &plan {
+            if let Step::Bootstrap { worker, config } = step {
+                active.insert(*worker, config.clone());
+            }
+            if matches!(step,Step::Deploy{worker,..} if *worker==primary) {
+                for (index, w) in workers
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, w)| w.role == "platform-weur" || w.role.starts_with("api-"))
+                {
+                    assert!(
+                        active.get(&index) == Some(&w.config),
+                        "retry activated entry before restoring {}",
+                        w.role
+                    );
+                }
+                break;
+            }
         }
     }
 }
