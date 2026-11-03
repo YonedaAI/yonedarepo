@@ -22,9 +22,10 @@ Budget: one existing core HTTP request, no extra core authority/status read;
 one deferred activity GET, at most 200 commits, with fresh admission. Existing
 fork/restricted and switch-off behavior remain on their present path. Unknown
 or failed sections must not invent statistics or a successful read. The chart
-stays above README. The deferred area reserves space for the chart and six
-contributors after loading as well, including empty/error results, so optional
-completion cannot push the README. No layout redesign.
+stays above README. The initial implementation reserved space for the chart
+and six contributors after loading, including empty/error results. The compact
+layout correction below supersedes that geometry: settled content uses its
+natural height. No layout redesign.
 
 The independent toolbar fix removes the nested facts row's bottom margin in
 PageToolbar; its labels remain compact and align with the branch control.
@@ -58,10 +59,47 @@ The build retains its existing large main-chunk warning.
 Sixteen local served states cover 1440/375px, light/dark and full/loading/empty/
 error activity. The badges share the branch selector's vertical centre on the
 wide row, keyboard focus works, and there is no horizontal page overflow.
-The deferred area's README position is unchanged between those activity states.
-These fixtures simulate API results; they do not demonstrate deployed latency.
+That earlier fixed reserve kept the README position unchanged, but the live
+browser gate subsequently found a 96px blank gap before the README with one
+contributor. These fixtures simulate API results; they do not demonstrate
+deployed latency.
 
 Deferred activity currently uses the existing full log response rather than
 its compact inline memo. Live comparison must include total bytes and activity
 readiness, alongside core readiness, before claiming a general speed gain.
 No production rollout or writer/load test is represented by these results.
+
+## Compact layout correction
+
+Contributor rows now use the existing 20px avatar and chrome line height, with
+no extra row padding or list gaps. Six rows and the history-limit note fit
+beside the 190px chart. Pending deferred activity reserves 190px on desktop
+and 394px on mobile; settled old/empty/error results collapse naturally.
+No HTTP requests, API contracts, authorization or repository state change.
+
+The unchanged browser helper requires at most 32px between activity and README.
+The served component regression covers five settled states at 1440px/375px,
+light/dark, held loading, keyboard focus and page overflow. All 20 settled
+states meet that 32px bound, with no page errors or horizontal overflow.
+The normal desktop chart has zero README movement, with either one or six
+contributors. Loading movement is not fully solved for other results:
+
+| Result | Desktop README movement | Mobile README movement |
+|---|---:|---:|
+| Six contributors and history-limit note | 0px | -0.6px |
+| One contributor | 0px | -133px |
+| Old history, six contributors | -10.6px | -142.2px |
+| Empty activity | -167.6px | -371.6px |
+| Activity error | -140px | -344px |
+
+Negative values mean the README moves upward when the optional response
+finishes. These are local fixture geometry measurements, not a field CLS
+score or a deployment claim. Keeping a large settled blank area is not an
+acceptable way to hide that movement. Eliminating the remaining shifts needs
+a bounded initial activity summary that knows the required layout before the
+optional history request; that backend change is outside this CSS repair.
+
+Run `node --test tests/runtime/repo-overview-layout.test.mjs` for the served
+regression. Its API responses are labelled fixtures and it creates no live
+accounts or repositories. The full live browser flow still needs a rerun
+after this repair is deployed.
