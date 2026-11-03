@@ -68,6 +68,14 @@ behavior; an explicitly qualified SHA branch still selects that branch.
 The own-worktree Wasm build, generated contract check, configuration drift
 checks, off-by-default regional/environment guard, Rust fmt/Clippy, adapter
 TypeScript and frontend production build pass. These are local results with
-scripted fixtures, not deployed latency or a completed release gate. The new
-switch remains off in both environment declarations pending a controlled dev
-comparison.
+scripted fixtures, not deployed latency or a completed release gate. These
+initial gates passed with the new switch off in both environment declarations.
+
+## Controlled dev comparison
+
+After those gates and peer review, dev declares the switch on for the next
+controlled rollout; production remains off. Regenerate the dev roles with
+`cargo xtask infra gen --env dev`. The implementation and switch-off fallback
+tests are unchanged. This configuration commit performs no deployment and
+does not establish a latency improvement. Keep production off until the dev
+comparison is reviewed.

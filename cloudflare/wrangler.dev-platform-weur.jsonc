@@ -272,7 +272,7 @@
     "LFS_S3_BUCKET": "yonedarepo-dev-platform-objects-weur",
     "LFS_S3_ENDPOINT": "https://f011d0ee02b23cad26b4b38151b204ad.eu.r2.cloudflarestorage.com",
     "NEWSLETTER": "off",
-    "OVERVIEW_ADMITTED_SNAPSHOT": "off",
+    "OVERVIEW_ADMITTED_SNAPSHOT": "on",
     "OVERVIEW_BOOTSTRAP": "on",
     "OVERVIEW_DEFER_ACTIVITY": "on",
     "PACK_CACHE": "on",

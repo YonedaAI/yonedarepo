@@ -815,13 +815,16 @@ fn search_code_memo_has_dev_prod_and_cell_parity() {
 }
 
 #[test]
-fn overview_admitted_snapshot_starts_off_in_every_environment_and_region() {
-    for (_, workers) in [dev(), prod()] {
+fn overview_admitted_snapshot_has_an_explicit_dev_experiment_and_prod_hold() {
+    for ((_, workers), expected) in [(dev(), "on"), (prod(), "off")] {
         for worker in workers
             .iter()
             .filter(|w| w.role.starts_with("platform") || w.role.starts_with("api-"))
         {
-            assert_eq!(worker.config["vars"]["OVERVIEW_ADMITTED_SNAPSHOT"], "off");
+            assert_eq!(
+                worker.config["vars"]["OVERVIEW_ADMITTED_SNAPSHOT"],
+                expected
+            );
         }
     }
 }
