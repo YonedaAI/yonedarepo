@@ -347,3 +347,14 @@ it('background work of a cell stays on its queue', async () => {
   expect(sent.length).toBeGreaterThan(0);
   expect(queued.length).toBe(before);
 });
+
+it('forwards named Overview query parameters to the repository cell', async () => {
+  const enamOverview: Env = { ...enam, OVERVIEW_BOOTSTRAP: 'on', CELL_WEUR: served(() => weurOverview) };
+  const weurOverview: Env = { ...weur, OVERVIEW_BOOTSTRAP: 'on', CELL_ENAM: served(() => enamOverview) };
+  const auth = await signupIn(enamOverview, 'overview_region', 'NA');
+  const made = await api('/repos', auth, { body: repo('cross', { region: 'weur', files: [file('README.md', '# Across cells\n')] }) }, enamOverview);
+  expect(made.status).toBe(200);
+  const named = await api('/resolve/overview_region/cross?summary=true&overview=true&ref=main', auth, {}, enamOverview);
+  expect(named.status, JSON.stringify(named.body)).toBe(200);
+  expect(named.body).toMatchObject({ id: made.body.id, summary: { region: 'weur', overview: { ref: 'main', tree: { commit: made.body.commit }, readme: { content: '# Across cells\n' } } } });
+});
