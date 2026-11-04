@@ -25,6 +25,14 @@ test('every action is pinned by commit', () => {
     for (const [, action] of code(text).matchAll(/^\s*(?:- )?uses: (\S+)/gm)) if (!action.startsWith('./')) assert.match(action, /@[0-9a-f]{40}$/, action);
 });
 
+test('CI validates PRs or manual requests; only Deploy prod handles main pushes', () => {
+  const ci = code(read('ci.yml'));
+  assert.match(ci, /^ {2}pull_request:$/m);
+  assert.match(ci, /^ {2}workflow_dispatch:$/m);
+  assert.doesNotMatch(ci, /^ {2}push:$/m);
+  assert.match(code(read('deploy-prod.yml')), /^ {2}push:\n {4}branches: \[main\]$/m);
+});
+
 test('no workflow runs on pull_request_target or workflow_run', () => {
   for (const name of files) assert.doesNotMatch(code(read(name)), /pull_request_target|workflow_run/, name);
 });
