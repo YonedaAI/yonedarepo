@@ -6,6 +6,7 @@ import { once } from 'node:events';
 import { mkdir, writeFile, rm, realpath } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+import { stripVTControlCharacters } from 'node:util';
 import { chromium } from 'playwright-core';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -28,7 +29,7 @@ test('contribution details work by keyboard in four served-app views', { timeout
     vite.on('error', reject);
     vite.stdout.on('data', data => {
       log += data;
-      const url = /http:\/\/127\.0\.0\.1:\d+/.exec(log)?.[0];
+      const url = /http:\/\/127\.0\.0\.1:\d+/.exec(stripVTControlCharacters(log))?.[0];
       if (url) { clearTimeout(timer); resolve(url); }
     });
     vite.stderr.on('data', data => { log += data; });
