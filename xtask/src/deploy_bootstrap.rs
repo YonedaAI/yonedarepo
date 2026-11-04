@@ -203,9 +203,11 @@ pub(crate) fn deploy(
     let path = copy.0.to_str().ok_or("Invalid bootstrap config path")?;
     let revision = format!("BUILD_REVISION:{head}");
     let message = crate::deploy_ledger::message(env, head);
-    crate::infra::wrangler::run(
+    crate::deploy_wrangler::run(
         &spec.account_id,
         &crate::deploy_exec::deploy_args(path, &revision, head, &message, false),
+        head,
+        false,
     )
 }
 
