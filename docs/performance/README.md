@@ -1,5 +1,11 @@
 # Dev performance figures
 
+The [browser-loading report](2026-11-03-loading/README.md) and
+[infographic](2026-11-03-loading/browser-loading.png) record the later frontend
+work separately: faster repeat views, with fresh loading still above its target.
+Full ranges, intermediate results and deployed revisions are retained in that
+snapshot's [sanitized data](2026-11-03-loading/browser-loading-data.json).
+
 Before drawing a placement conclusion, use the
 [controlled baseline plan](../regional-performance-baseline-plan.md). The earlier
 comparison below moved API execution while repository data stayed in US East;

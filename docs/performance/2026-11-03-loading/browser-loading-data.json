@@ -1,0 +1,983 @@
+{
+  "date": "2026-11-03",
+  "environment": "dev",
+  "conditions": {
+    "samples_per_condition": 3,
+    "viewport": [
+      1440,
+      1000
+    ],
+    "authenticated": true,
+    "normal_browser_cache": true,
+    "interception": false,
+    "throttling": false,
+    "writer_or_load_tests": false,
+    "client_count": 1,
+    "retained_real_history_repository_count": 1,
+    "backend_cdn_cache_state_controlled": false
+  },
+  "documents": {
+    "baseline": {
+      "at": "2026-11-03T23:33:32.746Z",
+      "frontend": "f87f7baf",
+      "backend": "f87f7baf",
+      "rows": [
+        {
+          "page": "overview",
+          "mode": "fresh-context",
+          "metric": "core",
+          "n": 3,
+          "values": [
+            1714,
+            1008,
+            974
+          ],
+          "min": 974,
+          "median": 1008,
+          "max": 1714
+        },
+        {
+          "page": "overview",
+          "mode": "fresh-context",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            2519,
+            1046,
+            1142
+          ],
+          "min": 1046,
+          "median": 1142,
+          "max": 2519
+        },
+        {
+          "page": "overview",
+          "mode": "fresh-context",
+          "metric": "images",
+          "n": 3,
+          "values": [
+            2184,
+            1446,
+            1442
+          ],
+          "min": 1442,
+          "median": 1446,
+          "max": 2184
+        },
+        {
+          "page": "overview",
+          "mode": "reload",
+          "metric": "core",
+          "n": 3,
+          "values": [
+            648,
+            538,
+            464
+          ],
+          "min": 464,
+          "median": 538,
+          "max": 648
+        },
+        {
+          "page": "overview",
+          "mode": "reload",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            1107,
+            1140,
+            820
+          ],
+          "min": 820,
+          "median": 1107,
+          "max": 1140
+        },
+        {
+          "page": "overview",
+          "mode": "reload",
+          "metric": "images",
+          "n": 3,
+          "values": [
+            907,
+            856,
+            719
+          ],
+          "min": 719,
+          "median": 856,
+          "max": 907
+        },
+        {
+          "page": "overview",
+          "mode": "repeat-document-navigation",
+          "metric": "core",
+          "n": 3,
+          "values": [
+            913,
+            498,
+            655
+          ],
+          "min": 498,
+          "median": 655,
+          "max": 913
+        },
+        {
+          "page": "overview",
+          "mode": "repeat-document-navigation",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            1242,
+            827,
+            1001
+          ],
+          "min": 827,
+          "median": 1001,
+          "max": 1242
+        },
+        {
+          "page": "overview",
+          "mode": "repeat-document-navigation",
+          "metric": "images",
+          "n": 3,
+          "values": [
+            1175,
+            842,
+            916
+          ],
+          "min": 842,
+          "median": 916,
+          "max": 1175
+        },
+        {
+          "page": "agents",
+          "mode": "fresh-context",
+          "metric": "agentsCards",
+          "n": 3,
+          "values": [
+            1380,
+            950,
+            1232
+          ],
+          "min": 950,
+          "median": 1232,
+          "max": 1380
+        },
+        {
+          "page": "agents",
+          "mode": "reload",
+          "metric": "agentsCards",
+          "n": 3,
+          "values": [
+            826,
+            609,
+            835
+          ],
+          "min": 609,
+          "median": 826,
+          "max": 835
+        },
+        {
+          "page": "agents",
+          "mode": "repeat-document-navigation",
+          "metric": "agentsCards",
+          "n": 3,
+          "values": [
+            602,
+            827,
+            674
+          ],
+          "min": 602,
+          "median": 674,
+          "max": 827
+        }
+      ],
+      "app_errors": 0,
+      "api_errors": 0
+    },
+    "intermediate": {
+      "at": "2026-11-04T00:12:03.930Z",
+      "frontend": "f7e5a6e3",
+      "backend": "f7e5a6e3",
+      "rows": [
+        {
+          "page": "overview",
+          "mode": "fresh-context",
+          "metric": "core",
+          "n": 3,
+          "values": [
+            1665,
+            797,
+            809
+          ],
+          "min": 797,
+          "median": 809,
+          "max": 1665
+        },
+        {
+          "page": "overview",
+          "mode": "fresh-context",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            2063,
+            986,
+            1033
+          ],
+          "min": 986,
+          "median": 1033,
+          "max": 2063
+        },
+        {
+          "page": "overview",
+          "mode": "fresh-context",
+          "metric": "images",
+          "n": 3,
+          "values": [
+            2242,
+            1251,
+            1265
+          ],
+          "min": 1251,
+          "median": 1265,
+          "max": 2242
+        },
+        {
+          "page": "overview",
+          "mode": "reload",
+          "metric": "core",
+          "n": 3,
+          "values": [
+            576,
+            670,
+            566
+          ],
+          "min": 566,
+          "median": 576,
+          "max": 670
+        },
+        {
+          "page": "overview",
+          "mode": "reload",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            989,
+            1076,
+            972
+          ],
+          "min": 972,
+          "median": 989,
+          "max": 1076
+        },
+        {
+          "page": "overview",
+          "mode": "reload",
+          "metric": "images",
+          "n": 3,
+          "values": [
+            922,
+            1008,
+            871
+          ],
+          "min": 871,
+          "median": 922,
+          "max": 1008
+        },
+        {
+          "page": "overview",
+          "mode": "repeat-document-navigation",
+          "metric": "core",
+          "n": 3,
+          "values": [
+            628,
+            478,
+            532
+          ],
+          "min": 478,
+          "median": 532,
+          "max": 628
+        },
+        {
+          "page": "overview",
+          "mode": "repeat-document-navigation",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            996,
+            804,
+            908
+          ],
+          "min": 804,
+          "median": 908,
+          "max": 996
+        },
+        {
+          "page": "overview",
+          "mode": "repeat-document-navigation",
+          "metric": "images",
+          "n": 3,
+          "values": [
+            1045,
+            821,
+            791
+          ],
+          "min": 791,
+          "median": 821,
+          "max": 1045
+        },
+        {
+          "page": "agents",
+          "mode": "fresh-context",
+          "metric": "agentsCards",
+          "n": 3,
+          "values": [
+            1098,
+            913,
+            975
+          ],
+          "min": 913,
+          "median": 975,
+          "max": 1098
+        },
+        {
+          "page": "agents",
+          "mode": "reload",
+          "metric": "agentsCards",
+          "n": 3,
+          "values": [
+            614,
+            645,
+            627
+          ],
+          "min": 614,
+          "median": 627,
+          "max": 645
+        },
+        {
+          "page": "agents",
+          "mode": "repeat-document-navigation",
+          "metric": "agentsCards",
+          "n": 3,
+          "values": [
+            650,
+            618,
+            597
+          ],
+          "min": 597,
+          "median": 618,
+          "max": 650
+        }
+      ],
+      "app_errors": 0,
+      "api_errors": 0
+    },
+    "current": {
+      "at": "2026-11-04T00:21:56.427Z",
+      "frontend": "b19ca6ce",
+      "backend": "f7e5a6e3",
+      "rows": [
+        {
+          "page": "overview",
+          "mode": "fresh-context",
+          "metric": "core",
+          "n": 3,
+          "values": [
+            1832,
+            709,
+            730
+          ],
+          "min": 709,
+          "median": 730,
+          "max": 1832
+        },
+        {
+          "page": "overview",
+          "mode": "fresh-context",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            2406,
+            1161,
+            1165
+          ],
+          "min": 1161,
+          "median": 1165,
+          "max": 2406
+        },
+        {
+          "page": "overview",
+          "mode": "fresh-context",
+          "metric": "images",
+          "n": 3,
+          "values": [
+            2540,
+            1360,
+            1214
+          ],
+          "min": 1214,
+          "median": 1360,
+          "max": 2540
+        },
+        {
+          "page": "overview",
+          "mode": "reload",
+          "metric": "core",
+          "n": 3,
+          "values": [
+            638,
+            494,
+            471
+          ],
+          "min": 471,
+          "median": 494,
+          "max": 638
+        },
+        {
+          "page": "overview",
+          "mode": "reload",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            1269,
+            753,
+            1044
+          ],
+          "min": 753,
+          "median": 1044,
+          "max": 1269
+        },
+        {
+          "page": "overview",
+          "mode": "reload",
+          "metric": "images",
+          "n": 3,
+          "values": [
+            1035,
+            768,
+            758
+          ],
+          "min": 758,
+          "median": 768,
+          "max": 1035
+        },
+        {
+          "page": "overview",
+          "mode": "repeat-document-navigation",
+          "metric": "core",
+          "n": 3,
+          "values": [
+            492,
+            523,
+            490
+          ],
+          "min": 490,
+          "median": 492,
+          "max": 523
+        },
+        {
+          "page": "overview",
+          "mode": "repeat-document-navigation",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            1123,
+            872,
+            808
+          ],
+          "min": 808,
+          "median": 872,
+          "max": 1123
+        },
+        {
+          "page": "overview",
+          "mode": "repeat-document-navigation",
+          "metric": "images",
+          "n": 3,
+          "values": [
+            1020,
+            821,
+            774
+          ],
+          "min": 774,
+          "median": 821,
+          "max": 1020
+        },
+        {
+          "page": "agents",
+          "mode": "fresh-context",
+          "metric": "agentsCards",
+          "n": 3,
+          "values": [
+            1246,
+            1141,
+            908
+          ],
+          "min": 908,
+          "median": 1141,
+          "max": 1246
+        },
+        {
+          "page": "agents",
+          "mode": "reload",
+          "metric": "agentsCards",
+          "n": 3,
+          "values": [
+            812,
+            599,
+            572
+          ],
+          "min": 572,
+          "median": 599,
+          "max": 812
+        },
+        {
+          "page": "agents",
+          "mode": "repeat-document-navigation",
+          "metric": "agentsCards",
+          "n": 3,
+          "values": [
+            604,
+            706,
+            581
+          ],
+          "min": 581,
+          "median": 604,
+          "max": 706
+        }
+      ],
+      "app_errors": 0,
+      "api_errors": 0
+    }
+  },
+  "navigation": {
+    "baseline": {
+      "at": "2026-11-03T22:50:23.768Z",
+      "frontend": "f87f7baf",
+      "backend": "f87f7baf",
+      "rows": [
+        {
+          "from": "files",
+          "target": "files",
+          "metric": "usable",
+          "n": 3,
+          "values": [
+            295,
+            350,
+            266
+          ],
+          "min": 266,
+          "median": 295,
+          "max": 350
+        },
+        {
+          "from": "files",
+          "target": "files",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            560,
+            661,
+            532
+          ],
+          "min": 532,
+          "median": 560,
+          "max": 661
+        },
+        {
+          "from": "files",
+          "target": "overview",
+          "metric": "core",
+          "n": 3,
+          "values": [
+            538,
+            520,
+            508
+          ],
+          "min": 508,
+          "median": 520,
+          "max": 538
+        },
+        {
+          "from": "files",
+          "target": "overview",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            836,
+            834,
+            851
+          ],
+          "min": 834,
+          "median": 836,
+          "max": 851
+        },
+        {
+          "from": "files",
+          "target": "overview",
+          "metric": "images",
+          "n": 3,
+          "values": [
+            916,
+            1082,
+            967
+          ],
+          "min": 916,
+          "median": 967,
+          "max": 1082
+        },
+        {
+          "from": "agents",
+          "target": "agents",
+          "metric": "usable",
+          "n": 3,
+          "values": [
+            768,
+            399,
+            318
+          ],
+          "min": 318,
+          "median": 399,
+          "max": 768
+        },
+        {
+          "from": "agents",
+          "target": "agents",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            768,
+            399,
+            318
+          ],
+          "min": 318,
+          "median": 399,
+          "max": 768
+        },
+        {
+          "from": "agents",
+          "target": "overview",
+          "metric": "core",
+          "n": 3,
+          "values": [
+            401,
+            364,
+            357
+          ],
+          "min": 357,
+          "median": 364,
+          "max": 401
+        },
+        {
+          "from": "agents",
+          "target": "overview",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            798,
+            720,
+            734
+          ],
+          "min": 720,
+          "median": 734,
+          "max": 798
+        },
+        {
+          "from": "agents",
+          "target": "overview",
+          "metric": "images",
+          "n": 3,
+          "values": [
+            748,
+            749,
+            700
+          ],
+          "min": 700,
+          "median": 748,
+          "max": 749
+        }
+      ],
+      "image_responses": [
+        {
+          "wire_status": 200,
+          "transfer_bytes": 250534
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 747
+        },
+        {
+          "wire_status": 200,
+          "transfer_bytes": 250544
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 725
+        },
+        {
+          "wire_status": 200,
+          "transfer_bytes": 250542
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 745
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 731
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 756
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 745
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 726
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 749
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 726
+        }
+      ],
+      "refs_unchanged": true,
+      "app_errors": 0
+    },
+    "current": {
+      "at": "2026-11-04T00:23:12.493Z",
+      "frontend": "b19ca6ce",
+      "backend": "f7e5a6e3",
+      "rows": [
+        {
+          "from": "files",
+          "target": "files",
+          "metric": "usable",
+          "n": 3,
+          "values": [
+            248,
+            251,
+            216
+          ],
+          "min": 216,
+          "median": 248,
+          "max": 251
+        },
+        {
+          "from": "files",
+          "target": "files",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            552,
+            499,
+            500
+          ],
+          "min": 499,
+          "median": 500,
+          "max": 552
+        },
+        {
+          "from": "files",
+          "target": "overview",
+          "metric": "core",
+          "n": 3,
+          "values": [
+            444,
+            310,
+            331
+          ],
+          "min": 310,
+          "median": 331,
+          "max": 444
+        },
+        {
+          "from": "files",
+          "target": "overview",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            800,
+            614,
+            667
+          ],
+          "min": 614,
+          "median": 667,
+          "max": 800
+        },
+        {
+          "from": "files",
+          "target": "overview",
+          "metric": "images",
+          "n": 3,
+          "values": [
+            800,
+            596,
+            667
+          ],
+          "min": 596,
+          "median": 667,
+          "max": 800
+        },
+        {
+          "from": "agents",
+          "target": "agents",
+          "metric": "usable",
+          "n": 3,
+          "values": [
+            499,
+            300,
+            301
+          ],
+          "min": 300,
+          "median": 301,
+          "max": 499
+        },
+        {
+          "from": "agents",
+          "target": "agents",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            499,
+            300,
+            301
+          ],
+          "min": 300,
+          "median": 301,
+          "max": 499
+        },
+        {
+          "from": "agents",
+          "target": "overview",
+          "metric": "core",
+          "n": 3,
+          "values": [
+            477,
+            298,
+            306
+          ],
+          "min": 298,
+          "median": 306,
+          "max": 477
+        },
+        {
+          "from": "agents",
+          "target": "overview",
+          "metric": "complete",
+          "n": 3,
+          "values": [
+            816,
+            635,
+            682
+          ],
+          "min": 635,
+          "median": 682,
+          "max": 816
+        },
+        {
+          "from": "agents",
+          "target": "overview",
+          "metric": "images",
+          "n": 3,
+          "values": [
+            749,
+            599,
+            615
+          ],
+          "min": 599,
+          "median": 615,
+          "max": 749
+        }
+      ],
+      "image_responses": [
+        {
+          "wire_status": 304,
+          "transfer_bytes": 734
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 715
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 720
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 752
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 750
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 729
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 733
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": null
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 726
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 699
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 724
+        },
+        {
+          "wire_status": 304,
+          "transfer_bytes": 724
+        }
+      ],
+      "refs_unchanged": true,
+      "app_errors": 0
+    },
+    "same_main_across_cohorts": true
+  },
+  "build_comparison": {
+    "base_revision": "2ce41ce7",
+    "before": {
+      "raw": 1085764,
+      "gzip": 335613,
+      "zstd": 336343
+    },
+    "after": {
+      "raw": 752225,
+      "gzip": 226070,
+      "zstd": 229953
+    },
+    "public_before": {
+      "raw": 1085764,
+      "gzip": 335613,
+      "zstd": 336343
+    },
+    "public_after": {
+      "raw": 1089186,
+      "gzip": 339387,
+      "zstd": 343646
+    },
+    "basis": "Identical local compressors at same base; isolates public-site split; not Cloudflare wire sizes."
+  },
+  "limits": [
+    "Fresh browser context does not force cold backend or CDN storage.",
+    "No worldwide, production or Entire comparison.",
+    "Fresh image readiness adds a stricter visible-placeholder check in current cohorts; compare SPA image reuse instead.",
+    "Worker Server-Timing does not cover all forwarding and CPU work."
+  ]
+}
