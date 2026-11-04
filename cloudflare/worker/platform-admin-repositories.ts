@@ -1,6 +1,8 @@
 // Sorted operator-only D1 listing. Each cell uses the same keyset fence, then bounded
 // pages merge globally. No repository authority/storage requests run on this path.
+import { normalizeAccountIdentifier } from '../../shared/account';
 import type {
+  RepositoryFilters,
   RepositoryListing,
   RepositoryOrder,
   RepositoryPage,
@@ -18,11 +20,25 @@ const COLUMNS = {
   created: 'r.created_at',
   database: 'a.db_bytes',
 } as const;
-type Cursor = RepositoryOrder & { q: string; value: string | number | null; id: string };
-export type RepositoryQuery = RepositoryOrder & { q: string; cursor?: Cursor };
+type Cursor = RepositoryOrder &
+  Partial<RepositoryFilters> & {
+    q: string;
+    value: string | number | null;
+    id: string;
+  };
+export type RepositoryQuery = RepositoryOrder & RepositoryFilters & { q: string; cursor?: Cursor };
 const invalid = () => new ApiError('INVALID_INPUT', 'The repository order changed. Search again.');
 
 export function repositoryQuery(query: URLSearchParams): RepositoryQuery {
+  const allowed = new Set(['sort', 'direction', 'q', 'cursor', 'owner', 'visibility']);
+  for (const key of query.keys())
+    if (!allowed.has(key) || query.getAll(key).length !== 1) throw invalid();
+  const rawOwner = (query.get('owner') ?? '').trim();
+  const owner = rawOwner ? normalizeAccountIdentifier(rawOwner.replace(/^@/, '')) : '';
+  if (owner === null) throw new ApiError('INVALID_INPUT', 'Enter an exact owner handle or email.');
+  const visibility = query.get('visibility') ?? '';
+  if (!['', 'public', 'private'].includes(visibility))
+    throw new ApiError('INVALID_INPUT', 'Choose public or private visibility.');
   const sort = query.get('sort') ?? 'database';
   const direction = query.get('direction') ?? 'desc';
   if (!Object.hasOwn(COLUMNS, sort) || !['asc', 'desc'].includes(direction)) throw invalid();
@@ -30,6 +46,8 @@ export function repositoryQuery(query: URLSearchParams): RepositoryQuery {
     sort,
     direction,
     q: (query.get('q') ?? '').trim().toLowerCase().slice(0, 100),
+    owner,
+    visibility,
   } as RepositoryQuery;
   const raw = query.get('cursor');
   if (raw !== null) {
@@ -46,6 +64,8 @@ export function repositoryQuery(query: URLSearchParams): RepositoryQuery {
       cursor.sort !== sort ||
       cursor.direction !== direction ||
       cursor.q !== order.q ||
+      (cursor.owner ?? '') !== order.owner ||
+      (cursor.visibility ?? '') !== order.visibility ||
       typeof cursor.id !== 'string' ||
       !/^r[0-9a-f]{20}$/.test(cursor.id) ||
       !(cursor.value === null
@@ -64,6 +84,8 @@ const cursorOf = (q: RepositoryQuery, row: RepositoryListing) =>
     sort: q.sort,
     direction: q.direction,
     q: q.q,
+    ...(q.owner ? { owner: q.owner } : {}),
+    ...(q.visibility ? { visibility: q.visibility } : {}),
     value: row.sort_value,
     id: row.id,
   });
@@ -140,6 +162,14 @@ export async function sortedRepositories(env: Env, q: RepositoryQuery): Promise<
       "(r.name LIKE ? ESCAPE '\\' OR r.workspace LIKE ? ESCAPE '\\' OR COALESCE(inherited.handle,h.handle) LIKE ? ESCAPE '\\' OR r.id LIKE ? ESCAPE '\\')",
     );
     binds.push(like, like, like, like);
+  }
+  if (q.owner) {
+    where.push('(lower(r.workspace)=? OR lower(COALESCE(inherited.handle,h.handle))=?)');
+    binds.push(q.owner, q.owner);
+  }
+  if (q.visibility) {
+    where.push('r.visibility=?');
+    binds.push(q.visibility);
   }
   let fence = '';
   if (q.cursor) {

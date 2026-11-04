@@ -128,3 +128,62 @@ it('fails clearly rather than truncate an oversized or unavailable legacy handle
   await expect(sortedRepositories({ ...scoped, CELLS: 'on', CELL: 'weur', INDEX_ENAM: undefined } as Env, order))
     .rejects.toMatchObject({ code: 'CELL_UNAVAILABLE' });
 });
+
+it('filters exact owners and visibility across all cells before sorted pagination', async () => {
+  await seed();
+  const europe = (bindings as unknown as { INDEX_WEUR: D1Database }).INDEX_WEUR;
+  await applySchema(europe);
+  for (let n = 100; n < 163; n++) {
+    await europe.prepare('INSERT INTO platform_repos(id,workspace,name,created_at,visibility) VALUES(?,?,?,?,?)')
+      .bind(id(n), 'owner@example.com', `repo-${n}`, 1000, n % 2 ? 'private' : 'public').run();
+    await europe.prepare('INSERT INTO platform_activity(repo,db_bytes) VALUES(?,?)').bind(id(n), 30000).run();
+  }
+  const eu = { ...scoped, CELLS: 'on', CELL: 'weur', INDEX: europe, INDEX_ENAM: bindings.INDEX } as Env;
+  const target = { ...scoped, CELLS: 'on', CELL_WEUR: {
+    fetch: (req: Request) => inScope({ env: eu, req }, () => platformFetch(req, eu)),
+  } } as unknown as Env;
+  for (const name of ['@ALIASED', 'OWNER@example.com']) {
+    const query = new URLSearchParams({ sort: 'database', direction: 'desc', owner: name, visibility: 'public' });
+    const seen: any[] = [];
+    let cursor: string | null = null;
+    do {
+      if (cursor) query.set('cursor', cursor);
+      const answer = await api(`/admin/repos?${query}`, owner, {}, target);
+      expect(answer.status).toBe(200);
+      expect(answer.body.partial).toBeUndefined();
+      seen.push(...answer.body.items);
+      cursor = answer.body.next;
+      expect(seen.length).toBeLessThanOrEqual(63);
+    } while (cursor);
+    expect(new Set(seen.map(r => r.id)).size).toBe(63);
+    expect(seen.every(r => r.visibility === 'public' && r.owner === 'owner@example.com')).toBe(true);
+    expect(seen.slice(0, 32).every(r => r.db_bytes === 30000)).toBe(true);
+  }
+  expect((await api('/admin/repos?owner=aliased&visibility=private', owner, {}, target)).body.items).toHaveLength(31);
+  expect((await api('/admin/repos?sort=name&owner=alias', owner, {}, target)).body.items).toEqual([]);
+  expect((await api('/admin/repos?sort=name&owner=aliased&visibility=public&q=repo-01', owner, {}, target)).body.items).toHaveLength(1);
+  const first = (await api('/admin/repos?sort=name&owner=aliased&visibility=public', owner, {}, target)).body;
+  expect(first.next).not.toBeNull();
+  for (const filters of ['owner=other&visibility=public', 'owner=aliased&visibility=private', 'owner=aliased', 'visibility=public'])
+    expect((await api(`/admin/repos?sort=name&${filters}&cursor=${encodeURIComponent(first.next)}`, owner, {}, target)).status).toBe(400);
+});
+
+it('rejects invalid or unsupported filters without accepting legacy cursors into filtered lists', async () => {
+  await seed();
+  const first = (await api('/admin/repos?sort=name', owner)).body;
+  for (const query of ['owner=not%20an%20owner', 'visibility=internal', 'sort=name&created_after=1', 'created_after=1', 'sort=name&owner=one&owner=two', `sort=name&owner=aliased&cursor=${encodeURIComponent(first.next)}`])
+    expect((await api(`/admin/repos?${query}`, owner)).status, query).toBe(400);
+  expect((await api(`/admin/repos?sort=name&cursor=${encodeURIComponent(first.next)}`, owner)).status).toBe(200);
+});
+
+it('retains the legacy q/before protocol, including first-value duplicate semantics', async () => {
+  await seed();
+  const first = await api('/admin/repos?q=repo&before=1001', owner);
+  expect(first.status).toBe(200);
+  expect(first.body.items).toHaveLength(50);
+  expect(first.body.next).toBe(1000);
+  expect(first.body.items[0]).not.toHaveProperty('sort_value');
+  expect((await api('/admin/repos?q=repo&before=1000', owner)).body.items).toEqual([]);
+  expect((await api('/admin/repos?q=repo-01&q=repo-02', owner)).body.items.map((r: any) => r.name)).toEqual(['repo-01']);
+  expect((await api('/admin/repos?q=repo&before=1001&before=1000', owner)).body.items).toHaveLength(50);
+});

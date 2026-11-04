@@ -180,7 +180,12 @@ async function operatorRoute(
   }
   if (section === 'orgs' && id && hold) return operatorOrgHold(env, actor, orgArg(id), method);
   if (section === 'imports' && !id && get) return importAudit(env, query.get('after'));
-  if (section === 'repos' && !id && get && query.has('sort')) {
+  if (
+    section === 'repos' &&
+    !id &&
+    get &&
+    [...query.keys()].some((key) => key !== 'q' && key !== 'before')
+  ) {
     const order = repositoryQuery(query);
     return everyCell(
       env,
