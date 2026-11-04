@@ -3,11 +3,16 @@
 **Live tests stay on the owner's Mac, where we debug and fix them. GitHub does CI and the prod deploy.** The owner says "ship"; only then is the PR opened. `deploy-prod.yml` deploys only a merged PR from `dev` to `main`.
 
 1. **Deploy dev and run the full kit** at the tip of `dev`, from the Mac: `cargo xtask deploy --env dev`, then `node tools/staging-realworld.mjs`.
-2. **Push `dev`, then mark the commit:** `cargo xtask live-tests`. It refuses unless the checkout is clean at the tip of `dev` and the newest evidence is a full pass at HEAD: all 22 items, none skipped, recording HEAD's tree. It sets a commit status named `live-tests` that says `pass tree <tree>` and nothing else. `--dry-run` prints the call.
-3. **Open the PR** from `dev` to `main`. `ship.yml` runs: the merge must equal the head's tree, then Check and Full suite. It holds no secret and deploys nothing.
-4. **Merge it** once `live-tests` and Ship are green. Use a merge commit.
+2. **Push `dev`, then mark the commit:** `cargo xtask live-tests`. It refuses unless the checkout is clean at the tip of `dev` and the newest evidence is a full pass at HEAD: every required item, none skipped, recording HEAD's tree. It sets a commit status named `live-tests` that says `pass tree <tree>` and nothing else. `--dry-run` prints the call.
+3. **Open the PR** from `dev` to `main`. `ci.yml` runs full release validation: the merge must equal the head's tree, then Check and Full suite. It holds no secret and deploys nothing.
+4. **Merge it** once `live-tests` and the final `Ship gate` are green. Use a merge commit.
 5. **`deploy-prod.yml` runs** on the push to `main`: deploy, CLI publish if that version isn't on prod (macOS runner), the runner's smoke, the 30-minute monitor.
 6. **Run the rest of the smoke from the Mac:** `node tools/staging-realworld.mjs --prod --only 0,browser,26,12,13,14,15,16,17`.
+
+Exactly three workflows remain: CI, Deploy prod, and the disabled manual Deploy dev.
+CI keeps fast checks for ordinary changes and full checks for release PRs.
+For manual validation, dispatch `ci.yml` with `full=true` (and `image=true` to force the image).
+No CI run deploys or reads deployment secrets.
 
 Other pushes to `main` deploy nothing. `workflow_dispatch` on `deploy-prod.yml` re-runs the steps for main's tip (`dry_run` defaults on, `allow_active` off).
 
@@ -20,7 +25,7 @@ Other pushes to `main` deploy nothing. `workflow_dispatch` on `deploy-prod.yml` 
 | Evidence file passes at HEAD's tree | Yes | No |
 | PR head has HEAD's tree | No | Yes |
 | Newest `live-tests` at the PR head is a success, set by `MagnetonIO`, for that tree | No | Yes |
-| A successful Ship run of this repository's `dev` at the PR head (Check, Full suite) | No | Yes |
+| A successful CI release-PR run for this repository's `dev` → `main` head (all validation jobs) | No | Yes |
 
 `--ship-head` needs `GITHUB_REPOSITORY` and `GH_TOKEN` and reads GitHub itself (`xtask/src/deploy_ship.rs`), so it is a different check, not a bypass.
 
@@ -46,8 +51,8 @@ Other pushes to `main` deploy nothing. `workflow_dispatch` on `deploy-prod.yml` 
 
 The repository is public, so logs, summaries, comments, statuses and artifacts are readable by anyone.
 
-- **Fork PRs never reach secrets.** No `pull_request_target`. Ship holds no secrets; jobs with secrets need an Environment, and those run only on `main`.
-- **Forged results don't count.** A fork's `pull_request` run lives in this repository, so xtask accepts only a Ship run of this repository's `dev`. A workflow token could set a status, so xtask accepts only the owner's.
+- **Fork PRs never reach secrets.** No `pull_request_target`. CI holds no secrets; jobs with secrets need an Environment, and those run only on `main`.
+- **Forged results don't count.** A fork's `pull_request` run lives in this repository, so xtask accepts only a CI pull-request run of this repository's `dev` into `main`. A workflow token could set a status, so xtask accepts only the owner's.
 - **Output is allow-listed.** `tools/ship/quiet.mjs` drops deploy output except guard refusals and timing rows, and smoke output except each check's name and result (wrangler can print the account's email; smoke details quote API replies). It closes the job summary too. The cost: a failure says what failed, not why. Rerun that command on the Mac for the why.
 - **The kit leaves no evidence on GitHub.** Only the `live-tests` status does.
 - **Monitor details stay private.** Public output is a count. Superfan mails the details.
@@ -70,7 +75,7 @@ Then:
 
 1. `production` Environment: deployment branch rule `main`.
 2. `gh workflow enable deploy-prod.yml`.
-3. Branch protection on `main`: require `live-tests` and the Ship jobs, so a merge can't beat them. Only `MagnetonIO` can push or merge; the gate in `deploy-prod.yml` refuses any other actor.
+3. Branch protection on `main`: require `live-tests` and `Ship gate`, so a merge can't beat them. Only `MagnetonIO` can push or merge; the gate in `deploy-prod.yml` refuses any other actor.
 4. Fork PR workflows: require approval for outside contributors.
 5. After the first ship, `GET /status` on prod Superfan must say `"notices": "email"`.
 

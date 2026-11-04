@@ -1,6 +1,6 @@
 //! The GitHub side of a ship (docs/ship-pipeline.md). Live tests stay on the owner's Mac:
 //! `cargo xtask live-tests` turns a passing full kit into a `live-tests` commit status, and a
-//! prod deploy from a merged ship PR (`--ship-head`) reads that status and the PR head's Ship
+//! prod deploy from a merged ship PR (`--ship-head`) reads that status and the PR head's release CI
 //! run instead of the dev Workers and the evidence file. This repository is public, so the
 //! status says only "pass" and the tree. Decisions are pure over gathered facts, as in
 //! deploy_guard. Local deploys never come through here.
@@ -16,7 +16,7 @@ use std::time::Duration;
 const LIVE_TESTS: &str = "live-tests";
 /// Only the owner's status counts: a workflow token with `statuses: write` is someone else.
 const OWNER: &str = "MagnetonIO";
-const SHIP_WORKFLOW: &str = ".github/workflows/ship.yml";
+const CI_WORKFLOW: &str = ".github/workflows/ci.yml";
 
 /// What GitHub says about a merged ship PR's head.
 #[derive(Clone, Debug, Default)]
@@ -27,7 +27,7 @@ pub(crate) struct ShipFacts {
     pub tree: Option<String>,
     /// The commit's statuses, newest first, as GitHub lists them.
     pub statuses: Vec<Value>,
-    /// Ship workflow runs at the PR head.
+    /// Release CI pull-request runs at the PR head.
     pub runs: Vec<Value>,
 }
 
@@ -49,7 +49,7 @@ fn description(tree: &str) -> String {
 }
 
 /// The PR head has HEAD's tree, its newest `live-tests` is the owner's pass for that tree, and a
-/// Ship run of this repository's dev (Check and Full suite are its jobs) succeeded there.
+/// Release CI run of this repository's dev (Check and Full suite are its jobs) succeeded there.
 pub(crate) fn passes(facts: &Facts) -> Result<()> {
     let ship = facts
         .ship
@@ -66,7 +66,7 @@ pub(crate) fn passes(facts: &Facts) -> Result<()> {
     live_tests_pass(ship, &facts.head_tree)?;
     if !ship.runs.iter().any(|run| ship_run(run, ship)) {
         return Err(format!(
-            "Refusing prod: no successful Ship run at {head}, so Check and Full suite did not pass there."
+            "Refusing prod: no successful release CI run at {head}, so Check and Full suite did not pass there."
         )
         .into());
     }
@@ -99,7 +99,7 @@ fn live_tests_pass(ship: &ShipFacts, tree: &str) -> Result<()> {
     Ok(())
 }
 
-/// A successful Ship run of this repository's dev at the PR head. A fork's run counts for
+/// A successful release CI run of this repository's dev at the PR head. A fork's run counts for
 /// nothing: `pull_request` runs of forks live in this repository too.
 fn ship_run(run: &Value, ship: &ShipFacts) -> bool {
     let path = run["path"].as_str().unwrap_or_default();
@@ -108,10 +108,17 @@ fn ship_run(run: &Value, ship: &ShipFacts) -> bool {
         && run["head_sha"] == ship.pr_head.as_str()
         && run["head_branch"] == "dev"
         && run["head_repository"]["full_name"] == ship.repo.as_str()
-        && (path == SHIP_WORKFLOW || path.starts_with(&format!("{SHIP_WORKFLOW}@")))
+        && run["pull_requests"].as_array().is_some_and(|pulls| {
+            pulls.iter().any(|pull| {
+                pull["base"]["ref"] == "main"
+                    && pull["head"]["ref"] == "dev"
+                    && pull["head"]["sha"] == ship.pr_head.as_str()
+            })
+        })
+        && (path == CI_WORKFLOW || path.starts_with(&format!("{CI_WORKFLOW}@")))
 }
 
-/// Reads the PR head's statuses and Ship runs; needs the runner's GITHUB_REPOSITORY and GH_TOKEN.
+/// Reads the PR head's statuses and release CI runs; needs the runner's GITHUB_REPOSITORY and GH_TOKEN.
 pub(crate) async fn gather(pr_head: &str) -> Result<ShipFacts> {
     let variable = |name: &str| {
         std::env::var(name)
@@ -137,7 +144,7 @@ pub(crate) async fn gather(pr_head: &str) -> Result<ShipFacts> {
     };
     let statuses = get(format!("commits/{pr_head}/statuses?per_page=100")).await?;
     let runs = get(format!(
-        "actions/workflows/ship.yml/runs?head_sha={pr_head}&event=pull_request&status=success&per_page=20"
+        "actions/workflows/ci.yml/runs?head_sha={pr_head}&event=pull_request&status=success&per_page=20"
     ))
     .await?;
     let list = |value: &Value| value.as_array().cloned().unwrap_or_default();
