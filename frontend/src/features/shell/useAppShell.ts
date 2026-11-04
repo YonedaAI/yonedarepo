@@ -4,7 +4,7 @@ import { useSession } from '../../hooks/useSession';
 import { emailLinkTitle, isEmailLink } from '../account-settings/emailLinkRoute';
 import { useSignups } from '../admin/useSignups';
 import { syncAgents } from '../agents/agentsModel';
-import { signedInHint } from '../site/signedInHint';
+import { personalWorkspaceHint, signedInHint } from '../site/signedInHint';
 import { siteView } from '../site/siteRoute';
 import type { OrgSummary } from '../source-platform/orgModel';
 import {
@@ -150,8 +150,21 @@ export function useAppShell() {
     setPicking(false);
   }, [session.sessionEnded]);
   useEffect(() => {
+    if (session.sessionEnded) {
+      personalWorkspaceHint(null);
+      return;
+    }
+    if (!session.loading && !session.authenticated) personalWorkspaceHint(null);
+    else if (!session.loading && !session.error)
+      personalWorkspaceHint(session.identity?.username ?? null);
     if (!session.loading && !session.error) signedInHint(session.authenticated);
-  }, [session.loading, session.error, session.authenticated]);
+  }, [
+    session.loading,
+    session.error,
+    session.authenticated,
+    session.identity?.username,
+    session.sessionEnded,
+  ]);
 
   async function created(result: Created) {
     // Agents set to run on all repositories pick up the new one; best effort, never waited on.

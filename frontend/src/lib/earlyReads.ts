@@ -13,11 +13,13 @@ declare global {
   }
 }
 
-/** Serialized by Vite with the route matcher supplied explicitly, not a free binding. */
+/** Vite supplies serialized dependencies. The workspace hint grants no access; exact URL
+ * adoption plus fresh session discovery and normal API authorization remain mandatory. */
 export function beginEarlyReads(
   target: Window,
   reservedRoots: readonly string[],
   namedOverview = plainNamedOverview,
+  workspaceHintKey = 'yoneda-personal-workspace',
 ) {
   target.__yonedaEarlyReads?.clear();
   const locationKey = () =>
@@ -56,7 +58,6 @@ export function beginEarlyReads(
       transport = Promise.reject(error);
     }
     const response = Promise.race([transport, aborted]);
-    // A failed early read may precede its consumer; preserve the rejection for that consumer.
     void response.catch(() => {});
     entries.set(url, { response, controller });
   };
@@ -71,8 +72,7 @@ export function beginEarlyReads(
       const entry = entries.get(url);
       if (!entry) return undefined;
       entries.delete(url);
-      // Adoption transfers cancellation to the existing request scope. A resolver may
-      // navigate while session discovery is still pending; it must not cancel that scope.
+      // Adoption transfers cancellation to the consumer scope.
       controllers.delete(entry.controller);
       const cancel = () => entry.controller.abort(signal?.reason);
       if (signal?.aborted) cancel();
@@ -93,8 +93,18 @@ export function beginEarlyReads(
   timer = setTimeout(clear, 30_000);
   target.addEventListener('pagehide', clear, { once: true });
   start('/api/auth/session?summary=true');
-  // Restrict the head request to the plain named Overview contract. Other routes use
-  // their normal parser; a future route cannot accidentally opt into private prefetch.
+  if (documentKey === '/agents') {
+    try {
+      const workspace = target.localStorage.getItem(workspaceHintKey);
+      if (
+        workspace &&
+        workspace.length <= 254 &&
+        /^[\x21-\x7e]+$/.test(workspace) &&
+        /^(?:[a-z][a-z0-9_]{2,31}|[^@\s/\\]+@[^@\s/\\]+\.[^@\s/\\]+)$/.test(workspace)
+      )
+        start(`/api/managed/workspaces/${encodeURIComponent(workspace)}`);
+    } catch {}
+  }
   const named = namedOverview(target.location, reservedRoots);
   if (named)
     start(
