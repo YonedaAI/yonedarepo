@@ -138,6 +138,18 @@ impl Store {
         )
     }
 
+    /// Whether the store holds object `id`.
+    pub fn has(&self, id: &ObjectId) -> bool {
+        self.git(&["cat-file", "-e", &id.to_string()], None).is_ok()
+    }
+
+    /// Whether `ancestor` is `descendant` or one of its ancestors (both held).
+    pub fn is_ancestor(&self, ancestor: &ObjectId, descendant: &ObjectId) -> bool {
+        let (a, d) = (ancestor.to_string(), descendant.to_string());
+        self.git(&["merge-base", "--is-ancestor", &a, &d], None)
+            .is_ok()
+    }
+
     /// Branches and tags as the store holds them.
     pub fn refs(&self) -> Result<HashMap<String, ObjectId>> {
         let out = self.git(

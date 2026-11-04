@@ -27,6 +27,7 @@ pub fn router(svc: Arc<Service>) -> Router {
         .route("/git/{repo}/info/refs", get(info_refs))
         .route("/git/{repo}/git-upload-pack", post(upload_pack))
         .route("/git/{repo}/git-receive-pack", post(receive_pack))
+        .route("/local/sync", post(crate::sync_http::sync_now))
         .layer(DefaultBodyLimit::max(MAX_BODY))
         .with_state(svc)
 }
@@ -78,7 +79,11 @@ async fn guarded(
     service: &'static str,
     work: impl FnOnce(&Service, &Cred) -> Result<Response> + Send + 'static,
 ) -> Response {
-    if repo.trim_end_matches(".git") != svc.config.repo {
+    let current = svc
+        .layout
+        .config()
+        .map_or_else(|_| svc.config.repo.clone(), |c| c.repo);
+    if repo.trim_end_matches(".git") != current {
         return refusal(StatusCode::NOT_FOUND, "Repository not found".into());
     }
     let Some(cred) = credential(headers) else {

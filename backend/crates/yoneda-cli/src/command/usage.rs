@@ -93,9 +93,10 @@ declared reads (closure coverage: landing refuses a push whose reads changed mea
   push [<git push args>]              git push -o yoneda.reads=<recorded reads>, then clear them
 
 local repository (this clone and its worktrees land on one local main; yoneda-local)
-  local init                          a local repository for this clone, and remote `local`
-  local serve                         run it (one per clone); push with git push local HEAD:main
-  local status [--json]               local main and its log version
+  local init                          this clone's local repository and remote `local`, cloud-paired
+  local serve                         run it (one per clone, cloud-synced); git push local HEAD:main
+  local status [--json]               local main, its log version and where cloud sync stands
+  local sync [--json]                 sync with the paired cloud repository now
   hook claude-start|claude-read|claude-prompt|claude-memory|claude-bash|claude-stop
   hook opencode-start|opencode-read|opencode-prompt|opencode-memory|opencode-shell|opencode-stop
                                       agent hook entry points (JSON on stdin; plugins/)

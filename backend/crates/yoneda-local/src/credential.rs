@@ -6,14 +6,9 @@ use std::io::Read;
 use std::path::Path;
 use yoneda_core::Result;
 
-pub fn answer(cwd: &Path, action: &str) -> Result<String> {
+pub fn answer(cwd: &Path, action: &str, cloud_action: &str) -> Result<String> {
     let mut request = String::new();
     let _ = std::io::stdin().read_to_string(&mut request);
-    if action != "get" {
-        return Ok(String::new());
-    }
-    let layout = Layout::find(cwd)?;
-    let config = layout.config()?;
     let field = |name: &str| {
         request
             .lines()
@@ -21,6 +16,14 @@ pub fn answer(cwd: &Path, action: &str) -> Result<String> {
             .unwrap_or_default()
             .to_owned()
     };
+    if action == "cloud" {
+        return Ok(cloud(cloud_action, &field("protocol"), &field("host")));
+    }
+    if action != "get" {
+        return Ok(String::new());
+    }
+    let layout = Layout::find(cwd)?;
+    let config = layout.config()?;
     let ours = field("protocol") == "http" && field("host") == format!("127.0.0.1:{}", config.port);
     if !ours {
         return Ok(String::new());
@@ -29,4 +32,17 @@ pub fn answer(cwd: &Path, action: &str) -> Result<String> {
         "username=local\npassword={}\n",
         layout.read_token()?
     ))
+}
+
+/// The cloud credential, only for the origin sync named and only on `get`.
+fn cloud(action: &str, protocol: &str, host: &str) -> String {
+    let Ok(origin) = std::env::var(crate::cloud::CLOUD_ENV) else {
+        return String::new();
+    };
+    if action != "get" || origin != format!("{protocol}://{host}") {
+        return String::new();
+    }
+    crate::cloud::token_for(&origin)
+        .map(|t| format!("username=yoneda\npassword={t}\n"))
+        .unwrap_or_default()
 }
