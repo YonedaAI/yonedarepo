@@ -14,6 +14,17 @@ future addition would be a persistent local repository service shared by that
 clone's worktree family. Independent clones would remain independent unless
 explicitly connected to the same authority.
 
+Local and cloud hosting should share the same Rust transaction rules, migrations
+and acceptance contracts. Native SQLite and Cloudflare storage are hosting
+adapters around that engine. A local daemon should not maintain a second set of
+publication or conflict rules.
+
+Concurrent writers can move a shared checkout's `HEAD` during validation, even
+when every individual merge is valid. Each validation must name an immutable
+captured revision. Publication must compare its expected target revision, then
+validate any combined result before accepting it. Unrelated agents should not
+need to freeze their work to preserve another agent's baseline.
+
 ```mermaid
 flowchart LR
     A[Agent A worktree] -->|Submit change| R[Local Rust repository service]
