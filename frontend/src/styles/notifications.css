@@ -5,13 +5,14 @@
   position: absolute;
   top: -3px;
   right: -5px;
-  min-width: 15px;
-  padding: 1px 3px;
+  min-width: 18px;
+  padding: 0 4px;
   border-radius: 9px;
-  background: var(--accent);
-  color: var(--accent-ink, #fff);
-  font-size: 10px;
-  line-height: 13px;
+  background: var(--blue);
+  color: var(--on-accent);
+  font-size: var(--text-xs);
+  line-height: 18px;
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
 .notification-actions {
@@ -43,9 +44,13 @@
   overflow-wrap: anywhere;
 }
 .notification-list .unread a::before {
-  content: "●";
-  color: var(--accent);
-  font-size: 9px;
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--blue);
+  vertical-align: middle;
   margin-right: 8px;
 }
 .notification-list time {
