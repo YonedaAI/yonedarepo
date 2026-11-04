@@ -42,11 +42,12 @@ export class LandBatcher {
     const done = this.#settled.get(ticket);
     if (done) return done;
     this.target = target;
+    let deadline: ReturnType<typeof setTimeout> | null = null;
     const settled = new Promise<Settled | null>((resolve) => {
       const list = this.#waiters.get(ticket) ?? [];
       list.push(resolve);
       this.#waiters.set(ticket, list);
-      setTimeout(() => {
+      deadline = setTimeout(() => {
         const waiting = this.#waiters.get(ticket) ?? [];
         if (waiting.includes(resolve))
           log.warn('land.timed_out', { repo: target.repo, phase: 'wait' });
@@ -55,7 +56,7 @@ export class LandBatcher {
         else this.#waiters.delete(ticket);
         resolve(null);
       }, timeoutMs);
-    });
+    }).finally(() => clearTimeout(deadline));
     await this.schedule(0);
     return settled;
   }
@@ -66,16 +67,17 @@ export class LandBatcher {
    */
   async submit(target: Target, item: Json, timeoutMs: number) {
     this.target = target;
+    let deadline: ReturnType<typeof setTimeout> | null = null;
     const outcome = new Promise<Json | null>((resolve) => {
       const submission = { item, at: Date.now(), resolve };
       this.#submissions.push(submission);
-      setTimeout(() => {
+      deadline = setTimeout(() => {
         if (this.#submissions.includes(submission))
           log.warn('land.timed_out', { repo: target.repo, phase: 'submit' });
         this.#submissions = this.#submissions.filter((s) => s !== submission);
         resolve(null);
       }, timeoutMs);
-    });
+    }).finally(() => clearTimeout(deadline));
     await this.schedule(0);
     return outcome;
   }

@@ -102,7 +102,7 @@ export class LandCombiner extends DurableObject<Env> {
     return servedHere(this.ctx, this.env, request);
   }
 
-  /** REGION_HINT_TEST only: the data center this instance runs in. */
+  /** `keep` persists initial placement; other calls read the diagnostic data center. */
   where(keep = false) {
     return placedHere(this.ctx.storage, keep);
   }

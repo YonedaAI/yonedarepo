@@ -76,6 +76,9 @@ export interface Env {
   JOINED_REPO_PATH?: string;
   /** Off by default: one fresh response supplies the full selected Overview. */
   OVERVIEW_BOOTSTRAP?: string;
+  OVERVIEW_AUTH_OVERLAP?: string;
+  /** Off by default: Overview omits unused metadata for unselected branches. */
+  OVERVIEW_REF_NAMES?: string;
   /** Off by default: optional activity follows admitted core content at the captured revision. */
   OVERVIEW_DEFER_ACTIVITY?: string;
   /** Off by default: current ordinary Overview selects its root during fresh admission. */

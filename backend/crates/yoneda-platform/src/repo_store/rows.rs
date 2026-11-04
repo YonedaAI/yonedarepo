@@ -2,6 +2,7 @@
 pub use super::auto_landing::AutoLandings;
 pub use super::checkpoints::{checkpoint_at_or_before, maybe_checkpoint, refs_digest_at};
 pub use super::policy::{Policy, Runner, check_name};
+pub use super::ref_names::{branch_ref, is_tag, protected, read_ref, tag_ref};
 pub use super::visibility::Visibility;
 use crate::storage::{SqlStore, bad, string};
 use serde_json::{Value, json};
@@ -236,58 +237,6 @@ pub fn entries<S: SqlStore>(
             .map_err(|_| corrupt("log entry"))
     });
     archived.into_iter().map(Ok).chain(retained).collect()
-}
-
-/// Protected refs (Scion: refs only for main and releases) move only by landing an
-/// approved, checked commit (or the human break-glass path), never by a working-branch
-/// compare-and-swap; they are also the refs projected to the Git object store.
-pub fn protected(refname: &str) -> bool {
-    refname == "refs/heads/main"
-        || refname == "refs/heads/release"
-        || refname.starts_with("refs/heads/release/")
-}
-
-/// Accepts `main` or `refs/heads/main`; only branch refs are writable through the API.
-pub fn branch_ref(c: &Value) -> Result<String> {
-    let name = string(c, "ref")?;
-    let full = if name.starts_with("refs/") {
-        name
-    } else {
-        format!("refs/heads/{name}")
-    };
-    if !valid_name(full.strip_prefix("refs/heads/").unwrap_or_default()) {
-        return Err(bad("Invalid branch name"));
-    }
-    Ok(full)
-}
-
-/// Accepts `v1` or `refs/tags/v1`: a lightweight tag (created once, never moved).
-pub fn tag_ref(name: &str) -> Result<String> {
-    let full = if name.starts_with("refs/") {
-        name.to_owned()
-    } else {
-        format!("refs/tags/{name}")
-    };
-    if !valid_name(full.strip_prefix("refs/tags/").unwrap_or_default()) {
-        return Err(bad("Invalid tag name"));
-    }
-    Ok(full)
-}
-
-pub fn is_tag(refname: &str) -> bool {
-    refname.starts_with("refs/tags/")
-}
-
-/// Git's ref-name rules for a branch or tag name below its `refs/<kind>/` prefix.
-fn valid_name(name: &str) -> bool {
-    !(name.is_empty()
-        || name.len() > 200
-        || name
-            .split('/')
-            .any(|p| p.is_empty() || p.starts_with('.') || p.ends_with(".lock"))
-        || name.contains(|ch: char| ch.is_ascii_control() || " ~^:?*[\\".contains(ch))
-        || name.contains("..")
-        || name.contains("@{"))
 }
 
 /// The recorded commit graph (parents and generations stored at record time). Parents

@@ -1,4 +1,4 @@
-//! `cargo xtask downloads stage|upload --env dev|prod`: the public downloads the front
+//! `cargo xtask downloads stage|assemble|upload --env dev|prod`: the public downloads the front
 //! Worker serves (cloudflare/worker/downloads.ts has the layout).
 //!
 //! `stage` builds the `yoneda` CLI for each target, packs `yoneda` and `git-remote-yoneda`
@@ -9,12 +9,11 @@
 //! with Cargo on a Mac; Linux targets are static musl builds and Windows targets MinGW builds,
 //! both with `cargo zigbuild` (cargo-zigbuild and zig on PATH). `upload` puts the staged files into `<prefix>-downloads` with wrangler,
 //! the version pointers last, so a reader never sees a LATEST whose files are missing;
-//! `--dry-run` prints the commands instead.
+//! `--dry-run` prints the commands instead. A single-target stage with `--revision` records
+//! provenance; `assemble` verifies all target receipts before making one complete release.
 use crate::process::{Result, run};
-use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use serde_json::Value;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// The published targets: name, Rust target, and whether it is built with cargo-zigbuild.
 pub(crate) const TARGETS: [(&str, &str, bool); 6] = [
@@ -27,7 +26,13 @@ pub(crate) const TARGETS: [(&str, &str, bool); 6] = [
 ];
 const PROGRAMS: [&str; 2] = ["yoneda", "git-remote-yoneda"];
 /// Keys that change between releases: uploaded after everything they point at.
-const POINTERS: [&str; 3] = ["cli/LATEST", "cli/latest.json", "claude/marketplace.json"];
+const POINTERS: [&str; 3] = ["cli/latest.json", "claude/marketplace.json", "cli/LATEST"];
+
+mod assemble;
+mod package;
+mod provenance;
+#[cfg(test)]
+mod tests;
 
 pub(crate) fn execute(args: &[String]) -> Result<()> {
     let env = option(args, "--env")?.ok_or("downloads needs --env dev|prod")?;
@@ -51,14 +56,32 @@ pub(crate) fn execute(args: &[String]) -> Result<()> {
                 let names: Vec<&str> = TARGETS.iter().map(|(name, ..)| *name).collect();
                 return Err(format!("--targets names none of {}", names.join(", ")).into());
             }
-            stage(&staged, site, &cli_version()?, &targets)
+            let revision = option(args, "--revision")?;
+            if let Some(revision) = &revision {
+                provenance::verify_checkout(Path::new("."), revision)?;
+                if targets.len() != 1 { return Err("--revision staging requires exactly one target".into()); }
+            }
+            let version = cli_version()?;
+            stage(&staged, site, &version, &targets)?;
+            if let Some(revision) = revision {
+                provenance::verify_checkout(Path::new("."), &revision)?;
+                let (target, triple, _) = targets.first().ok_or("No target selected")?;
+                provenance::write_receipt(&staged, &version, target, triple, &revision)?;
+            }
+            Ok(())
+        }
+        Some("assemble") => {
+            let from = option(args, "--from")?.ok_or("assemble needs --from")?;
+            let revision = option(args, "--revision")?.ok_or("assemble needs --revision")?;
+            provenance::verify_checkout(Path::new("."), &revision)?;
+            assemble::assemble(Path::new(&from), &staged, site, &cli_version()?, &revision)
         }
         Some("upload") => {
             let prefix = spec["prefix"].as_str().ok_or("the spec has no prefix")?;
             let account = spec["account_id"]
                 .as_str()
                 .ok_or("the spec has no account_id")?;
-            upload(
+            package::upload(
                 &staged,
                 &format!("{prefix}-downloads"),
                 account,
@@ -66,7 +89,7 @@ pub(crate) fn execute(args: &[String]) -> Result<()> {
             )
         }
         _ => Err(
-            "cargo xtask downloads stage [--targets a,b] | upload [--dry-run] --env dev|prod"
+            "cargo xtask downloads stage [--targets a,b] [--revision sha] | assemble --from dir --revision sha | upload [--dry-run] --env dev|prod"
                 .into(),
         ),
     }
@@ -92,105 +115,6 @@ fn cli_version() -> Result<String> {
         .to_owned())
 }
 
-pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
-
-fn windows(target: &str) -> bool {
-    target.starts_with("windows-")
-}
-
-pub(crate) fn archive_name(version: &str, target: &str) -> String {
-    let extension = if windows(target) { "zip" } else { "tar.gz" };
-    format!("yoneda-{version}-{target}.{extension}")
-}
-
-/// The files of `PROGRAMS` as `target` builds them.
-fn program_files(target: &str) -> Vec<String> {
-    let suffix = if windows(target) { ".exe" } else { "" };
-    PROGRAMS.iter().map(|p| format!("{p}{suffix}")).collect()
-}
-
-/// Packs a target's programs: a zip on Windows, whose installer unpacks with what ships in
-/// the box. COPYFILE_DISABLE keeps macOS tar from adding AppleDouble `._` files.
-fn pack(target: &str, bin_dir: &str, archive: &Path) -> Result<()> {
-    let programs = program_files(target);
-    let status = if windows(target) {
-        Command::new("zip")
-            .args(["-q", "-j", "-X"])
-            .arg(std::env::current_dir()?.join(archive))
-            .args(programs)
-            .current_dir(bin_dir)
-            .status()?
-    } else {
-        Command::new("tar")
-            .env("COPYFILE_DISABLE", "1")
-            .arg("-czf")
-            .arg(archive)
-            .args(["-C", bin_dir])
-            .args(programs)
-            .status()?
-    };
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("packing {} failed", archive.display()).into())
-    }
-}
-
-/// `sha256sum` lines: `<hex>  <file>`, sorted by file.
-pub(crate) fn sha256sums(entries: &[(String, String)]) -> String {
-    let mut lines: Vec<String> = entries
-        .iter()
-        .map(|(name, sum)| format!("{sum}  {name}"))
-        .collect();
-    lines.sort_by(|a, b| a[66..].cmp(&b[66..]));
-    lines.iter().map(|l| format!("{l}\n")).collect()
-}
-
-/// `cli/latest.json`: the release and each target's archive, size and sha256.
-pub(crate) fn manifest(site: &str, version: &str, built: &[(&str, u64, String)]) -> Value {
-    let targets: serde_json::Map<String, Value> = built
-        .iter()
-        .map(|(target, size, sum)| {
-            let url = format!(
-                "{site}/downloads/cli/{version}/{}",
-                archive_name(version, target)
-            );
-            (
-                (*target).to_owned(),
-                json!({"url": url, "size": size, "sha256": sum}),
-            )
-        })
-        .collect();
-    json!({
-        "version": version,
-        "install": format!("curl -fsSL {site}/install.sh | sh"),
-        "install_windows": format!("irm {site}/install.ps1 | iex"),
-        "sha256sums": format!("{site}/downloads/cli/{version}/SHA256SUMS"),
-        "targets": targets,
-    })
-}
-
-/// The public marketplace: the template with the plugin zip's address and sha256.
-pub(crate) fn marketplace(template: &str, site: &str, version: &str, sum: &str) -> String {
-    template
-        .replace("{site}", site)
-        .replace("{version}", version)
-        .replace("{sha256}", sum)
-}
-
-fn write(path: &Path, bytes: &[u8]) -> Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    std::fs::write(path, bytes)?;
-    Ok(())
-}
-
 fn stage(staged: &Path, site: &str, version: &str, targets: &[&(&str, &str, bool)]) -> Result<()> {
     if staged.exists() {
         std::fs::remove_dir_all(staged)?;
@@ -212,239 +136,12 @@ fn stage(staged: &Path, site: &str, version: &str, targets: &[&(&str, &str, bool
                 triple,
             ],
         )?;
-        let name = archive_name(version, target);
+        let name = package::archive_name(version, target);
         let archive = release.join(&name);
-        pack(target, &format!("target/{triple}/release"), &archive)?;
+        package::pack(target, &format!("target/{triple}/release"), &archive)?;
         let bytes = std::fs::read(&archive)?;
-        built.push((*target, bytes.len() as u64, sha256_hex(&bytes)));
+        built.push((*target, bytes.len() as u64, package::sha256_hex(&bytes)));
         println!("staged {name} ({} bytes)", bytes.len());
     }
-    let sums: Vec<(String, String)> = built
-        .iter()
-        .map(|(target, _, sum)| (archive_name(version, target), sum.clone()))
-        .collect();
-    write(&release.join("SHA256SUMS"), sha256sums(&sums).as_bytes())?;
-    let latest = serde_json::to_string_pretty(&manifest(site, version, &built))?;
-    write(
-        &staged.join("cli/latest.json"),
-        format!("{latest}\n").as_bytes(),
-    )?;
-    write(
-        &staged.join("cli/LATEST"),
-        format!("{version}\n").as_bytes(),
-    )?;
-    stage_plugin(staged, site)
-}
-
-/// The plugin zip (its root at the top of the zip) and the marketplace that pins it.
-fn stage_plugin(staged: &Path, site: &str) -> Result<()> {
-    let plugin: Value = serde_json::from_str(&std::fs::read_to_string(
-        "plugins/yoneda/.claude-plugin/plugin.json",
-    )?)?;
-    let version = plugin["version"]
-        .as_str()
-        .ok_or("plugin.json has no version")?;
-    let zip = std::env::current_dir()?
-        .join(staged)
-        .join(format!("claude/yoneda-{version}.zip"));
-    std::fs::create_dir_all(zip.parent().ok_or("no parent")?)?;
-    // -X leaves out extra file attributes, so the zip depends only on the files.
-    let status = Command::new("zip")
-        .args(["-q", "-r", "-X"])
-        .arg(&zip)
-        .arg(".")
-        .current_dir("plugins/yoneda")
-        .status()?;
-    if !status.success() {
-        return Err("zipping plugins/yoneda failed (is zip installed?)".into());
-    }
-    let sum = sha256_hex(&std::fs::read(&zip)?);
-    let template = std::fs::read_to_string("plugins/public-marketplace.json")?;
-    write(
-        &staged.join("claude/marketplace.json"),
-        marketplace(&template, site, version, &sum).as_bytes(),
-    )?;
-    println!("staged claude/yoneda-{version}.zip and claude/marketplace.json");
-    Ok(())
-}
-
-/// Every staged file's bucket key, the version pointers last.
-pub(crate) fn upload_order(staged: &Path) -> Result<Vec<String>> {
-    fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
-        for entry in std::fs::read_dir(dir)? {
-            let path = entry?.path();
-            if path.is_dir() {
-                walk(&path, out)?;
-            } else {
-                out.push(path);
-            }
-        }
-        Ok(())
-    }
-    let mut files = Vec::new();
-    walk(staged, &mut files)?;
-    let mut keys: Vec<String> = files
-        .iter()
-        .filter_map(|p| p.strip_prefix(staged).ok())
-        .map(|p| p.to_string_lossy().replace('\\', "/"))
-        .collect();
-    keys.sort_by_key(|k| (POINTERS.iter().position(|p| p == k), k.clone()));
-    if keys.is_empty() {
-        return Err(format!(
-            "nothing staged in {}: run downloads stage first",
-            staged.display()
-        )
-        .into());
-    }
-    Ok(keys)
-}
-
-fn upload(staged: &Path, bucket: &str, account: &str, dry_run: bool) -> Result<()> {
-    for key in upload_order(staged)? {
-        let file = staged.join(&key);
-        let object = format!("{bucket}/{key}");
-        let file = file.to_str().ok_or("invalid path")?;
-        let args = [
-            "exec", "wrangler", "r2", "object", "put", &object, "--file", file, "--remote",
-        ];
-        if dry_run {
-            println!("CLOUDFLARE_ACCOUNT_ID={account} pnpm {}", args.join(" "));
-            continue;
-        }
-        let status = Command::new("pnpm")
-            .args(args)
-            .env("CLOUDFLARE_ACCOUNT_ID", account)
-            .status()?;
-        if !status.success() {
-            return Err(format!("uploading {key} failed").into());
-        }
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn names_each_archive_and_lists_its_sum_like_sha256sum() {
-        assert_eq!(
-            archive_name("0.1.0", "linux-x64"),
-            "yoneda-0.1.0-linux-x64.tar.gz"
-        );
-        let a = "a".repeat(64);
-        let b = "b".repeat(64);
-        let sums = sha256sums(&[
-            ("yoneda-0.1.0-linux-x64.tar.gz".into(), b.clone()),
-            ("yoneda-0.1.0-darwin-arm64.tar.gz".into(), a.clone()),
-        ]);
-        assert_eq!(
-            sums,
-            format!("{a}  yoneda-0.1.0-darwin-arm64.tar.gz\n{b}  yoneda-0.1.0-linux-x64.tar.gz\n")
-        );
-        assert_eq!(
-            sha256_hex(b"abc"),
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        );
-    }
-
-    #[test]
-    fn manifest_points_at_the_site_and_each_archive() {
-        let m = manifest(
-            "https://yonedarepo.com",
-            "0.1.0",
-            &[("linux-arm64", 7, "c".repeat(64))],
-        );
-        assert_eq!(m["version"], "0.1.0");
-        assert_eq!(
-            m["install"],
-            "curl -fsSL https://yonedarepo.com/install.sh | sh"
-        );
-        assert_eq!(
-            m["targets"]["linux-arm64"]["url"],
-            "https://yonedarepo.com/downloads/cli/0.1.0/yoneda-0.1.0-linux-arm64.tar.gz"
-        );
-        assert_eq!(m["targets"]["linux-arm64"]["size"], 7);
-        assert_eq!(
-            m["install_windows"],
-            "irm https://yonedarepo.com/install.ps1 | iex"
-        );
-    }
-
-    #[test]
-    fn windows_targets_ship_zips_of_exe_files_built_with_zig() {
-        assert_eq!(
-            archive_name("0.1.0", "windows-x64"),
-            "yoneda-0.1.0-windows-x64.zip"
-        );
-        assert_eq!(
-            archive_name("0.1.0", "windows-arm64"),
-            "yoneda-0.1.0-windows-arm64.zip"
-        );
-        assert_eq!(
-            archive_name("0.1.0", "darwin-x64"),
-            "yoneda-0.1.0-darwin-x64.tar.gz"
-        );
-        assert_eq!(
-            program_files("windows-x64"),
-            ["yoneda.exe", "git-remote-yoneda.exe"]
-        );
-        assert_eq!(program_files("linux-x64"), ["yoneda", "git-remote-yoneda"]);
-        for name in ["windows-x64", "windows-arm64"] {
-            assert!(
-                TARGETS.iter().any(|(n, _, zig)| *n == name && *zig),
-                "{name}"
-            );
-        }
-    }
-
-    #[test]
-    fn fills_the_public_marketplace_template() -> Result<()> {
-        let template = std::fs::read_to_string("../plugins/public-marketplace.json")?;
-        let filled = marketplace(
-            &template,
-            "https://yonedarepo.com",
-            "0.2.0",
-            &"d".repeat(64),
-        );
-        let market: Value = serde_json::from_str(&filled)?;
-        assert_eq!(
-            market["plugins"][0]["source"],
-            json!({
-                "source": "archive",
-                "url": "https://yonedarepo.com/downloads/claude/yoneda-0.2.0.zip",
-                "sha256": "d".repeat(64),
-            })
-        );
-        assert!(!filled.contains("{site}") && !filled.contains("{sha256}"));
-        Ok(())
-    }
-
-    #[test]
-    fn uploads_the_version_pointers_last() -> Result<()> {
-        let dir = tempfile::tempdir()?;
-        for key in [
-            "claude/marketplace.json",
-            "cli/LATEST",
-            "cli/0.1.0/SHA256SUMS",
-            "claude/yoneda-0.2.0.zip",
-            "cli/latest.json",
-            "cli/0.1.0/yoneda-0.1.0-linux-x64.tar.gz",
-        ] {
-            write(&dir.path().join(key), b"x")?;
-        }
-        assert_eq!(
-            upload_order(dir.path())?,
-            [
-                "claude/yoneda-0.2.0.zip",
-                "cli/0.1.0/SHA256SUMS",
-                "cli/0.1.0/yoneda-0.1.0-linux-x64.tar.gz",
-                "cli/LATEST",
-                "cli/latest.json",
-                "claude/marketplace.json",
-            ]
-        );
-        assert!(upload_order(&dir.path().join("none")).is_err());
-        Ok(())
-    }
+    package::stage_metadata(staged, site, version, &built)
 }

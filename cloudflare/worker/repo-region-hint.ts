@@ -55,10 +55,13 @@ export async function placeCombiners(env: Env, repo: string) {
 /** The data center a trace page names. */
 export const coloOf = (trace: string) => /^colo=([A-Z]{3})$/m.exec(trace)?.[1] ?? null;
 
-/** A combiner's answer to `where`. `keep` stores a key, so a combiner made here is a stored
- * object: one that held nothing could start elsewhere later. `erase` removes it. */
+/** `keep` persists placement only: callers discard that answer and need no trace fetch.
+ * `erase` removes the durable marker. Diagnostic reads still trace. */
 export async function placedHere(storage: DurableObjectStorage, keep: boolean) {
-  if (keep) await storage.put('placed', true);
+  if (keep) {
+    await storage.put('placed', true);
+    return null;
+  }
   return whereHere();
 }
 

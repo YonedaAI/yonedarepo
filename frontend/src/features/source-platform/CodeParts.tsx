@@ -12,7 +12,7 @@ import { type SshAccess, sshCloneCommand } from './sshKeyModel';
 import { CopyBlock } from './TokenParts';
 import { useSource } from './useSource';
 
-type Ref = { name: string; commit_id: string };
+type Ref = { name: string };
 
 /** Branches and tags; a tag's value is its full ref name. */
 export function BranchPicker({
