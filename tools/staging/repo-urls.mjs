@@ -3,10 +3,10 @@
 // while its owner has no handle) and waits for that address.
 const known = new Map();
 
-/** The repository's page address, from the API once per id. */
+/** One metadata read per id; address discovery must not query storage shards. */
 export async function repoPath(account, id) {
   if (!known.has(id)) {
-    const { path } = await account.get(`/api/v1/repos/${id}`);
+    const { path } = await account.get(`/api/v1/repos/${id}?summary=true`);
     known.set(id, path ?? `/source/${id}`);
   }
   return known.get(id);
