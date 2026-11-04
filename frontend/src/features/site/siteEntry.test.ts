@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { prepareSiteEntry } from './SiteEntry';
-import { signedInHint } from './signedInHint';
+import { PERSONAL_WORKSPACE_HINT, personalWorkspaceHint, signedInHint } from './signedInHint';
 import { SIGNED_IN_HINT } from './siteRoute';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -25,6 +25,10 @@ it('stores only a display hint and tolerates blocked browser storage', () => {
   expect(signedInHint()).toBe(false);
   expect(signedInHint(true)).toBe(true);
   expect([...values]).toEqual([[SIGNED_IN_HINT, '1']]);
+  personalWorkspaceHint('person@example.test');
+  expect(values.get(PERSONAL_WORKSPACE_HINT)).toBe('person@example.test');
+  personalWorkspaceHint(null);
+  expect(values.has(PERSONAL_WORKSPACE_HINT)).toBe(false);
   expect(signedInHint(false)).toBe(false);
   vi.stubGlobal('window', {
     get localStorage() {
@@ -32,4 +36,5 @@ it('stores only a display hint and tolerates blocked browser storage', () => {
     },
   });
   expect(signedInHint(true)).toBe(false);
+  expect(() => personalWorkspaceHint('sample')).not.toThrow();
 });

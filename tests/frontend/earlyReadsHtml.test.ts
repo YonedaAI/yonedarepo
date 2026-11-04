@@ -16,7 +16,7 @@ it('the bounded head script executes alone before React or application modules',
   expect(tag?.tag).toBe('script');
   expect(tag?.injectTo).toBe('head-prepend');
   expect(Buffer.byteLength(tag.children)).toBeLessThan(4096);
-  const fetch = vi.fn(() => new Promise(() => {}));
+  const fetch = vi.fn((_url: string) => new Promise(() => {}));
   const target = Object.assign(new EventTarget(), {
     location: { pathname: '/sample/repo', search: '', hash: '' },
   });
@@ -25,4 +25,14 @@ it('the bounded head script executes alone before React or application modules',
     setTimeout: () => 1, clearTimeout: () => {},
   });
   expect(fetch).toHaveBeenCalledTimes(2);
+  fetch.mockClear();
+  target.location.pathname = '/agents';
+  Object.assign(target, { localStorage: { getItem: (key: string) => key === 'yoneda-personal-workspace' ? 'person@example.test' : null } });
+  new Script(tag.children).runInNewContext({
+    window: target, fetch, AbortController, DOMException,
+    setTimeout: () => 1, clearTimeout: () => {},
+  });
+  expect(fetch.mock.calls.map((call) => call[0])).toEqual([
+    '/api/auth/session?summary=true', '/api/managed/workspaces/person%40example.test',
+  ]);
 });

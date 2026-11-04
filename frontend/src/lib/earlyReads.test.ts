@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { RESERVED_HANDLES } from '../../../shared/account';
 import { namedOverviewRef } from '../features/source-platform/overviewBootstrap';
 import { resolvePath } from '../features/source-platform/RepoByName';
-import { sourceApi } from '../features/source-platform/sourceApi';
+import { managedApi, sourceApi } from '../features/source-platform/sourceApi';
 import { parseSourceRoute } from '../features/source-platform/sourceRoute';
 import { api } from './api';
 import {
@@ -196,5 +196,62 @@ it('excludes every generated reserved handle, including operator and Worker rout
     beginEarlyReads(windowAt(`/${handle}/example`));
     expect(fetch, handle).toHaveBeenCalledTimes(1);
     clearEarlyReads();
+  }
+});
+
+it('adopts the returning personal Agents read without a second collection request', async () => {
+  const fetch = vi.fn(async (_url: string) => Response.json({ agents: ['fresh'] }));
+  vi.stubGlobal('fetch', fetch);
+  const target = windowAt('/agents');
+  Object.assign(target, { localStorage: { getItem: () => 'person@example.test' } });
+  beginEarlyReads(target);
+  expect(fetch.mock.calls.map((call) => call[0])).toEqual([
+    '/api/auth/session?summary=true',
+    '/api/managed/workspaces/person%40example.test',
+  ]);
+  await expect(managedApi('/workspaces/person%40example.test')).resolves.toEqual({
+    agents: ['fresh'],
+  });
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+it('never adopts a different account hint or bypasses its server denial', async () => {
+  const fetch = vi.fn(async () => Response.json({ error: { code: 'FORBIDDEN' } }, { status: 403 }));
+  vi.stubGlobal('fetch', fetch);
+  const target = windowAt('/agents');
+  Object.assign(target, { localStorage: { getItem: () => 'wrong' } });
+  beginEarlyReads(target);
+  expect(takeEarlyResponse('/api/managed/workspaces/current')).toBeUndefined();
+  await expect(managedApi('/workspaces/wrong')).rejects.toMatchObject({ status: 403 });
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+it('keeps first visits, blocked storage and nonplain Agents routes on normal discovery', () => {
+  const fetch = vi.fn(() => new Promise<Response>(() => {}));
+  vi.stubGlobal('fetch', fetch);
+  for (const path of ['/agents', '/agents?workspace=other', '/agents#other', '/agents/settings']) {
+    const target = windowAt(path);
+    Object.assign(target, {
+      localStorage: { getItem: () => (path === '/agents' ? null : 'sample') },
+    });
+    fetch.mockClear();
+    beginEarlyReads(target);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  }
+  const target = windowAt('/agents');
+  Object.defineProperty(target, 'localStorage', {
+    get: () => {
+      throw new Error('blocked');
+    },
+  });
+  fetch.mockClear();
+  beginEarlyReads(target);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  for (const hint of ['..', '../other', 'x'.repeat(255), 'a@@b.test', 'name@domain']) {
+    const target = windowAt('/agents');
+    Object.assign(target, { localStorage: { getItem: () => hint } });
+    fetch.mockClear();
+    beginEarlyReads(target);
+    expect(fetch).toHaveBeenCalledTimes(1);
   }
 });
