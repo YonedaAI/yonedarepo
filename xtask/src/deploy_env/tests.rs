@@ -41,7 +41,6 @@ fn good_prod() -> Facts {
         head: HEAD.into(),
         dirty: vec![],
         ref_tips: vec![HEAD.into()],
-        dev_revisions: vec![("yonedarepo-dev-platform".into(), Some(HEAD.into()))],
         evidence: Some(evidence(HEAD, "pass")),
         ..Facts::default()
     }
@@ -428,74 +427,20 @@ fn dirty_tree_and_wrong_ref_are_refused() {
 }
 
 #[test]
-fn prod_needs_confirm_dev_at_head_and_passing_kit_evidence() {
-    let prod = prod();
-    guard::preflight(&Env::Prod, &prod, &good_prod(), &confirmed()).unwrap();
+fn prod_requires_confirm_and_the_ci_release_path() {
     refused(
         &Env::Prod,
-        &prod,
+        &prod(),
         &good_prod(),
         &Options::default(),
         "without --confirm",
     );
-    let stale = Facts {
-        dev_revisions: vec![("yonedarepo-dev-agents".into(), Some(OTHER.into()))],
-        ..good_prod()
-    };
-    refused(&Env::Prod, &prod, &stale, &confirmed(), "deploy --env dev");
-    let down = Facts {
-        dev_revisions: vec![("yonedarepo-dev-agents".into(), None)],
-        ..good_prod()
-    };
-    refused(&Env::Prod, &prod, &down, &confirmed(), "nothing reachable");
-    let none = Facts {
-        dev_revisions: vec![],
-        ..good_prod()
-    };
-    refused(&Env::Prod, &prod, &none, &confirmed(), "no dev Worker");
-    let missing = Facts {
-        evidence: None,
-        ..good_prod()
-    };
     refused(
         &Env::Prod,
-        &prod,
-        &missing,
+        &prod(),
+        &good_prod(),
         &confirmed(),
-        "no real-world kit evidence",
-    );
-    let other_sha = Facts {
-        evidence: Some(evidence(OTHER, "pass")),
-        ..good_prod()
-    };
-    refused(
-        &Env::Prod,
-        &prod,
-        &other_sha,
-        &confirmed(),
-        "not recorded against HEAD",
-    );
-    let failing = Facts {
-        evidence: Some(evidence(HEAD, "fail")),
-        ..good_prod()
-    };
-    refused(
-        &Env::Prod,
-        &prod,
-        &failing,
-        &confirmed(),
-        "is fail, not pass",
-    );
-    let skipped = Facts {
-        evidence: Some(evidence(HEAD, "skip")),
-        ..good_prod()
-    };
-    refused(
-        &Env::Prod,
-        &prod,
-        &skipped,
-        &confirmed(),
-        "is skip, not pass",
+        "CI release workflow",
     );
     let dirty = Facts {
         dirty: vec!["?? deploy.txt".into()],
@@ -503,7 +448,7 @@ fn prod_needs_confirm_dev_at_head_and_passing_kit_evidence() {
     };
     refused(
         &Env::Prod,
-        &prod,
+        &prod(),
         &dirty,
         &confirmed(),
         "uncommitted changes",
@@ -742,115 +687,6 @@ fn the_browser_item_must_be_in_the_evidence_and_pass() {
     assert!(error.contains("no browser item"), "{error}");
     let no_item_zero = json!({"items": [{"id": "browser", "status": "pass"}]});
     assert!(evidence_passes(Some(&no_item_zero), &good_prod()).is_err());
-}
-
-/// A merged ship PR: HEAD is the merge commit, the dev Workers and the kit ran its PR head.
-const TREE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const OTHER_TREE: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-fn merged_ship() -> Facts {
-    let mut kit = evidence(OTHER, "pass");
-    kit["tree"] = json!(TREE);
-    Facts {
-        head_tree: TREE.into(),
-        trees: BTreeMap::from([(OTHER.to_owned(), TREE.to_owned())]),
-        dev_revisions: vec![("yonedarepo-dev-platform".into(), Some(OTHER.into()))],
-        evidence: Some(kit),
-        ..good_prod()
-    }
-}
-
-#[test]
-fn a_merge_commit_counts_the_dev_workers_and_kit_of_its_identical_tree() {
-    guard::preflight(&Env::Prod, &prod(), &merged_ship(), &confirmed()).unwrap();
-}
-
-#[test]
-fn a_different_tree_or_an_unknown_commit_is_not_the_same_code() {
-    let prod = prod();
-    let other_tree = Facts {
-        trees: BTreeMap::from([(OTHER.to_owned(), OTHER_TREE.to_owned())]),
-        ..merged_ship()
-    };
-    refused(
-        &Env::Prod,
-        &prod,
-        &other_tree,
-        &confirmed(),
-        "deploy --env dev",
-    );
-    let unknown = Facts {
-        trees: BTreeMap::new(),
-        ..merged_ship()
-    };
-    refused(
-        &Env::Prod,
-        &prod,
-        &unknown,
-        &confirmed(),
-        "deploy --env dev",
-    );
-    // No tree facts at all must never make two different commits equal.
-    let blank = Facts {
-        head_tree: String::new(),
-        trees: BTreeMap::from([(OTHER.to_owned(), String::new())]),
-        ..merged_ship()
-    };
-    refused(&Env::Prod, &prod, &blank, &confirmed(), "deploy --env dev");
-    let dev_only = Facts {
-        dev_revisions: vec![("yonedarepo-dev-platform".into(), Some(HEAD.into()))],
-        trees: BTreeMap::new(),
-        ..merged_ship()
-    };
-    refused(
-        &Env::Prod,
-        &prod,
-        &dev_only,
-        &confirmed(),
-        "not recorded against HEAD",
-    );
-}
-
-#[test]
-fn the_tree_the_kit_recorded_must_be_heads() {
-    let mut kit = evidence(HEAD, "pass");
-    kit["tree"] = json!(OTHER_TREE);
-    let facts = Facts {
-        head_tree: TREE.into(),
-        evidence: Some(kit),
-        ..good_prod()
-    };
-    refused(
-        &Env::Prod,
-        &prod(),
-        &facts,
-        &confirmed(),
-        "not recorded against HEAD",
-    );
-}
-
-#[test]
-fn both_workers_in_the_evidence_must_be_the_same_code() {
-    let mut facts = merged_ship();
-    let evidence = facts.evidence.as_mut().unwrap();
-    evidence["items"][0]["metrics"]["platform"] = json!("1111111111111111111111111111111111111111");
-    refused(
-        &Env::Prod,
-        &prod(),
-        &facts,
-        &confirmed(),
-        "not recorded against HEAD",
-    );
-}
-
-#[test]
-fn local_deploys_at_head_need_no_tree() {
-    // Evidence from before the kit recorded a tree, and a head whose tree was never gathered.
-    guard::preflight(&Env::Prod, &prod(), &good_prod(), &confirmed()).unwrap();
-    let with_tree = Facts {
-        head_tree: TREE.into(),
-        ..good_prod()
-    };
-    guard::preflight(&Env::Prod, &prod(), &with_tree, &confirmed()).unwrap();
 }
 
 #[test]

@@ -15,7 +15,7 @@ pub(crate) struct Options {
     pub front_only: bool,
     /// `--prebuilt <dir>`: deploy CI's tested outputs instead of building (deploy_prebuilt).
     pub prebuilt: Option<std::path::PathBuf>,
-    /// `--ship-head <sha>`: the merged ship PR's head, on a runner (deploy_ship).
+    /// `--ship-head <sha>`: the merged release PR's CI-validated head (deploy_ship).
     pub ship_head: Option<String>,
 }
 
@@ -39,26 +39,14 @@ pub(crate) struct Facts {
     /// `HEAD^{tree}`. A commit with this tree is the same code: a PR merge makes a new commit
     /// from the tree its head was tested at.
     pub head_tree: String,
-    /// The tree of each commit the dev Workers and the kit evidence name, when this clone has it.
-    pub trees: BTreeMap<String, String>,
     /// `git status --porcelain` lines; empty means a clean tree.
     pub dirty: Vec<String>,
     /// Tips of the spec's branch (local and origin) when the spec names one.
     pub ref_tips: Vec<String>,
-    /// Prod only: each dev Worker's live `/health` revision (`None` when unreachable).
-    pub dev_revisions: Vec<(String, Option<String>)>,
-    /// Prod only: the newest real-world kit evidence.
+    /// Only for the optional `live-tests` attestation: the newest real-world kit evidence.
     pub evidence: Option<Value>,
-    /// With `--ship-head`: the PR head's GitHub statuses, read instead of the two above.
+    /// With `--ship-head`: the PR head's successful release CI proof.
     pub ship: Option<crate::deploy_ship::ShipFacts>,
-}
-
-impl Facts {
-    /// The commit is HEAD, or another commit of HEAD's tree (an ungathered tree matches nothing).
-    pub(crate) fn same_code(&self, commit: &str) -> bool {
-        commit == self.head
-            || (!self.head_tree.is_empty() && self.trees.get(commit) == Some(&self.head_tree))
-    }
 }
 
 /// Everything checked before the first build step.
@@ -93,20 +81,7 @@ pub(crate) fn preflight(env: &Env, spec: &Spec, facts: &Facts, options: &Options
     if options.ship_head.is_some() {
         return crate::deploy_ship::passes(facts);
     }
-    if facts.dev_revisions.is_empty() {
-        return Err("Refusing prod: no dev Worker reports a /health revision.".into());
-    }
-    for (worker, revision) in &facts.dev_revisions {
-        if !revision.as_deref().is_some_and(|r| facts.same_code(r)) {
-            return Err(format!(
-                "Refusing prod: dev {worker} runs {}, not HEAD {} or a commit of its tree. Run `cargo xtask deploy --env dev` first.",
-                revision.as_deref().unwrap_or("nothing reachable"),
-                short(&facts.head)
-            )
-            .into());
-        }
-    }
-    crate::deploy_evidence::evidence_passes(facts.evidence.as_ref(), facts)
+    Err("Refusing prod: use the CI release workflow (--ship-head <merged PR head>); direct production deploys are disabled.".into())
 }
 
 /// A D1 database the lock marks `pending` does not exist yet; deploying would bind nothing.

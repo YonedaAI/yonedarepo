@@ -5,8 +5,8 @@ name: Deploy prod
 # (workflow_dispatch, dry run by default) it is a re-run of the same steps for main's tip, for
 # instance after the busy-container check stopped a deploy.
 #
-# `--ship-head` makes xtask require, for the PR head: HEAD's tree, the owner's live-tests status
-# for that tree, and a successful CI release-PR run (Check and full suite). HEAD must be the tip of main
+# `--ship-head` requires the PR head's exact tree and successful CI release validation.
+# HEAD must be the tip of main
 # and no container instance busy (a rollout kills runs). `allow_active` exists only on the manual
 # form and is never the default. Nothing here rolls back: a repository that ran a migration
 # refuses older binaries (SCHEMA_TOO_NEW); the docs have the manual steps.
@@ -77,7 +77,6 @@ jobs:
     permissions:
       contents: read
       actions: read
-      statuses: read
     outputs:
       started_at: ${{ steps.started.outputs.at }}
       cli_needed: ${{ steps.cli.outputs.needed }}

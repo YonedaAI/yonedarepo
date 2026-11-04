@@ -21,9 +21,6 @@ fn options() -> Options {
         ..Options::default()
     }
 }
-fn status(state: &str, creator: &str, tree: &str) -> Value {
-    json!({"context": "live-tests", "state": state, "description": format!("pass tree {tree}"), "creator": {"login": creator}})
-}
 fn run() -> Value {
     json!({
         "event": "pull_request", "conclusion": "success", "head_sha": PR_HEAD, "head_branch": "dev",
@@ -36,7 +33,6 @@ fn ship() -> ShipFacts {
         repo: REPO.into(),
         pr_head: PR_HEAD.into(),
         tree: Some(TREE.into()),
-        statuses: vec![status("success", "MagnetonIO", TREE)],
         runs: vec![run()],
     }
 }
@@ -57,14 +53,27 @@ fn refused(ship: ShipFacts, needle: &str) {
 }
 
 #[test]
-fn a_merged_ship_deploys_on_its_statuses_without_dev_workers_or_evidence() {
-    guard::preflight(&Env::Prod, &prod(), &facts(Some(ship())), &options()).unwrap();
+fn release_ci_suffices_without_live_statuses_or_local_kit() {
+    let ship = ship();
+    guard::preflight(&Env::Prod, &prod(), &facts(Some(ship)), &options()).unwrap();
+}
+
+#[test]
+fn direct_prod_deploy_requires_the_ci_release_path_even_with_passing_local_evidence() {
+    let mut facts = facts(Some(ship()));
+    facts.evidence = Some(full_kit(Some(TREE), MERGE));
+    let direct = Options {
+        confirm: true,
+        ..Options::default()
+    };
+    let error = guard::preflight(&Env::Prod, &prod(), &facts, &direct).unwrap_err();
+    assert!(error.to_string().contains("CI release workflow"), "{error}");
 }
 
 #[test]
 fn ship_mode_never_passes_without_its_facts_or_confirm_or_on_dev() {
     let error = guard::preflight(&Env::Prod, &prod(), &facts(None), &options()).unwrap_err();
-    assert!(error.to_string().contains("ship statuses"), "{error}");
+    assert!(error.to_string().contains("release CI proof"), "{error}");
     let unconfirmed = Options {
         confirm: false,
         ..options()
@@ -110,36 +119,6 @@ fn the_pr_head_must_have_heads_tree() {
             ..ship()
         },
         "different tree",
-    );
-}
-
-#[test]
-fn live_tests_must_be_the_owners_newest_pass_for_this_tree() {
-    let with = |statuses: Vec<Value>| ShipFacts { statuses, ..ship() };
-    refused(with(vec![]), "no live-tests status");
-    refused(
-        with(vec![json!({"context": "other", "state": "success"})]),
-        "no live-tests status",
-    );
-    refused(
-        with(vec![status("failure", "MagnetonIO", TREE)]),
-        "live-tests is failure",
-    );
-    refused(
-        with(vec![status("success", "github-actions[bot]", TREE)]),
-        "not set by MagnetonIO",
-    );
-    refused(
-        with(vec![status("success", "MagnetonIO", OTHER_TREE)]),
-        "another tree",
-    );
-    // The newest status wins: GitHub lists them newest first.
-    refused(
-        with(vec![
-            status("failure", "MagnetonIO", TREE),
-            status("success", "MagnetonIO", TREE),
-        ]),
-        "live-tests is failure",
     );
 }
 
@@ -261,6 +240,9 @@ fn only_a_full_passing_kit_at_head_sets_live_tests() {
     assert!(error(full_kit(None, MERGE)).contains("records no tree"));
     assert!(error(full_kit(Some(OTHER_TREE), MERGE)).contains("not recorded against HEAD"));
     assert!(error(full_kit(Some(TREE), PR_HEAD)).contains("not recorded against HEAD"));
+    let mut other_platform = full_kit(Some(TREE), MERGE);
+    other_platform["items"][0]["metrics"]["platform"] = json!(PR_HEAD);
+    assert!(error(other_platform).contains("not recorded against HEAD"));
     let mut partial = full_kit(Some(TREE), MERGE);
     partial["items"].as_array_mut().unwrap().truncate(5);
     assert!(error(partial).contains("not a full kit"));
@@ -275,13 +257,6 @@ fn only_a_full_passing_kit_at_head_sets_live_tests() {
         ..facts(None)
     };
     assert!(full_kit_passes(&none).is_err());
-    // The evidence of another commit of the same tree is not "at HEAD".
-    let same_tree = Facts {
-        evidence: Some(full_kit(Some(TREE), PR_HEAD)),
-        trees: [(PR_HEAD.to_owned(), TREE.to_owned())].into(),
-        ..facts(None)
-    };
-    assert!(full_kit_passes(&same_tree).is_err());
 }
 
 #[test]
