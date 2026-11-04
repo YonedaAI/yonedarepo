@@ -15,7 +15,10 @@ with none skipped and HEAD's tree recorded. It publishes only `pass tree <tree>`
 Neither release CI nor deployment requires or reads this status.
 
 Exactly three workflows remain: CI, Deploy prod, and the disabled manual Deploy dev.
-CI runs on PRs or explicit manual requests, with full checks for release PRs.
+CI runs on PRs or explicit manual requests. Application release changes run full checks.
+Tooling-only releases run xtask and runtime checks; unknown paths or missing history run full.
+The tooling allowlist is xtask, .github, tools/ci, tools/ship, tests/runtime, docs and root Markdown files.
+The Ship gate accepts skipped application jobs only with a successful tooling scope, merge-tree check and Check job.
 It does not rerun after merging the already validated tree into `main`.
 For manual validation, dispatch `ci.yml` with `full=true` (and `image=true` to force the image).
 No CI run deploys or reads deployment secrets.

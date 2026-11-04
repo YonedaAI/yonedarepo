@@ -225,3 +225,37 @@ test('Check shares full-lane Wasm, but fails closed unless fast Wasm was intenti
   assert.equal(allowed('true', 'skipped'), false, 'full release cannot use a missing artifact');
   assert.equal(allowed('false', 'skipped'), true, 'fast checks build their own Wasm');
 });
+
+
+test('tooling Check runs only artifact-free tooling commands while ordinary and full app checks remain', () => {
+  const ci = jobs(read('ci.yml'));
+  assert.match(ci.scope, /tooling: \$\{\{ steps\.paths\.outputs\.tooling \}\}/);
+  assert.match(ci.scope, /full: \$\{\{ steps\.paths\.outputs\.full \}\}/);
+  assert.match(ci.scope, /BASE: \$\{\{ github\.event\.pull_request\.base\.sha/);
+  assert.match(ci.scope, /HEAD: \$\{\{ github\.sha \}\}/);
+  assert.match(ci.scope, /MANUAL_FULL: .*workflow_dispatch.*inputs\.full/);
+  const steps = ci.check.split(/^ {6}- /m).slice(1);
+  const runs = (needle, tooling, full) => {
+    const step = steps.find(step => step.includes(needle));
+    assert.ok(step, needle);
+    const condition = step.match(/^ {8}if: (.+)$/m)?.[1];
+    return !condition || runInNewContext(condition, { needs: { scope: { outputs: { tooling, full } } } }, { timeout: 50 });
+  };
+  for (const command of ['run: cargo fmt --all --check', 'run: cargo test -p xtask --bins', 'run: cargo xtask layers', 'name: Health gates'])
+    assert.equal(runs(command, 'true', 'false'), true, command);
+  assert.equal(runs('run: cargo clippy -p xtask --all-targets', 'true', 'false'), true);
+  for (const command of ['run: cargo clippy --workspace', 'run: cargo test -p yoneda-core', 'run: cargo fmt --check --manifest-path', 'run: cargo clippy --manifest-path', 'run: cargo test --manifest-path', 'run: pnpm check', 'run: pnpm --dir frontend exec tsc', 'run: pnpm --dir frontend build', 'run: cargo xtask health size', 'run: pnpm test:frontend', 'run: pnpm test:runtime']) {
+    assert.equal(runs(command, 'true', 'false'), false, command);
+    assert.equal(runs(command, 'false', 'false'), true, command);
+    assert.equal(runs(command, 'false', 'true'), true, command);
+  }
+  for (const full of ['true', 'false']) assert.equal(runs('name: worker-build --release', 'true', full), false);
+  assert.equal(runs('name: worker-build --release', 'false', 'false'), true);
+  assert.equal(runs('name: worker-build --release', 'false', 'true'), false);
+  const toolingStep = steps.find(step => step.includes('name: Tooling runtime checks'));
+  assert.equal(runs('name: Tooling runtime checks', 'true', 'false'), true);
+  assert.equal(runs('name: Tooling runtime checks', 'false', 'true'), false);
+  assert.match(toolingStep, /git ls-files -z -- 'tests\/runtime\/\*\.test\.mjs' ':\(exclude\)tests\/runtime\/binding-streams\.test\.mjs'/);
+  assert.match(toolingStep, /test "\$\{#files\[@\]\}" -gt 0/);
+  assert.match(toolingStep, /node --test "\$\{files\[@\]\}"/);
+});
