@@ -19,7 +19,7 @@ pub fn status(cwd: &Path, as_json: bool) -> Result<String> {
 pub fn sync_now(cwd: &Path, as_json: bool) -> Result<String> {
     let layout = Layout::find(cwd)?;
     let config = layout.config()?;
-    let outcome = match lock::take(&layout) {
+    let outcome = match lock::hold(&layout) {
         Ok(_held) => sync::round(&Service::open(&layout)?),
         Err(_) => ask_service(&layout, config.port)?,
     };

@@ -32,12 +32,13 @@ pub fn init(cwd: &Path) -> Result<String> {
             None => new_repository_id()?,
         },
         port: free_port()?,
+        aliases: Vec::new(),
     };
     std::fs::create_dir_all(&layout.dir)
         .map_err(|e| local_error(format!("Cannot create {:?}: {e}", layout.dir)))?;
     restrict(&layout.dir)?;
     Store::create(&layout.store())?;
-    let token = new_token()?;
+    let token = crate::tokens::new_secret()?;
     write_private(&layout.token(), token.as_bytes())?;
     layout.write_config(&config)?;
     let svc = Service::open(&layout)?;
@@ -113,15 +114,6 @@ fn new_repository_id() -> Result<String> {
     getrandom::fill(&mut bytes).map_err(|e| local_error(format!("No randomness: {e}")))?;
     Ok(format!(
         "r{}",
-        bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
-    ))
-}
-
-fn new_token() -> Result<String> {
-    let mut bytes = [0u8; 32];
-    getrandom::fill(&mut bytes).map_err(|e| local_error(format!("No randomness: {e}")))?;
-    Ok(format!(
-        "ylt_{}",
         bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
     ))
 }

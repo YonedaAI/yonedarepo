@@ -14,14 +14,20 @@ pub struct Layout {
     pub dir: PathBuf,
 }
 
-/// What `init` fixed: the repository id and the loopback port.
+/// What `init` fixed: the repository id and the loopback port, and the ids the repository
+/// had before pairing gave it the cloud's (clones made earlier still use them).
 #[derive(Clone, Debug)]
 pub struct Config {
     pub repo: String,
     pub port: u16,
+    pub aliases: Vec<String>,
 }
 
 impl Config {
+    /// Whether `repo` (from a request path) names this repository: its id or an earlier one.
+    pub fn serves(&self, repo: &str) -> bool {
+        repo == self.repo || self.aliases.iter().any(|a| a == repo)
+    }
     pub fn origin(&self) -> String {
         format!("http://127.0.0.1:{}", self.port)
     }
@@ -85,11 +91,22 @@ impl Layout {
             .as_u64()
             .and_then(|p| u16::try_from(p).ok())
             .ok_or_else(|| local_error("local.json has no port"))?;
-        Ok(Config { repo, port })
+        let aliases = value["aliases"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|a| a.as_str().map(str::to_owned))
+            .collect();
+        Ok(Config {
+            repo,
+            port,
+            aliases,
+        })
     }
 
     pub fn write_config(&self, config: &Config) -> Result<()> {
-        let text = json!({ "repo": config.repo, "port": config.port }).to_string();
+        let text = json!({ "repo": config.repo, "port": config.port, "aliases": config.aliases })
+            .to_string();
         write_private(&self.config_path(), text.as_bytes())
     }
 
