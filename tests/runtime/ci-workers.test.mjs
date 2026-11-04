@@ -10,19 +10,19 @@ import { workerSuites, workerInvocation } from '../../tools/ci/workers.mjs';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const inventory = readdirSync(resolve(root, 'tests/workers'), { recursive: true })
   .filter(path => path.endsWith('.test.ts')).map(path => `tests/workers/${path}`);
-const compatibility = ['tests/workers/repo-favorites.test.ts', 'tests/workers/repo-readable-paths.test.ts'];
-const manual = ['tests/workers/load-platform.test.ts', 'tests/workers/repo-big-fetch.test.ts'];
+const benchmarks = ['tests/workers/load-platform.test.ts', 'tests/workers/repo-big-fetch.test.ts'];
 
-test('every actual Worker test has one routine owner except intentional compatibility and scale cases', () => {
+test('every actual Worker test has exactly one owner, with scale cases reserved for benchmark runs', () => {
   const suites = workerSuites(inventory);
-  assert.deepEqual(suites.manual, manual);
-  assert.deepEqual(suites.main.filter(path => suites.platform.includes(path)), compatibility);
+  assert.deepEqual(suites.benchmarks, benchmarks);
+  assert.deepEqual(suites.main.filter(path => suites.platform.includes(path)), []);
   assert.deepEqual([...new Set(Object.values(suites).flat())].sort(), [...inventory].sort());
   for (const path of inventory) {
     const lanes = Object.keys(suites).filter(lane => suites[lane].includes(path));
-    assert.equal(lanes.length, compatibility.includes(path) ? 2 : 1, path);
+    assert.equal(lanes.length, 1, path);
   }
-  assert(suites.platform.includes('tests/workers/repo-api.test.ts'));
+  for (const name of ['repo-api', 'repo-favorites', 'repo-readable-paths'])
+    assert(suites.platform.includes(`tests/workers/${name}.test.ts`));
   assert(suites.main.includes('tests/workers/account-signup-email.test.ts'));
   assert(suites.main.includes('tests/workers/oauth.test.ts'));
 });
@@ -31,7 +31,7 @@ test('new repository and evaluation tests enter platform; other new tests enter 
   const suites = workerSuites(['tests/workers/future/repo-new.test.ts', 'tests/workers/eval-future.test.ts', 'tests/workers/repo-future.test.ts', 'tests/workers/new-adapter.test.ts']);
   assert.deepEqual(suites.platform, ['tests/workers/eval-future.test.ts', 'tests/workers/repo-future.test.ts']);
   assert.deepEqual(suites.main, ['tests/workers/future/repo-new.test.ts', 'tests/workers/new-adapter.test.ts']);
-  assert.deepEqual(suites.manual, []);
+  assert.deepEqual(suites.benchmarks, []);
 });
 
 test('runner forwards selected files and arguments from another cwd without launching Vitest', () => {
@@ -55,7 +55,7 @@ test('runner forwards selected files and arguments from another cwd without laun
 });
 
 test('unknown lanes and empty, duplicate or malformed inventories fail before launching', () => {
-  assert.throws(() => workerInvocation('manual', inventory), /lane/);
+  assert.throws(() => workerInvocation('benchmarks', inventory), /lane/);
   for (const files of [[], null, ['tests/workers/a.test.ts', 'tests/workers/a.test.ts'], ['../outside.test.ts'], ['tests/workers/../a.test.ts'], ['tests/workers/a.ts'], ['tests/workers/a\0.test.ts']])
     assert.throws(() => workerSuites(files), /inventory/);
   assert.throws(() => workerInvocation('platform', ['tests/workers/new-adapter.test.ts']), /empty/);

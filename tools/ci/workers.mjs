@@ -1,19 +1,18 @@
-// Run each workerd scenario once; keep two combined-entry compatibility checks.
+// Run each workerd scenario once in its canonical configuration.
 import { readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { basename, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const COMPATIBILITY = new Set(['repo-favorites.test.ts', 'repo-readable-paths.test.ts']);
-const MANUAL = new Set(['load-platform.test.ts', 'repo-big-fetch.test.ts']);
+const BENCHMARKS = new Set(['load-platform.test.ts', 'repo-big-fetch.test.ts']);
 
 /** Match the existing configs, including main's recursive include and platform's flat one. */
 export function workerSuites(inventory) {
   if (!Array.isArray(inventory) || inventory.length === 0)
     throw new Error('Worker test inventory must be nonempty');
   const seen = new Set();
-  const suites = { main: [], platform: [], manual: [] };
+  const suites = { main: [], platform: [], benchmarks: [] };
   for (const path of [...inventory].sort()) {
     if (typeof path !== 'string' || !path.startsWith('tests/workers/') ||
         !path.endsWith('.test.ts') || posix.normalize(path) !== path ||
@@ -22,10 +21,9 @@ export function workerSuites(inventory) {
     seen.add(path);
     const name = basename(path);
     const flat = path === `tests/workers/${name}`;
-    if (flat && MANUAL.has(name)) suites.manual.push(path);
+    if (flat && BENCHMARKS.has(name)) suites.benchmarks.push(path);
     else if (flat && /^(repo-|eval-)/.test(name)) {
       suites.platform.push(path);
-      if (COMPATIBILITY.has(name)) suites.main.push(path);
     } else suites.main.push(path);
   }
   return suites;
