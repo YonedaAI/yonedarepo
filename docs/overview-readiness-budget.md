@@ -98,8 +98,3 @@ score or a deployment claim. Keeping a large settled blank area is not an
 acceptable way to hide that movement. Eliminating the remaining shifts needs
 a bounded initial activity summary that knows the required layout before the
 optional history request; that backend change is outside this CSS repair.
-
-Run `node --test tests/runtime/repo-overview-layout.test.mjs` for the served
-regression. Its API responses are labelled fixtures and it creates no live
-accounts or repositories. The full live browser flow still needs a rerun
-after this repair is deployed.

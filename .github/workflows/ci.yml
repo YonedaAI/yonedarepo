@@ -238,7 +238,7 @@ jobs:
           fi
 
   suites:
-    name: full / Compatibility, storage, superfan and managed agents Workers
+    name: Worker integrations
     needs: [scope, wasm]
     if: needs.scope.outputs.full == 'true'
     runs-on: ubuntu-latest
