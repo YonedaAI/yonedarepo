@@ -101,7 +101,8 @@ const TASKS = {
 
 async function scenario(id, ctx) {
   const { url, inside, tokens, egress, credential, budget } = ctx;
-  const base = git(ctx.dir, ['rev-parse', 'refs/heads/main']).out;
+  const store = join(ctx.dir, '.git/yoneda/local/store.git');
+  const base = git(store, ['rev-parse', 'refs/heads/main']).out;
   const runs = ['agent-a', 'agent-b'].map((name) => {
     const dir = agentClone(name, url, inside, tokens[name], id);
     const env = sandboxEnv({ origin: inside.split('/git/')[0], token: tokens[name], remote: inside, credential, proxy: egress.address, plain: true });
@@ -112,7 +113,6 @@ async function scenario(id, ctx) {
     return runAgent({ task: { agent: `${id}-${name}` }, name: container, cwd: work, env: clientEnv(process.env, env), credential, scrub, args, evidence, timeoutMs: TIMEOUT_S * 1000, budget });
   });
   const outcomes = await Promise.all(runs);
-  const store = join(ctx.dir, '.git/yoneda/local/store.git');
   const ref = (r) => git(store, ['rev-parse', '-q', '--verify', r], {}, false).out || null;
   const events = (name) => readFileSync(join(evidence, `${id}-${name}.events.jsonl`), 'utf8');
   const pushLines = (name) => [...new Set((events(name).match(/(?:! \[[^\]]+\][^\\"]*|error: [^\\"]*|To http[^\\"]*|-> main[^\\"]*)/g) ?? []).map((l) => l.trim()))].slice(0, 12);
