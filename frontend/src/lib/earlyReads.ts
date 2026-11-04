@@ -13,13 +13,12 @@ declare global {
   }
 }
 
-/** Vite supplies serialized dependencies. The workspace hint grants no access; exact URL
- * adoption plus fresh session discovery and normal API authorization remain mandatory. */
+/** Vite supplies serialized dependencies. Exact URL adoption plus fresh session discovery
+ * and normal API authorization remain mandatory. */
 export function beginEarlyReads(
   target: Window,
   reservedRoots: readonly string[],
   namedOverview = plainNamedOverview,
-  workspaceHintKey = 'yoneda-personal-workspace',
 ) {
   target.__yonedaEarlyReads?.clear();
   const locationKey = () =>
@@ -93,18 +92,7 @@ export function beginEarlyReads(
   timer = setTimeout(clear, 30_000);
   target.addEventListener('pagehide', clear, { once: true });
   start('/api/auth/session?summary=true');
-  if (documentKey === '/agents') {
-    try {
-      const workspace = target.localStorage.getItem(workspaceHintKey);
-      if (
-        workspace &&
-        workspace.length <= 254 &&
-        /^[\x21-\x7e]+$/.test(workspace) &&
-        /^(?:[a-z][a-z0-9_]{2,31}|[^@\s/\\]+@[^@\s/\\]+\.[^@\s/\\]+)$/.test(workspace)
-      )
-        start(`/api/managed/workspaces/${encodeURIComponent(workspace)}`);
-    } catch {}
-  }
+  if (documentKey === '/agents') start('/api/managed/self');
   const named = namedOverview(target.location, reservedRoots);
   if (named)
     start(

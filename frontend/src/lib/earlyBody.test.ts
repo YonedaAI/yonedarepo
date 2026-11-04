@@ -10,12 +10,13 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function heldBody() {
+function heldBody(url = '/api/auth/session?summary=true') {
   let body!: ReadableStreamDefaultController<Uint8Array>;
   let signal!: AbortSignal;
   vi.stubGlobal(
     'fetch',
     vi.fn((_url: string, init: RequestInit) => {
+      if (_url !== url) return Promise.resolve(Response.json({ authenticated: true }));
       signal = init.signal as AbortSignal;
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
@@ -42,15 +43,21 @@ function heldBody() {
   };
 }
 
-it('aborts an adopted body after headers when its API consumer cancels', async () => {
-  const body = heldBody();
-  const scope = new AbortController();
-  const result = api('auth/session?summary=true', undefined, { signal: scope.signal });
-  await new Promise((resolve) => setTimeout(resolve, 0)); // Headers have resolved; JSON is held.
-  scope.abort();
-  await expect(result).rejects.toMatchObject({ name: 'AbortError' });
-  expect(body.signal().aborted).toBe(true);
-});
+it.each(['session', 'self'])(
+  'aborts an adopted %s body after headers when its consumer cancels',
+  async (read) => {
+    const body = heldBody(read === 'self' ? '/api/managed/self' : undefined);
+    const scope = new AbortController();
+    const result =
+      read === 'self'
+        ? sourceApi('/self', { base: '/api/managed', signal: scope.signal })
+        : api('auth/session?summary=true', undefined, { signal: scope.signal });
+    await new Promise((resolve) => setTimeout(resolve, 0)); // Headers have resolved; JSON is held.
+    scope.abort();
+    await expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    expect(body.signal().aborted).toBe(true);
+  },
+);
 
 it('aborts an adopted body after headers when the API deadline expires', async () => {
   vi.useFakeTimers();

@@ -5,7 +5,7 @@
 // proxied on the same origin, as is the managed agents Worker's browser API (/api/managed).
 // Repositories, Git, tokens and MCP all live on the platform Worker.
 
-import { accountRoute } from './accounts';
+import { accountRoute, sessionAccount } from './accounts';
 import { frontEnv, signInEnv } from './cell-edge';
 import { cellsOn } from './cells';
 import { clientError } from './client-errors';
@@ -65,6 +65,21 @@ export async function frontFetch(req: Request, bound: Env): Promise<Response> {
     return env.PLATFORM
       ? forwardRequest(env.PLATFORM, carriedRequest(req))
       : error('NOT_FOUND', 'The source platform is not bound', 404);
+  if (url.pathname === '/api/managed/self') {
+    if (req.method !== 'GET' || url.search || req.body) {
+      await req.body?.cancel().catch(() => undefined);
+      return req.method !== 'GET'
+        ? error('METHOD_NOT_ALLOWED', 'Use GET for your agents', 405)
+        : error('INVALID_INPUT', 'This read takes no query or body', 400);
+    }
+    // A cookie name chooses the existing route; only managed access and native sessions admit it.
+    const account = req.headers.has('authorization') ? null : sessionAccount(req);
+    if (!account) return error('UNAUTHORIZED', 'Sign in to view your agents', 401);
+    url.pathname = `/api/managed/workspaces/${encodeURIComponent(account)}`;
+    return env.MANAGED
+      ? forwardRequest(env.MANAGED, carriedRequest(new Request(url, req)))
+      : error('NOT_FOUND', 'Managed agents are not available here', 404);
+  }
   if (url.pathname.startsWith('/api/managed/'))
     return env.MANAGED
       ? forwardRequest(env.MANAGED, carriedRequest(req))
