@@ -79,10 +79,12 @@ fn stage_worker(
     config: Value,
     prod: bool,
 ) {
-    if prod && workers[worker].has_containers {
-        out.push(Step::ActiveGate { worker });
+    if workers[worker].has_containers {
+        if prod {
+            out.push(Step::ActiveGate { worker });
+        }
+        out.push(Step::RolloutGate);
     }
-    out.push(Step::RolloutGate);
     out.push(Step::Bootstrap { worker, config });
     if !(workers[worker].secrets.is_empty() && workers[worker].optional_secrets.is_empty()) {
         out.push(Step::Secrets { worker });
