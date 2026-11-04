@@ -1,11 +1,9 @@
 name: CI
-# One secret-free validation DAG: fast checks on ordinary PRs/main, full release validation
+# One secret-free validation DAG: fast checks on ordinary PRs, full release validation
 # on same-repository dev-to-main PRs, and an explicit manual full option. This file keeps
 # dependency/aggregate guards together so a skipped or failed full job cannot bless a release.
 on:
   pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       full:
@@ -98,7 +96,7 @@ jobs:
           echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/$archive" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      # The commit a pull request or push starts from; empty or all zeros on a new branch or a
+      # The commit a pull request starts from; empty or all zeros on a new branch or a
       # manual run. The scan covers that range alone, and prints a rule and a place: never a
       # value, an author or an email, because these logs are public.
       - name: Health gates

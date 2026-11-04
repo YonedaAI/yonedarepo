@@ -15,7 +15,8 @@ with none skipped and HEAD's tree recorded. It publishes only `pass tree <tree>`
 Neither release CI nor deployment requires or reads this status.
 
 Exactly three workflows remain: CI, Deploy prod, and the disabled manual Deploy dev.
-CI keeps fast checks for ordinary changes and full checks for release PRs.
+CI runs on PRs or explicit manual requests, with full checks for release PRs.
+It does not rerun after merging the already validated tree into `main`.
 For manual validation, dispatch `ci.yml` with `full=true` (and `image=true` to force the image).
 No CI run deploys or reads deployment secrets.
 Release validation builds Wasm once, shares it with Check and the Workers suites,
