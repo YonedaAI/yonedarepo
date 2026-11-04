@@ -119,12 +119,7 @@ fn sync_token(svc: &Service, layout: &Layout) -> Result<String> {
     if let Ok(token) = std::fs::read_to_string(layout.sync_token()) {
         return Ok(token.trim().to_owned());
     }
-    let mut bytes = [0u8; 32];
-    getrandom::fill(&mut bytes).map_err(|e| local_error(format!("No randomness: {e}")))?;
-    let token = format!(
-        "ylt_{}",
-        bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
-    );
+    let token = crate::tokens::new_secret()?;
     svc.authority.call(
         &Cred::Owner,
         json!({ "op": "repo_token_create", "name": "cloud-sync",

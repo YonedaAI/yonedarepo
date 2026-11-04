@@ -174,6 +174,33 @@ Limits: pairing pushes `main` in one push (the cloud's 40,000-object and 64 MiB 
 limits apply); a read path containing a comma cannot be declared over the push
 option.
 
+Agents, built and run 2026-11-04 (step 6): `yoneda local token create|list|revoke`
+gives each sandboxed agent its own token (`token:<name>` in `yoneda local log`);
+`sync` with no service leaves `serve.pid` alone; the service also answers to the id a
+repository had before pairing. Docker Desktop containers reach the 127.0.0.1-bound
+service through `host.docker.internal`, so no wider bind was added. Real agents:
+`node tools/staging/local-agents-run.mjs --bin <yoneda-local>`, opencode with
+`zai-coding-plan/glm-5.3` (Coding Plan; opencode reported $0), two agents per scenario,
+each in the sandbox with only its own stock clone mounted and the service as its only
+remote. Two runs on `spf13/pflag`, paired with dev (`r09800c38c9b18db1b675`,
+`r2f73312459a4d5f91d5a`); evidence `.local/staging/local-agents-1793807215667/` and
+`.local/staging/local-agents-1793807373933/`:
+
+- Disjoint files from one base: both landed (a fast-forward, then the platform's merge
+  commit), both runs.
+- The same README line from one base: the first push landed; the second was refused
+  `! [remote rejected] HEAD -> main (conflict in README.md: run git pull)` and its branch
+  stayed; `main` lost no change, both runs.
+- The store passed `git fsck --strict`; dev's `main` matched local `main` (same commit
+  id) with both agents' files; the second run's host check found no change to any host
+  checkout or remote (the first flagged only an edit made in this worktree by the
+  operator during the run).
+
+Acceptance criteria above: met for disjoint landing, overlap refusal with both
+proposals kept, crash and retry, Git verification, and offline work with a changed
+cloud head and revoked access (tests 4, 8–12). Not yet: checks on the combined revision
+(the local policy has none) and latency measured apart from the cloud.
+
 The service coordinates repository state. Agents remain external clients; this
 proposal does not add planners, model execution or agent scheduling to the
 platform. Local coordination, durability and Git compatibility need acceptance

@@ -97,6 +97,8 @@ local repository (this clone and its worktrees land on one local main; yoneda-lo
   local serve                         run it (one per clone, cloud-synced); git push local HEAD:main
   local status [--json]               local main, its log version and where cloud sync stands
   local sync [--json]                 sync with the paired cloud repository now
+  local token create <name> | list | revoke <name>   an agent's own token (prints it once)
+  local log [--json]                  the newest local landings and who made each
   hook claude-start|claude-read|claude-prompt|claude-memory|claude-bash|claude-stop
   hook opencode-start|opencode-read|opencode-prompt|opencode-memory|opencode-shell|opencode-stop
                                       agent hook entry points (JSON on stdin; plugins/)

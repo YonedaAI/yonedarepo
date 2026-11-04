@@ -89,7 +89,10 @@ fn adopt_id(layout: &Layout, repo: &str) -> Result<()> {
     if config.repo == repo {
         return Ok(());
     }
-    config.repo = repo.to_owned();
+    let earlier = std::mem::replace(&mut config.repo, repo.to_owned());
+    if !config.aliases.contains(&earlier) {
+        config.aliases.push(earlier);
+    }
     layout.write_config(&config)?;
     let common = layout
         .common()
@@ -103,4 +106,41 @@ fn adopt_id(layout: &Layout, repo: &str) -> Result<()> {
     )
     .or_else(|_| run_in(&common, &[&git_dir, "remote", "add", "local", &url], None))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::adopt_id;
+    use crate::layout::{Config, Layout};
+    use std::process::Command;
+
+    /// Pairing gives the repository the cloud's id and keeps the one clones made before it
+    /// still use, so their pushes keep reaching the service.
+    #[test]
+    fn adopting_the_cloud_id_keeps_the_earlier_one_as_an_alias() {
+        let dir = tempfile::tempdir().unwrap();
+        let ok = Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        assert!(ok.success());
+        let layout = Layout {
+            dir: dir.path().join(".git/yoneda/local"),
+        };
+        std::fs::create_dir_all(&layout.dir).unwrap();
+        let before = Config {
+            repo: "r00000000000000000001".into(),
+            port: 4321,
+            aliases: Vec::new(),
+        };
+        layout.write_config(&before).unwrap();
+        adopt_id(&layout, "r00000000000000000002").unwrap();
+        adopt_id(&layout, "r00000000000000000002").unwrap();
+        let after = layout.config().unwrap();
+        assert_eq!(after.repo, "r00000000000000000002");
+        assert_eq!(after.aliases, ["r00000000000000000001"]);
+        assert!(after.serves("r00000000000000000001") && after.serves("r00000000000000000002"));
+        assert!(!after.serves("r00000000000000000003"));
+    }
 }

@@ -5,6 +5,8 @@
 //! - `serve`: run the service (one per clone) until interrupted.
 //! - `status [--json]`: local `main` and its log version, and where cloud sync stands.
 //! - `sync [--json]`: run a sync round now (in the running service, else here).
+//! - `token create <name> | list | revoke <name>`: an agent's own token (`token:<name>`).
+//! - `log [--json]`: the newest landings and who made each.
 //! - `credential get`: Git's credential helper for the remote.
 mod advertise;
 mod authority;
@@ -26,6 +28,7 @@ mod service;
 mod store;
 mod sync;
 mod sync_http;
+mod tokens;
 mod verify;
 
 use layout::{Layout, local_error};
@@ -33,8 +36,8 @@ use service::Service;
 use std::sync::Arc;
 use yoneda_core::Result;
 
-const USAGE: &str =
-    "usage: yoneda local <init | serve | status [--json] | sync [--json] | credential get>";
+const USAGE: &str = "usage: yoneda local <init | serve | status [--json] | sync [--json] | \
+                     token <create <name> | list | revoke <name>> | log [--json] | credential get>";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -57,6 +60,8 @@ fn run(cwd: &std::path::Path, args: &[String]) -> Result<String> {
         Some("serve") => serve(cwd).map(|()| String::new()),
         Some("status") => report::status(cwd, args.iter().any(|a| a == "--json")),
         Some("sync") => report::sync_now(cwd, args.iter().any(|a| a == "--json")),
+        Some("token") => tokens::run(cwd, &args[1..]),
+        Some("log") => tokens::log(cwd, args.iter().any(|a| a == "--json")),
         Some("credential") => credential::answer(
             cwd,
             args.get(1).map_or("", String::as_str),

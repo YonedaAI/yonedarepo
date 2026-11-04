@@ -79,11 +79,8 @@ async fn guarded(
     service: &'static str,
     work: impl FnOnce(&Service, &Cred) -> Result<Response> + Send + 'static,
 ) -> Response {
-    let current = svc
-        .layout
-        .config()
-        .map_or_else(|_| svc.config.repo.clone(), |c| c.repo);
-    if repo.trim_end_matches(".git") != current {
+    let current = svc.layout.config().unwrap_or_else(|_| svc.config.clone());
+    if !current.serves(repo.trim_end_matches(".git")) {
         return refusal(StatusCode::NOT_FOUND, "Repository not found".into());
     }
     let Some(cred) = credential(headers) else {
