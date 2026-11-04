@@ -13,6 +13,7 @@ export function useRepositoryPages(path: string, pathOf: (cursor: string) => str
   const pending = useRef<{ request: typeof request; controller: AbortController } | null>(null);
   const [later, setLater] = useState({
     request,
+    firstPage: first.data,
     pages: [] as RepositoryPage[],
     busy: false,
     error: '',
@@ -24,7 +25,10 @@ export function useRepositoryPages(path: string, pathOf: (cursor: string) => str
       if (pending.current?.request === request) pending.current.controller.abort();
     };
   }, [request]);
-  const retained = later.request === request || first.current === false;
+  // A new query can retain the prior first response. Only that exact response owns
+  // its continuations; query identity alone can resurrect an older page.
+  const retained =
+    later.firstPage === first.data && (later.request === request || first.current === false);
   const pages = first.data ? [first.data, ...(retained ? later.pages : [])] : [];
   const partial = pages.some((page) => page.partial);
   const loading = first.loading || first.current === false;
@@ -32,11 +36,13 @@ export function useRepositoryPages(path: string, pathOf: (cursor: string) => str
   const busy = later.request === request && later.busy;
   async function more() {
     if (next === null || busy || pending.current?.request === request) return;
+    const firstPage = first.data;
     const controller = new AbortController();
     pending.current = { request, controller };
     setLater({
       request,
-      pages: later.request === request ? later.pages : [],
+      firstPage,
+      pages: later.request === request && later.firstPage === firstPage ? later.pages : [],
       busy: true,
       error: '',
     });
@@ -45,7 +51,11 @@ export function useRepositoryPages(path: string, pathOf: (cursor: string) => str
       if (active.current === request && !controller.signal.aborted)
         setLater((state) => ({
           request,
-          pages: [...(state.request === request ? state.pages : []), page],
+          firstPage,
+          pages: [
+            ...(state.request === request && state.firstPage === firstPage ? state.pages : []),
+            page,
+          ],
           busy: false,
           error: '',
         }));
