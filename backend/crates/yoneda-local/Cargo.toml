@@ -22,6 +22,9 @@ base64 = "0.23.1"
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "signal"] }
 getrandom = "0.4"
+# One platform API call (creating the paired cloud repository) and the loopback `sync` call;
+# the CLI's client, blocking, as sync runs on its own thread.
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "blocking"] }
 
 [dev-dependencies]
 tempfile = "3"

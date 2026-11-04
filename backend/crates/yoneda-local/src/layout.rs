@@ -52,6 +52,16 @@ impl Layout {
     pub fn authority(&self) -> PathBuf {
         self.dir.join("authority.sqlite")
     }
+    pub fn sync(&self) -> PathBuf {
+        self.dir.join("sync.json")
+    }
+    pub fn sync_token(&self) -> PathBuf {
+        self.dir.join("sync-token")
+    }
+    /// The clone's common Git directory (`.git`), which holds this layout.
+    pub fn common(&self) -> Option<PathBuf> {
+        self.dir.parent()?.parent().map(Path::to_path_buf)
+    }
     pub fn token(&self) -> PathBuf {
         self.dir.join("token")
     }

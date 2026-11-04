@@ -4,6 +4,8 @@
 //! that handle (its own PID), never by name.
 #![allow(dead_code)]
 
+pub mod cloud;
+
 use serde_json::Value;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -14,6 +16,8 @@ pub struct Local {
     pub dir: tempfile::TempDir,
     pub clone: PathBuf,
     pub service: Option<Child>,
+    /// Environment every command gets on top of the isolated one (e.g. a cloud token).
+    pub extra: Vec<(String, String)>,
 }
 
 pub fn bin() -> &'static str {
@@ -23,6 +27,14 @@ pub fn bin() -> &'static str {
 impl Local {
     /// A clone whose `main` holds `a.txt`, `b.txt` and `list.txt`, set up by `init`.
     pub fn new() -> Self {
+        let local = Self::uninitialized("clone", &[]);
+        local.seed();
+        local.run_ok(&local.clone, &["init"]);
+        local
+    }
+
+    /// An isolated HOME and a clone directory named `name`, nothing in it yet.
+    pub fn uninitialized(name: &str, extra: &[(&str, &str)]) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
@@ -31,20 +43,28 @@ impl Local {
             "[user]\n\tname = Test\n\temail = test@example.com\n[init]\n\tdefaultBranch = main\n",
         )
         .unwrap();
-        let clone = dir.path().join("clone");
-        let local = Self {
+        let clone = dir.path().join(name);
+        Self {
             dir,
             clone,
             service: None,
-        };
-        local.git_ok(local.dir.path(), &["init", "-q", "clone"]);
-        local.write(&local.clone, "a.txt", "a\n");
-        local.write(&local.clone, "b.txt", "b\n");
-        local.write(&local.clone, "list.txt", "one\ntwo\nthree\n");
-        local.git_ok(&local.clone, &["add", "."]);
-        local.git_ok(&local.clone, &["commit", "-qm", "base"]);
-        local.run_ok(&local.clone, &["init"]);
-        local
+            extra: extra
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect(),
+        }
+    }
+
+    /// A new repository in the clone directory whose `main` holds `a.txt`, `b.txt` and
+    /// `list.txt`.
+    pub fn seed(&self) {
+        let name = self.clone.file_name().unwrap().to_str().unwrap().to_owned();
+        self.git_ok(self.dir.path(), &["init", "-q", &name]);
+        self.write(&self.clone, "a.txt", "a\n");
+        self.write(&self.clone, "b.txt", "b\n");
+        self.write(&self.clone, "list.txt", "one\ntwo\nthree\n");
+        self.git_ok(&self.clone, &["add", "."]);
+        self.git_ok(&self.clone, &["commit", "-qm", "base"]);
     }
 
     pub fn home(&self) -> PathBuf {
@@ -61,7 +81,15 @@ impl Local {
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_TERMINAL_PROMPT", "0")
             .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE");
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("XDG_CONFIG_HOME")
+            .env_remove("YONEDA_TOKEN")
+            .env_remove("YONEDA_ORIGIN")
+            .env_remove("YONEDA_AGENT")
+            .env("YONEDA_LOCAL_SYNC_SECONDS", "3600");
+        for (k, v) in &self.extra {
+            cmd.env(k, v);
+        }
     }
 
     pub fn git(&self, cwd: &Path, args: &[&str]) -> Output {

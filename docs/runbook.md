@@ -63,12 +63,13 @@ Secrets: `SSH_GATEWAY_SECRET` (32+ random characters), `SSH_HOST_ED25519_KEY` / 
 
 One service per clone runs the platform engine on SQLite, with a bare Git store, so the clone's worktrees (and their agents) land on one local `main` under the same rules as the cloud. Design: [docs/local-repository-future.md](local-repository-future.md).
 
-1. Set up once, in the clone: `yoneda local init`. It creates `.git/yoneda/local/` (store, authority, token, fixed loopback port), imports `main`'s history and adds the remote `local` with a credential helper. The token is never in a URL or in Git's config.
+1. Set up once, in the clone: `yoneda local init`. It creates `.git/yoneda/local/` (store, authority, token, fixed loopback port), imports `main`'s history and adds the remote `local` with a credential helper. The token is never in a URL or in Git's config. It then pairs the clone with a cloud repository: its yoneda remote, else a new private repository on the signed-in origin (`yoneda login`, or `YONEDA_ORIGIN` with `YONEDA_TOKEN`), which receives `main`'s history with the same commit ids; the local repository takes its id. With no remote and no login it stays local and says `unpaired`.
 2. Run it: `yoneda local serve` (a second one refuses while it runs). It moves the store's refs to the authority's on start, so a crash between a landing and its ref update heals there.
 3. From any worktree: `git push local HEAD:main` lands (a fast-forward, a server merge, or a refusal naming the conflict or stale read); `git fetch local` reads. `yoneda push local HEAD:main` adds the recorded declared reads.
-4. Check: `yoneda local status` (`--json` for scripts).
+4. Check: `yoneda local status` (`--json` for scripts): local `main` and, separately, where cloud sync stands: `synced`, `pending`, `diverged` (cloud `main` conflicts locally; local `main` kept), `conflict` (the cloud refused local `main`; the cloud kept), `offline`, `refused` (sign in again) or `unpaired`.
+5. Sync runs in `serve` by itself: after each landing on local `main`, every 30 s (`YONEDA_LOCAL_SYNC_SECONDS`), and on `yoneda local sync`. Up is a smart-HTTP push of local `main` declaring the unsynced landings' reads; down lands cloud `main` locally through the same receive path. The cloud credential is the signed-in login (or `YONEDA_TOKEN`), handed to Git only by `yoneda-local credential cloud`; other credential helpers are cleared for those runs, so nothing reaches a keychain.
 
-Tests: `cargo test -p yoneda-local` (real Git, linked worktrees, crash and lock cases). Crash tests stop the service at `YONEDA_LOCAL_PAUSE` points; nothing else sets them. Cloud sync is not built yet.
+Tests: `cargo test -p yoneda-local` (real Git, linked worktrees, crash and lock cases, and sync against a second local service standing in for the cloud). Crash tests stop the service at `YONEDA_LOCAL_PAUSE` points; nothing else sets them. Live sync against dev: `cargo test -p yoneda-local --test sync -- --ignored` (needs the dev login; creates `local-sync-test-<ts>-<n>` repositories there and leaves them).
 
 ## Model checks
 

@@ -3,12 +3,15 @@
 //! repository with a local policy (no required checks or approvals: the cloud's policy
 //! applies when work lands there), imports `main`'s history by pushing it through the same
 //! receive path every push takes, and points the clone's remote `local` and its credential
-//! helper at the service. No network: pairing with the cloud is a separate step.
+//! helper at the service. Then it pairs with the cloud (`sync`): the clone's yoneda remote,
+//! else a new cloud repository on the stored login's origin, which takes `main`'s history.
 use crate::authority::Cred;
+use crate::cloud::{self, Cloud};
 use crate::layout::{Config, Layout, local_error, restrict, write_private};
 use crate::receive;
 use crate::service::Service;
 use crate::store::{Store, run_in};
+use crate::sync::state::Sync;
 use serde_json::json;
 use std::path::Path;
 use yoneda_core::{Result, git_object::ObjectId, transport::receive_pack_request};
@@ -22,8 +25,12 @@ pub fn init(cwd: &Path) -> Result<String> {
         return Ok(format!("Already set up: remote local at {}", config.url()));
     }
     let top = git_text(cwd, &["rev-parse", "--show-toplevel"])?;
+    let paired = paired_remote(cwd);
     let config = Config {
-        repo: repository_id(cwd)?,
+        repo: match &paired {
+            Some(cloud) => cloud.repo.clone(),
+            None => new_repository_id()?,
+        },
         port: free_port()?,
     };
     std::fs::create_dir_all(&layout.dir)
@@ -46,16 +53,28 @@ pub fn init(cwd: &Path) -> Result<String> {
     )?;
     let imported = import_main(&svc, cwd, &Cred::Token(token))?;
     configure_clone(cwd, &config)?;
-    Ok(match imported {
-        Some(tip) => format!(
-            "Local repository ready: main at {tip}, remote local at {}",
-            config.url()
-        ),
-        None => format!(
-            "Local repository ready (empty), remote local at {}",
-            config.url()
-        ),
-    })
+    let sync = Sync {
+        name: Some(name_of(&top)),
+        paired: paired.is_some(),
+        origin: paired.as_ref().map(|c| c.origin.clone()),
+        repo: paired.map(|c| c.repo),
+        ..Sync::default()
+    };
+    sync.save(&layout)?;
+    let outcome = crate::sync::round(&svc);
+    let url = layout.config().map_or_else(|_| config.url(), |c| c.url());
+    let cloud = match (&outcome.origin, &outcome.repo, outcome.paired) {
+        (Some(origin), Some(repo), true) => format!("paired with {origin} ({repo})"),
+        _ => outcome
+            .detail
+            .clone()
+            .unwrap_or_else(|| "not paired yet".into()),
+    };
+    let local = match imported {
+        Some(tip) => format!("Local repository ready: main at {tip}, remote local at {url}"),
+        None => format!("Local repository ready (empty), remote local at {url}"),
+    };
+    Ok(format!("{local}\ncloud: {cloud}"))
 }
 
 fn git_text(cwd: &Path, args: &[&str]) -> Result<String> {
@@ -64,20 +83,32 @@ fn git_text(cwd: &Path, args: &[&str]) -> Result<String> {
         .to_owned())
 }
 
-/// The paired cloud repository's id when the clone has a yoneda remote, else a new one.
-fn repository_id(cwd: &Path) -> Result<String> {
+/// The cloud repository the clone came from: its first yoneda remote (not `local`).
+fn paired_remote(cwd: &Path) -> Option<Cloud> {
     let urls =
         run_in(cwd, &["config", "--get-regexp", r"^remote\..*\.url$"], None).unwrap_or_default();
-    for line in String::from_utf8_lossy(&urls).lines() {
-        let url = line.split_once(' ').map_or("", |(_, u)| u);
-        if let Some(id) = url.split(['/', ':', '.']).find(|part| {
-            part.len() == 21
-                && part.starts_with('r')
-                && part[1..].bytes().all(|b| b.is_ascii_hexdigit())
-        }) {
-            return Ok(id.to_owned());
+    String::from_utf8_lossy(&urls).lines().find_map(|line| {
+        let (key, url) = line.split_once(' ')?;
+        if key == "remote.local.url" {
+            return None;
         }
-    }
+        let origin = cloud::origin_of(url)?;
+        // A remote by name (`yoneda::<origin>/<handle>/<name>`) keeps its id in Git's config.
+        let repo = cloud::repo_in(url).or_else(|| {
+            let named = url
+                .trim()
+                .trim_start_matches("yoneda::")
+                .trim_end_matches(".git");
+            let key = format!("yoneda.{named}.id");
+            let id = run_in(cwd, &["config", "--get", &key], None).ok()?;
+            cloud::repo_in(String::from_utf8_lossy(&id).trim())
+        })?;
+        Some(Cloud { origin, repo })
+    })
+}
+
+/// A new repository id, until pairing gives the cloud repository's.
+fn new_repository_id() -> Result<String> {
     let mut bytes = [0u8; 10];
     getrandom::fill(&mut bytes).map_err(|e| local_error(format!("No randomness: {e}")))?;
     Ok(format!(

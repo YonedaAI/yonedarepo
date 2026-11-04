@@ -144,7 +144,35 @@ plan above:
 - Fetch is Git's own `git http-backend` over the store.
 - The token is an engine repository token (`token:local`, read, write and land),
   so the engine authenticates every request; per-agent tokens are the same
-  mechanism. Sync (answer 5) is next.
+  mechanism.
+
+Cloud sync (answer 5), built 2026-11-04 (`src/sync/`, `src/cloud.rs`):
+
+- Pairing happens in `init` (and in any later round until it succeeds): the clone's
+  yoneda remote, including one by name, else a private repository created on the
+  signed-in origin. Its id is recorded before anything is pushed; `main`'s history is
+  pushed over smart HTTP with the same commit ids; then the local repository takes
+  the cloud id (its config and the remote `local`; the running service reads it per
+  request). There is no built-in default origin: without a login it is `unpaired`.
+- A round: down (cloud `main` fetched into the store and landed through the receive
+  path as sync's own repository token `cloud-sync`), up (a stock push of local `main`
+  with `-o yoneda.reads=` holding the union of the unsynced landings' read sets, at
+  most 1,000 paths), and down again when up pushed (a cloud merge comes back as a
+  fast-forward). Rounds run after each landing on `main`, every 30 s and on
+  `yoneda local sync` (`POST /local/sync` with the local token when `serve` runs).
+- Sync state is `sync.json`, not `sync.sqlite`: it holds the pairing and a cursor;
+  everything else is read back from the cloud and the local log each round.
+- Cloud Git runs clear every other credential helper and use
+  `yoneda-local credential cloud`, which answers only the origin sync names.
+
+Verified 2026-11-04: `cargo test -p yoneda-local` runs plan tests 8–12 against a
+second local service standing in for the cloud, and an unpaired init; the same
+8–12 plus 13 (init creates and fills a cloud repository) passed against
+dev.yonedarepo.com (`--test sync -- --ignored`). Test 11 on dev revokes a repository
+token made for the test; test 12 cuts the network with a dead `HTTPS_PROXY`.
+Limits: pairing pushes `main` in one push (the cloud's 40,000-object and 64 MiB pack
+limits apply); a read path containing a comma cannot be declared over the push
+option.
 
 The service coordinates repository state. Agents remain external clients; this
 proposal does not add planners, model execution or agent scheduling to the
