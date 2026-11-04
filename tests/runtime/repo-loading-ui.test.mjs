@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, writeFile, rm, realpath } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+import { stripVTControlCharacters } from 'node:util';
 import { chromium } from 'playwright-core';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const repo=`r${'1'.repeat(20)}`, sha='a'.repeat(40);
@@ -15,7 +16,7 @@ test('repository loading does not wait for storage diagnostics or offscreen READ
  const vite=spawn(process.execPath,[`${root}/node_modules/vite/bin/vite.js`,'--host','127.0.0.1','--port','0','--config',config],{cwd:`${root}/frontend`,stdio:['ignore','pipe','pipe']});
  let browser,timer,log='';
  try{
-  const origin=await new Promise((resolve,reject)=>{timer=setTimeout(()=>reject(Error(log)),10000);vite.on('error',reject);vite.stdout.on('data',d=>{log+=d;const url=/http:\/\/127\.0\.0\.1:\d+/.exec(log)?.[0];if(url){clearTimeout(timer);resolve(url);}});vite.stderr.on('data',d=>{log+=d;});});
+  const origin=await new Promise((resolve,reject)=>{timer=setTimeout(()=>reject(Error(log)),10000);vite.on('error',reject);vite.stdout.on('data',d=>{log+=d;const url=/http:\/\/127\.0\.0\.1:\d+/.exec(stripVTControlCharacters(log))?.[0];if(url){clearTimeout(timer);resolve(url);}});vite.stderr.on('data',d=>{log+=d;});});
   browser=await chromium.launch({channel:'chrome'});
   for(const width of [1440,375])for(const colorScheme of ['dark','light']){
    const c=await browser.newContext({viewport:{width,height:900},colorScheme});const p=await c.newPage();let anonymous=false,summary=false,sessionSummary=false,images=0,activity=0,logs=0,releaseDetails,releaseBootstrap,releaseStatus,releaseLog;const reposStarted=new Promise(resolve=>{releaseBootstrap=resolve;});const detailsGate=new Promise(resolve=>{releaseDetails=resolve;});const statusGate=new Promise(resolve=>{releaseStatus=resolve;});const errors=[];p.on('pageerror',e=>errors.push(e.message));

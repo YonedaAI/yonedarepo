@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { mkdir, writeFile, rm, realpath } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+import { stripVTControlCharacters } from 'node:util';
 import { chromium } from 'playwright-core';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -27,7 +28,7 @@ test('organization layout, recovery focus and permission states in the served ap
     const origin=await new Promise((resolve,reject)=>{
       timer=setTimeout(()=>reject(new Error(log)),10_000);
       vite.on('error',reject);
-      vite.stdout.on('data',data=>{log+=data;const url=/http:\/\/127\.0\.0\.1:\d+/.exec(log)?.[0];if(url){clearTimeout(timer);resolve(url);}});
+      vite.stdout.on('data',data=>{log+=data;const url=/http:\/\/127\.0\.0\.1:\d+/.exec(stripVTControlCharacters(log))?.[0];if(url){clearTimeout(timer);resolve(url);}});
       vite.stderr.on('data',data=>{log+=data;});
     });
     browser=await chromium.launch({channel:'chrome'});
