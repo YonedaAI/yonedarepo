@@ -63,3 +63,10 @@ test('renderer head code shares the admission guard and requests no API or data'
     if (expected) assert.deepEqual(added.map(n => [n.rel, n.href, n.crossOrigin]), [['modulepreload', '/assets/renderer-hash.js', '']]);
   }
 });
+
+test('renderer startup runs before blocking styles and the main module', () => {
+  const template = '<html><head data-entry="app"><link rel="stylesheet" href="/assets/app.css"><script type="module" src="/assets/app.js"></script></head></html>';
+  const output = overviewEntryTemplate(template, 'assets/renderer.js', reservedHandlesSchema.enum, plainNamedOverview.toString());
+  assert(output.indexOf('data-yoneda-overview-code') < output.indexOf('<link rel="stylesheet"'), 'classic startup must precede CSS');
+  assert(output.startsWith('<html><head data-entry="app"><script data-yoneda-overview-code>'));
+});
