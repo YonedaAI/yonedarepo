@@ -415,16 +415,32 @@ fn every_nonentry_handler_is_fully_bound_before_global_entry_activation() {
             for (at, step) in plan.iter().enumerate() {
                 if let Step::Bootstrap { worker, config } = step {
                     staged.insert(*worker, config);
-                    if config == &workers[*worker].config {
+                    if workers[*worker].has_containers {
                         assert_eq!(plan[at - 1], Step::RolloutGate);
-                        if prod && workers[*worker].has_containers {
+                        if prod {
                             assert_eq!(plan[at - 2], Step::ActiveGate { worker: *worker });
                         }
+                    } else {
+                        assert_ne!(
+                            plan[at - 1],
+                            Step::RolloutGate,
+                            "fetch-only aliases cannot restart containers"
+                        );
+                    }
+                    if config == &workers[*worker].config {
                         assert_eq!(plan[at + 1], Step::Secrets { worker: *worker });
                         assert_eq!(plan[at + 2], Step::Health { worker: *worker });
                     }
                 }
                 if matches!(step,Step::Deploy{worker,..} if *worker==primary) {
+                    assert_eq!(
+                        plan[at - 1],
+                        Step::RolloutGate,
+                        "global entry activation retains its fresh rollout check"
+                    );
+                    if prod {
+                        assert_eq!(plan[at - 2], Step::ActiveGate { worker: primary });
+                    }
                     assert_eq!(workers[primary].config["vars"]["REGIONAL_API"], "on");
                     for (index, w) in workers
                         .iter()
