@@ -185,6 +185,20 @@ describe('admin model', () => {
         throw new Error('blocked');
       },
     };
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      get: () => {
+        throw new Error('Storage accessor blocked');
+      },
+    });
+    try {
+      expect(readSeen()).toBe(0);
+      expect(() => saveSeen(1)).not.toThrow();
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor);
+      else Reflect.deleteProperty(globalThis, 'localStorage');
+    }
     expect(readSeen(broken)).toBe(0);
     expect(() => saveSeen(1, broken)).not.toThrow();
   });

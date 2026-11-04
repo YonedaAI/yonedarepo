@@ -186,8 +186,13 @@ export const unreadLabel = (unread: number) =>
 
 type Store = Pick<Storage, 'getItem' | 'setItem'>;
 const SEEN_KEY = 'yoneda.admin.signups-seen';
-const browserStore = (): Store | undefined =>
-  typeof localStorage === 'undefined' ? undefined : localStorage;
+const browserStore = (): Store | undefined => {
+  try {
+    return typeof localStorage === 'undefined' ? undefined : localStorage;
+  } catch {
+    return undefined;
+  }
+};
 /** When this browser last looked at the sign-ups (0: never); storage may be blocked. */
 export function readSeen(store: Store | undefined = browserStore()) {
   try {
