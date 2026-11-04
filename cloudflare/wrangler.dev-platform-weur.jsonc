@@ -276,6 +276,7 @@
     "OVERVIEW_AUTH_OVERLAP": "on",
     "OVERVIEW_BOOTSTRAP": "on",
     "OVERVIEW_DEFER_ACTIVITY": "on",
+    "OVERVIEW_REF_NAMES": "on",
     "PACK_CACHE": "on",
     "PUSH_BUNDLES": "on",
     "RECENT_VERSIONS": "on",
