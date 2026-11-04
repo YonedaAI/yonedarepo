@@ -682,6 +682,12 @@
   font: inherit;
   cursor: pointer;
 }
+.admin-sort > span {
+  display: inline-block;
+  inline-size: 1.25em;
+  flex: none;
+  text-align: center;
+}
 .admin-sort:hover {
   color: var(--link);
 }
