@@ -103,7 +103,11 @@ test('release CI runs partitioned functional coverage, four fail-closed shards a
 test('no kit runs on GitHub and no evidence leaves the Mac', () => {
   for (const name of files) {
     assert.doesNotMatch(code(read(name)), /staging-realworld/, name);
-    if (name !== 'ci.yml') assert.doesNotMatch(code(read(name)), /upload-artifact|download-artifact|gh run download/, name);
+    if (name === 'deploy-prod.yml') {
+      for (const [id, body] of Object.entries(jobs(read(name))))
+        if (!['cli-build', 'downloads'].includes(id)) assert.doesNotMatch(body, /upload-artifact|download-artifact|gh run download/, id);
+      assert.doesNotMatch(jobs(read(name))['cli-build'], /path:.*(?:\.local|evidence|session|logs)/);
+    } else if (name !== 'ci.yml') assert.doesNotMatch(code(read(name)), /upload-artifact|download-artifact|gh run download/, name);
   }
 });
 
@@ -258,4 +262,31 @@ test('tooling Check runs only artifact-free tooling commands while ordinary and 
   assert.match(toolingStep, /git ls-files -z -- 'tests\/runtime\/\*\.test\.mjs' ':\(exclude\)tests\/runtime\/binding-streams\.test\.mjs'/);
   assert.match(toolingStep, /test "\$\{#files\[@\]\}" -gt 0/);
   assert.match(toolingStep, /node --test "\$\{files\[@\]\}"/);
+});
+test('CLI publication builds all targets without secrets, then assembles and publishes one complete cohort', () => {
+  const job = jobs(read('deploy-prod.yml'));
+  assert.ok(job['cli-build']);
+  assert.match(job['cli-build'], /max-parallel: 3/);
+  assert.match(job['cli-build'], /fail-fast: false/);
+  assert.doesNotMatch(job['cli-build'], /environment: production|secrets\.|actions\/env-file/);
+  const rust = readFileSync(join(ROOT, 'xtask/src/downloads.rs'), 'utf8');
+  const targets = [...rust.matchAll(/\("([a-z0-9-]+)", "([a-z0-9_-]+)", (true|false)\)/g)].map(m => [m[1], m[2]]);
+  assert.equal(targets.length, 6);
+  for (const [target, triple] of targets) {
+    assert.ok(job['cli-build'].includes(`target: ${target}`), target);
+    assert.ok(job['cli-build'].includes(`triple: ${triple}`), triple);
+  }
+  assert.match(job['cli-build'], /Swatinem\/rust-cache@[a-f0-9]{40}/);
+  assert.match(job['cli-build'], /hashFiles\('rust-toolchain.toml', 'Cargo.lock'\)/);
+  assert.match(job['cli-build'], /--targets "\$CLI_TARGET" --revision "\$SOURCE_REVISION"/);
+  assert.match(job['cli-build'], /name: cli-\$\{\{ matrix.target \}\}-\$\{\{ github.sha \}\}/);
+  const artifactPaths = job['cli-build'].match(/^ {10}path: \|\n((?: {12}.+\n)+)/m)?.[1].trim().split('\n').map(line => line.trim());
+  assert.deepEqual(artifactPaths, ['target/downloads/prod/receipt.json', 'target/downloads/prod/cli/*/yoneda-*-${{ matrix.target }}.*']);
+  assert.equal((job['cli-build'].match(/uses: actions\/upload-artifact@/g) ?? []).length, 1);
+  assert.match(job.downloads, /needs: \[deploy, cli-build\]/);
+  assert.match(job.downloads, /needs.cli-build.result == 'success'/);
+  assert.match(job.downloads, /environment: production/);
+  assert.ok(job.downloads.indexOf('downloads assemble') < job.downloads.indexOf('downloads upload'));
+  assert.match(job.downloads, /--from target\/cli-input --revision "\$SOURCE_REVISION"/);
+  assert.doesNotMatch(job.downloads, /downloads stage|cargo zigbuild|cargo install cargo-zigbuild/);
 });

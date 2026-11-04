@@ -5,7 +5,7 @@
 1. **Push `dev`** when the owner says "ship". Targeted functional checks on the Mac are available when needed; the full dev kit is not a release prerequisite.
 2. **Open the PR** from `dev` to `main`. `ci.yml` checks that the merge equals the head's tree, then runs release validation without secrets or deployment.
 3. **Merge it** once the final `Ship gate` is green. Use a merge commit.
-4. **`deploy-prod.yml` runs** on the push to `main`: deploy, CLI publish if that version isn't on prod (macOS runner), the runner's smoke, the 30-minute monitor.
+4. **`deploy-prod.yml` runs** on the push to `main`: deploy, CLI publish if that version isn't on prod (cached target matrix), the runner's smoke, the 30-minute monitor.
 5. **Check shipped features from the Mac** as needed. The bounded general smoke is `node tools/staging-realworld.mjs --prod --only 0,browser,26,12,13,14,15,16,17`; model checks remain explicit.
 
 `cargo xtask live-tests [--dry-run]` is an optional full-kit attestation.
@@ -22,6 +22,9 @@ The Ship gate accepts skipped application jobs only with a successful tooling sc
 It does not rerun after merging the already validated tree into `main`.
 For manual validation, dispatch `ci.yml` with `full=true` (and `image=true` to force the image).
 No CI run deploys or reads deployment secrets.
+CLI publication builds all six archives on macOS, at most three in parallel, with target-specific Rust caches.
+Build jobs have no production secrets. Same-run artifacts carry exact-revision, target, size and checksum receipts.
+One uploader validates the complete cohort, creates the plugin and manifests once, then publishes `cli/LATEST` last.
 Release validation builds Wasm once, shares it with Check and the Workers suites,
 and builds the frontend once. Four shards run canonical platform coverage;
 the other Workers job runs only residual main-worker compatibility plus storage,
@@ -123,10 +126,6 @@ A rollback's row names what `/health` reports afterwards. Superfan rolls back wi
 
 ## Unproven
 
-None of this has run on GitHub. `actionlint` and local tests pass; no workflow, runner, status or secret was exercised.
-
-- The prod deploy builds the runtime image on the runner (`Source::Dockerfile`) inside a 60-minute job.
-- `downloads stage` on `macos-latest` (Xcode's x86_64 target, zig 0.17.0, cargo-zigbuild 0.24.0) has only run on the owner's Mac.
-- Release CI reply shapes are checked locally with fixtures; a successful GitHub release run remains separate execution evidence.
-- Resend from Superfan and the dead-man has only run against a fake.
-- The deploy ledger, `--tag` and `--message` have only run in tests. Both values fit the API's limits (100 bytes for a tag, 1,000 for a message, checked 2026-11-01).
+The new parallel CLI build and assembly path has not run on GitHub yet.
+Local tests and `actionlint` validate all six targets and reject incomplete or mixed-revision artifacts;
+the next unpublished CLI version will exercise the new path.
