@@ -152,7 +152,9 @@ export function ChangeRoute({
   return (
     <section aria-labelledby="change-route-heading">
       <h3 id="change-route-heading">Route</h3>
-      {loaded.data && <p className="source-meta">{routeSummary(loaded.data.totals)}</p>}
+      {loaded.data && (
+        <p className="source-meta">{routeSummary(loaded.data.totals, loaded.data.sessions)}</p>
+      )}
       {loaded.loading && !loaded.data && <p className="source-empty">Loading the route…</p>}
       {loaded.error && <Failure error={loaded.error} onRetry={loaded.reload} what="the route" />}
       {loaded.data && items.length === 0 && (
