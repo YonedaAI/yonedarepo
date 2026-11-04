@@ -23,10 +23,13 @@ fn options() -> Options {
 }
 fn run() -> Value {
     json!({
-        "event": "pull_request", "conclusion": "success", "head_sha": PR_HEAD, "head_branch": "dev",
+        "id": 123, "run_attempt": 1, "event": "pull_request", "conclusion": "success", "head_sha": PR_HEAD, "head_branch": "dev",
         "head_repository": {"full_name": REPO}, "path": ".github/workflows/ci.yml",
         "pull_requests": [{"head":{"sha":PR_HEAD,"ref":"dev"},"base":{"ref":"main"}}]
     })
+}
+fn jobs() -> Value {
+    json!({"total_count":1,"jobs":[{"name":"Ship gate","run_id":123,"run_attempt":1,"head_sha":PR_HEAD,"status":"completed","conclusion":"success"}]})
 }
 fn ship() -> ShipFacts {
     ShipFacts {
@@ -34,6 +37,7 @@ fn ship() -> ShipFacts {
         pr_head: PR_HEAD.into(),
         tree: Some(TREE.into()),
         runs: vec![run()],
+        gates: vec![final_gate(&run(), &jobs(), false).unwrap()],
     }
 }
 fn facts(ship: Option<ShipFacts>) -> Facts {
@@ -55,6 +59,17 @@ fn refused(ship: ShipFacts, needle: &str) {
 #[test]
 fn release_ci_suffices_without_live_statuses_or_local_kit() {
     let ship = ship();
+    guard::preflight(&Env::Prod, &prod(), &facts(Some(ship)), &options()).unwrap();
+}
+
+#[test]
+fn merged_ci_run_remains_valid_after_github_removes_pull_association() {
+    let mut merged = run();
+    merged["pull_requests"] = json!([]);
+    let ship = ShipFacts {
+        runs: vec![merged],
+        ..ship()
+    };
     guard::preflight(&Env::Prod, &prod(), &facts(Some(ship)), &options()).unwrap();
 }
 
@@ -163,17 +178,6 @@ fn check_and_full_count_only_from_a_successful_ship_run_of_this_repository() {
         with(&|r| r["head_sha"] = json!(MERGE)),
         "no successful release CI run",
     );
-    for forged in [
-        json!([]),
-        json!([{"head":{"sha":PR_HEAD,"ref":"dev"},"base":{"ref":"other"}}]),
-        json!([{"head":{"sha":MERGE,"ref":"dev"},"base":{"ref":"main"}}]),
-        json!([{"head":{"sha":PR_HEAD,"ref":"patch"},"base":{"ref":"main"}}]),
-    ] {
-        refused(
-            with(&|r| r["pull_requests"] = forged.clone()),
-            "no successful release CI run",
-        );
-    }
     refused(
         with(&|r| r["event"] = json!("workflow_dispatch")),
         "no successful release CI run",
@@ -191,6 +195,55 @@ fn check_and_full_count_only_from_a_successful_ship_run_of_this_repository() {
         ..ship()
     };
     guard::preflight(&Env::Prod, &prod(), &facts(Some(at_ref)), &options()).unwrap();
+}
+
+#[test]
+fn final_gate_must_be_completed_success_from_the_same_run_and_attempt() {
+    assert!(
+        final_gate(&run(), &jobs(), true).is_none(),
+        "pagination headers deny proof"
+    );
+    let without = ShipFacts {
+        gates: vec![],
+        ..ship()
+    };
+    refused(without, "no successful release CI run");
+    for (field, value) in [
+        ("name", json!("Other gate")),
+        ("status", json!("in_progress")),
+        ("conclusion", json!("skipped")),
+        ("conclusion", json!("failure")),
+        ("conclusion", json!("cancelled")),
+        ("conclusion", Value::Null),
+        ("run_id", json!(456)),
+        ("run_attempt", json!(2)),
+        ("head_sha", json!(MERGE)),
+    ] {
+        let mut page = jobs();
+        page["jobs"][0][field] = value;
+        assert!(
+            final_gate(&run(), &page, false).is_none(),
+            "{field}: {page}"
+        );
+    }
+    for page in [
+        json!({}),
+        json!({"total_count":0,"jobs":[]}),
+        json!({"total_count":2,"jobs":jobs()["jobs"]}),
+        json!({"total_count":101,"jobs":jobs()["jobs"]}),
+        json!({"total_count":2,"jobs":[jobs()["jobs"][0], jobs()["jobs"][0]]}),
+    ] {
+        assert!(final_gate(&run(), &page, false).is_none(), "{page}");
+    }
+    let mut changed = run();
+    changed["run_attempt"] = json!(2);
+    refused(
+        ShipFacts {
+            runs: vec![changed],
+            ..ship()
+        },
+        "no successful release CI run",
+    );
 }
 
 #[test]
