@@ -37,6 +37,7 @@ import { lfsRoute } from './repo-lfs';
 import { membersRoute } from './repo-members';
 import { contextRoute, memoriesRoute } from './repo-memories';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
+import { activityLogView } from './repo-overview-activity';
 import { browserSummary } from './repo-overview-summary';
 import { renameRepository, withPath } from './repo-paths';
 import { forViewer } from './repo-principal-privacy';
@@ -153,7 +154,7 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (resource === 'quarantine')
     return quarantineRoute(ctx, req.method, sha, sub, () => bodyOf(req));
   if (get && resource === 'refs') return run('git_refs', query);
-  if (get && resource === 'log') return run('git_log', query);
+  if (get && resource === 'log') return activityLogView(env, query, await run('git_log', query));
   if (get && resource === 'txlog') return run('git_txlog', query);
   if (get && resource === 'versions') return recentVersions(ctx, query);
   if (get && resource === 'changelog') return changeLogStatus(ctx);

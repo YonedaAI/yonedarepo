@@ -37,12 +37,23 @@ it('uses the captured commit and version for activity even after main changes', 
   expect(next.status).toBe(200);
   expect((await api(`/repos/${r.id}/land`, r.owner, { body: { ref: 'main', commit: next.body.commit } }, enabled)).status).toBe(200);
   expect(core.body.overview.activity_request).toBeDefined();
-  const query = new URLSearchParams({ ...core.body.overview.activity_request, limit: '200' });
+  const query = new URLSearchParams({ ...core.body.overview.activity_request, limit: '200', view: 'overview' });
   const old = await api(`/repos/${r.id}/log?${query}`, r.owner, {}, enabled);
   expect(old.status).toBe(200);
-  expect(old.body.commits[0].commit).toBe(r.commit);
+  expect(old.body).toMatchObject({ version: r.version, ref: 'refs/heads/main' });
+  expect(old.body.commits[0]).toMatchObject({ commit: r.commit, author_name: author.name });
+  expect(Object.keys(old.body.commits[0]).sort()).toEqual(['author_name', 'authored_at', 'commit', 'landed', 'principal']);
+  const fullQuery = new URLSearchParams(query);
+  fullQuery.delete('view');
+  const full = await api(`/repos/${r.id}/log?${fullQuery}`, r.owner, {}, enabled);
+  expect(full.body.commits[0]).toHaveProperty('message');
+  expect(full.body.commits[0]).toHaveProperty('files_changed');
   expect(old.body.commits.some((c: { commit: string }) => c.commit === next.body.commit)).toBe(false);
   const stranger = { cookie: await signup('deferred_stranger') };
+  expect((await api(`/repos/${r.id}/log?${query}`, stranger, {}, enabled)).status).toBe(404);
+  expect((await api(`/repos/${r.id}/members`, r.owner, { body: { account: 'deferred_stranger', role: 'read' } }, enabled)).status).toBe(200);
+  expect((await api(`/repos/${r.id}/log?${query}`, stranger, {}, enabled)).body.commits[0].commit).toBe(r.commit);
+  expect((await api(`/repos/${r.id}/members/deferred_stranger`, r.owner, { method: 'DELETE' }, enabled)).status).toBe(200);
   expect((await api(`/repos/${r.id}/log?${query}`, stranger, {}, enabled)).status).toBe(404);
 });
 
@@ -51,6 +62,8 @@ it('retains the existing complete response when deferral is off', async () => {
   const result = await api(`/repos/${r.id}?${mode}`, r.owner, {}, { ...enabled, OVERVIEW_DEFER_ACTIVITY: 'off' } as Env);
   expect(result.body.overview.activity.commits[0].commit).toBe(r.commit);
   expect(result.body.overview.activity_request).toBeUndefined();
+  const oldServer = await api(`/repos/${r.id}/log?view=overview&from=${r.commit}&at=${r.version}&limit=200`, r.owner, {}, { ...enabled, OVERVIEW_DEFER_ACTIVITY: 'off' } as Env);
+  expect(oldServer.body.commits[0]).toHaveProperty('message');
 });
 
 it('keeps empty repositories explicit without scheduling an activity request', async () => {

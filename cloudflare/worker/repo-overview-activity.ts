@@ -73,6 +73,7 @@ function key(ctx: RepoContext, status: Json, ref: string, commit: string, at: nu
   ]);
 }
 
+/** The chart DTO omits log-only messages, trees, paths and break-glass history. */
 function compact(value: Json): Json {
   return {
     commits: (value.commits as Json[]).map(
@@ -85,6 +86,21 @@ function compact(value: Json): Json {
       }),
     ),
   };
+}
+
+/** Opt-in presentation only: the ordinary log already performed current admission.
+ * Outer REST principal redaction still applies, and off/older deployments keep full logs. */
+export function activityLogView(
+  env: Pick<RepoContext['env'], 'OVERVIEW_DEFER_ACTIVITY'>,
+  query: Json,
+  value: Json,
+): Json {
+  return env.OVERVIEW_DEFER_ACTIVITY === 'on' &&
+    query.view === 'overview' &&
+    query.path === undefined &&
+    query.dir === undefined
+    ? { version: value.version, ref: value.ref, ...compact(value) }
+    : value;
 }
 
 /** Fresh successful status must precede this call. A racing current log has a history
