@@ -60,3 +60,15 @@ it('does not restore cached organization access when an invalidated lookup finis
   expect(current).toBeUndefined();
   forgetOrgAccess('revoked_org');
 });
+
+it('starts no speculative user read for anonymous, rejected, repository-token or operator credentials', async () => {
+  let started = 0;
+  const env = { OWNER_TOKEN: 'operator-test', WORKSPACES: {
+    idFromName: () => ({}), get: () => ({ fetch: async () => Response.json({ authenticated: false }) }),
+  } } as unknown as Env;
+  for (const headers of [{}, { cookie: `yoneda_account=refused.${'a'.repeat(64)}` },
+    { authorization: 'Bearer yrp_repository-token' }, { authorization: 'Bearer operator-test' }]) {
+    await credentials(new Request('https://yoneda/api/v1/resolve/owner/repo', { headers }), env, () => { started++; });
+  }
+  expect(started).toBe(0);
+});
