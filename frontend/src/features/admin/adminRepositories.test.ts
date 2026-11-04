@@ -25,15 +25,11 @@ vi.mock('../source-platform/useSource', () => ({
     reload() {},
   }),
 }));
-vi.mock('./AdminRepoUsage', () => ({
-  RepoUsage: () =>
-    createElement('section', { 'aria-label': 'Repository use' }, 'Use, last 30 days'),
-}));
 it('shows one searchable repository table with accessible server sort controls and unknown sampled storage', () => {
   const html = renderToStaticMarkup(createElement(AdminRepos, { navigate: () => {} }));
   expect(html.match(/<table /g)).toHaveLength(1);
-  expect(html).not.toContain('Largest repositories');
   expect(html).toContain('Search names and owners');
+  expect(html).toContain('Filters');
   expect(html).toContain('aria-sort="descending"');
   expect(html).toContain('Database');
   expect(html).toContain('Unknown');
@@ -52,14 +48,6 @@ it('encodes the server order and opaque cursor with search rather than sorting l
   expect(query.get('direction')).toBe('asc');
   expect(query.get('q')).toBe('displayed');
   expect(query.get('cursor')).toBe('{"id":"cursor"}');
-});
-
-it('keeps Admin Repositories focused on the searchable listing without requesting usage', () => {
-  const html = renderToStaticMarkup(createElement(AdminRepos, { navigate: () => {} }));
-  expect(html).not.toContain('Use, last');
-  expect(html).not.toContain('Repository use');
-  expect(html).toContain('Search names and owners');
-  expect(html).toContain('Filters');
 });
 
 it('carries exact-owner and visibility filters through every continuation request', () => {
