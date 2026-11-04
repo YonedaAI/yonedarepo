@@ -191,3 +191,27 @@ it('keeps a reason to a short word from the error code', () => {
   expect(refusalReason({ code: 'a b/c' })).toBe('unknown');
   expect(refusalReason(new Error('plain'))).toBe('unknown');
 });
+
+// The real SQL API rejects mixed IF branch types even when no row needs the branch.
+// This contract fixture preserves that observed failure without provider credentials.
+it.each(['7d', '30d', '90d'])('repository rankings use matching numeric branches over %s', async (range) => {
+  const calls: string[] = [];
+  const typedSql = async (_url: RequestInfo | URL, init?: RequestInit) => {
+    const sql = String(init?.body);
+    calls.push(sql);
+    const fallback = /if\([\s\S]*?,\s*double\d+,\s*([\d.]+)\)/i.exec(sql)?.[1];
+    if (!fallback || !fallback.includes('.'))
+      return new Response('Input was invalid: IF branches had Double and Integer', { status: 422 });
+    return Response.json({ data: [] });
+  };
+  const INDEX = {
+    prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }) }) }),
+  } as unknown as D1Database;
+  expect(await repoUsageReport({ ...on, INDEX }, new URLSearchParams({ range }), typedSql as typeof fetch, NOW)).toMatchObject({
+    ok: true,
+    report: { range, most_active: [], fastest_growing: [] },
+  });
+  expect(calls).toHaveLength(2);
+  expect(calls[0]).toContain('ORDER BY actions DESC');
+  expect(calls[1]).toContain('ORDER BY pushed_bytes DESC');
+});
