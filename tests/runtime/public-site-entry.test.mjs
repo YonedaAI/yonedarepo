@@ -47,3 +47,19 @@ test('public documents preload their code and styles; workspace documents preloa
     assert.deepEqual(added.map(n => n.rel), ['modulepreload', 'stylesheet'], pathname);
   }
 });
+
+const { overviewEntryTemplate } = await import('../../frontend/vite-public-entry.ts');
+const { plainNamedOverview } = await import('../../frontend/src/lib/overviewEntryRoute.ts');
+const { reservedHandlesSchema } = await import('../../shared/contracts/reserved-handles.ts');
+test('renderer head code shares the admission guard and requests no API or data', () => {
+  const output = overviewEntryTemplate('<head></head>', 'assets/renderer-hash.js', reservedHandlesSchema.enum, plainNamedOverview.toString());
+  const script = output.match(/<script data-yoneda-overview-code>([\s\S]+?)<\/script>/)[1];
+  for (const path of ['/sample/repo', '/sample/name_1/', '/sample/repo?ref=main', '/sample/repo#part', '/sample/repo/files', '/agents', '/docs/guide', ...reservedHandlesSchema.enum.map(r => `/${r}/repo`)]) {
+    const added = [];
+    const location = new URL(path, 'https://example.test');
+    runInNewContext(script, { location, document: { createElement: () => ({}), head: { append: node => added.push(node) } } });
+    const expected = plainNamedOverview(location, reservedHandlesSchema.enum) ? 1 : 0;
+    assert.equal(added.length, expected, path);
+    if (expected) assert.deepEqual(added.map(n => [n.rel, n.href, n.crossOrigin]), [['modulepreload', '/assets/renderer-hash.js', '']]);
+  }
+});
