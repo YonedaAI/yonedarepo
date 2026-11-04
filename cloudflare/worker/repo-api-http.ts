@@ -13,7 +13,8 @@ import { repoMcp } from './repo-mcp';
 import { downloadBlob } from './repo-object-download';
 import { streamObjects } from './repo-object-fetch';
 import { type Credentials, caller, type Json, RepoContext } from './repo-ops';
-import { pathOf, profile, resolvePath } from './repo-paths';
+import { overviewRequested } from './repo-overview';
+import { type HandleOwner, ownerOf, pathOf, profile, resolvePath } from './repo-paths';
 import {
   ANONYMOUS,
   admitAnonymous,
@@ -66,12 +67,33 @@ export async function handle(
         await limitAnonymous(env, req, url.pathname);
       return servePublicAvatar(env, avatar, req);
     })().catch(failure);
-  const signed = await timed('auth', () => credentials(req, env));
+  const resolving = /^\/api\/v1\/resolve\/([^/]+)\/([^/]+)$/.exec(url.pathname);
+  let ownerLookup: Promise<HandleOwner | null> | undefined;
+  const overlap =
+    req.method === 'GET' &&
+    resolving &&
+    env.OVERVIEW_AUTH_OVERLAP === 'on' &&
+    url.searchParams.get('auth_overlap') !== 'off' &&
+    overviewRequested(env, url.searchParams);
+  const signed = await timed('auth', () =>
+    credentials(
+      req,
+      env,
+      overlap
+        ? () => {
+            ownerLookup = Promise.resolve().then(() =>
+              ownerOf(env, decodeURIComponent(resolving[1])),
+            );
+            // Credentials retain error precedence; an abandoned lookup must not reject unhandled.
+            void ownerLookup.catch(() => {});
+          }
+        : undefined,
+    ),
+  );
   const home = homeElsewhere(env, req, url);
   if (home) return forwardTo(env, home, req);
   // A readable path, or the repository one names, for whoever asks (nobody signed in sees
   // public repositories only); one that may not be read answers as one that is not there.
-  const resolving = /^\/api\/v1\/resolve\/([^/]+)\/([^/]+)$/.exec(url.pathname);
   const pathing = /^\/api\/v1\/repos\/(r[0-9a-f]{20})\/path$/.exec(url.pathname);
   if ((resolving || pathing) && req.method === 'GET') {
     if (!signed && req.headers.has('authorization'))
@@ -85,6 +107,7 @@ export async function handle(
             decodeURIComponent(resolving[1]),
             decodeURIComponent(resolving[2]),
             url.searchParams,
+            ownerLookup,
           )
         : pathOf(env, signed, (pathing as RegExpExecArray)[1]);
     });

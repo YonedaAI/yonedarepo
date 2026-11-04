@@ -8,7 +8,7 @@ import type { Env } from '../../cloudflare/worker/types';
 import { api, author, countingOps, drainObjects, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
-const on = { ...scoped, OVERVIEW_BOOTSTRAP: 'on' } as Env;
+const on = { ...scoped, OVERVIEW_BOOTSTRAP: 'on', OVERVIEW_AUTH_OVERLAP: 'on' } as Env;
 const mode = 'summary=true&overview=true';
 async function setup(name: string, files = [file('README.md', '# Before\n'), file('src/a.txt', 'a\n')]) {
   const owner = { cookie: await signup(name) };
@@ -253,4 +253,67 @@ it('masks an unexpected section fault without hiding the other Overview content'
   expect(response.body.overview).toMatchObject({ latest: null, tree: { commit: r.commit }, readme: { content: '# Before\n' }, errors: { latest: { code: 'INTERNAL', message: 'Something went wrong on our side.' } } });
   expect(response.body.overview.activity.commits[0].commit).toBe(r.commit);
   expect(JSON.stringify(response.body)).not.toContain('simulated internal section detail');
+});
+
+it.each([['on', '', true], ['on', 'off', false], ['on', 'unknown', true], ['off', 'on', false], [undefined, 'on', false]] as const)('gates handle/auth overlap with %s/%s while keeping name/admission after both', async (flag, control, enabled) => {
+  const handle = `overlap_${flag ?? 'unset'}_${control || 'plain'}`;
+  const r = await setup(handle);
+  expect((await api('/orgs', r.owner, { body: { name: `${handle}_org` } }, on)).status).toBe(200);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let entered!: () => void;
+  const orgStarted = new Promise<void>(resolve => { entered = resolve; });
+  const calls: string[] = [];
+  const namespace = on.WORKSPACES;
+  const env = { ...on, OVERVIEW_AUTH_OVERLAP: flag, WORKSPACES: {
+    idFromName: (name: string) => namespace.idFromName(name),
+    get: (id: DurableObjectId) => ({ fetch: async (url: string, init: RequestInit) => {
+      const command = JSON.parse(String(init.body)); calls.push(command.op);
+      if (command.op === 'org_access') { entered(); await held; }
+      return namespace.get(id).fetch(url, init);
+    } }),
+  } } as unknown as Env;
+  const pending = api(`/resolve/${handle}/project?${mode}&auth_overlap=${control}`, r.owner, {}, env);
+  let answer: Awaited<typeof pending>;
+  try {
+    await orgStarted;
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(calls.includes('handle_lookup')).toBe(enabled);
+    expect(calls).not.toContain('owned_repo_resolve');
+  } finally { release(); answer = await pending; }
+  expect(answer.status).toBe(200);
+  expect(answer.body.summary.overview.tree.commit).toBe(r.commit);
+  expect(calls.filter(op => op === 'session')).toHaveLength(1);
+  expect(calls.filter(op => op === 'handle_lookup')).toHaveLength(1);
+  expect(calls.filter(op => op === 'owned_repo_resolve')).toHaveLength(1);
+});
+
+
+it('keeps organization refusal ahead of a failed overlapping lookup without resolving names or reading content', async () => {
+  const r = await setup('overlap_denial');
+  expect((await api('/orgs', r.owner, { body: { name: 'overlap_denial_org' } }, on)).status).toBe(200);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let entered!: () => void;
+  const orgStarted = new Promise<void>(resolve => { entered = resolve; });
+  const calls: string[] = [];
+  const ns = on.WORKSPACES;
+  const env = { ...on, OVERVIEW_AUTH_OVERLAP: 'on', WORKSPACES: {
+    idFromName: (name: string) => ns.idFromName(name),
+    get: (id: DurableObjectId) => ({ fetch: async (url: string, init: RequestInit) => {
+      const command = JSON.parse(String(init.body)); calls.push(command.op);
+      if (command.op === 'handle_lookup') throw new Error('Synthetic handle transport failure');
+      if (command.op === 'org_access') { entered(); await held; throw Object.assign(new Error('Organization refused'), { code: 'FORBIDDEN' }); }
+      return ns.get(id).fetch(url, init);
+    } }),
+  } } as unknown as Env;
+  const pending = api(`/resolve/overlap_denial/project?${mode}`, r.owner, {}, env);
+  await orgStarted;
+  await new Promise(resolve => setTimeout(resolve, 0));
+  release();
+  const answer = await pending;
+  expect(answer.status).toBe(403);
+  expect(answer.body.error.message).toBe('Organization refused');
+  expect(calls.filter(op => op === 'handle_lookup')).toHaveLength(1);
+  expect(calls).not.toContain('owned_repo_resolve');
 });
