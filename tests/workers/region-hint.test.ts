@@ -159,14 +159,21 @@ it('only a test name and a known code pass', () => {
   expect(regionHint({} as Env, { name: 'nothing', region_hint: 'mars' })).toBeNull();
 });
 
-it('a real combiner answers where it runs, and stores a key only when told to', async () => {
+it('a real combiner persists placement without a trace and keeps diagnostics available', async () => {
   const name = 'region-hint-combiner';
   const stub = () => bindings.LAND_COMBINERS!.get(bindings.LAND_COMBINERS!.idFromName(name)) as any;
   const stored = () => runInDurableObject(stub(), async (_: unknown, state: DurableObjectState) => (await state.storage.list()).size);
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('colo=TST\n'));
+  const trace = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('colo=TST\n'));
   expect(await stub().where()).toBe('TST');
+  expect(trace).toHaveBeenCalledTimes(1);
   expect(await stored()).toBe(0);
-  expect(await stub().where(true)).toBe('TST');
+  trace.mockClear();
+  const placed = await stub().where(true);
+  expect(await stored()).toBe(1);
+  expect(trace).not.toHaveBeenCalled();
+  expect(placed).toBeNull();
+  expect(await stub().where()).toBe('TST');
+  expect(trace).toHaveBeenCalledTimes(1);
   expect(await stored()).toBe(1);
   await stub().erase();
   expect(await stored()).toBe(0);
