@@ -88,15 +88,31 @@ impl Repo {
     /// The version after which `refname`'s landings are concurrent with `commit`: its base
     /// version on a protected branch; on a working branch, its parent's first landing
     /// there when that came earlier (the base version reads main, so it can postdate a
-    /// teammate's landing on the branch that the commit does not hold).
+    /// teammate's landing on the branch that the commit does not hold), or its latest
+    /// positioning at that parent without changed paths when newer.
     fn since(&self, commit: CommitId, refname: &str) -> u64 {
         let c = &self.commits[commit];
-        let landed = c
-            .parents
-            .first()
-            .filter(|_| !Self::protected(refname))
-            .and_then(|p| self.landings.get(&(*p, refname.to_owned())));
-        landed.map_or(c.base_version, |v| (*v).min(c.base_version))
+        let Some(parent) = c.parents.first().filter(|_| !Self::protected(refname)) else {
+            return c.base_version;
+        };
+        let base = self
+            .landings
+            .get(&(*parent, refname.to_owned()))
+            .map_or(c.base_version, |v| (*v).min(c.base_version));
+        // A working ref positioned at the parent without changed paths establishes
+        // a known base, even when that was a tree-identical fast-forward landing.
+        // A carry with real writes is not positioning: its earlier history still counts.
+        self.log
+            .iter()
+            .filter(|entry| {
+                entry.version > base
+                    && entry.refname == refname
+                    && entry.paths.is_empty()
+                    && entry.head == Some(*parent)
+            })
+            .map(|entry| entry.version)
+            .max()
+            .unwrap_or(base)
     }
 
     pub(crate) fn occ(&self, commit: CommitId, refname: &str) -> Occ {
