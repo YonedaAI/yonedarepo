@@ -75,13 +75,13 @@ fn workspace_schema_migrates_fresh_repeat_and_from_version_one() {
     };
     assert_eq!(
         versions(&fresh),
-        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     );
     // Repeat application is a no-op.
     at(&fresh, 2000, json!({"op":"pat_list"})).unwrap();
     assert_eq!(
         versions(&fresh),
-        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     );
 
     // A store at version 1 (accounts only) upgrades in place and keeps its account.
@@ -111,7 +111,7 @@ fn workspace_schema_migrates_fresh_repeat_and_from_version_one() {
     );
     assert_eq!(
         versions(&old),
-        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     );
 
     // An applied migration that differs from the committed one is refused.
