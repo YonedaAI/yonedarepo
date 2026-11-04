@@ -230,10 +230,10 @@ export const COPY: Copy[] = [
   },
   {
     signals: ['p95_wall_ms'],
-    title: (f) => `${capital(f.word)} calls slowed to ${duration(count(f, 'p95_wall_ms'))}`,
+    title: (f) => `${capital(f.word)} execution time rose`,
     means: (f) =>
-      f.baseline ? `They usually take about ${duration(f.baseline)}.` : 'Slower than usual.',
-    first: "Find the slowest requests and routes in this Worker's logs.",
+      `Estimated 95th percentile: ${duration(count(f, 'p95_wall_ms'))}${f.baseline ? `; usual estimate ${duration(f.baseline)}` : ''}. Includes background work.`,
+    first: "Inspect request timings and upstream calls in this Worker's logs.",
   },
   {
     signals: ['deadman_stale'],
