@@ -317,3 +317,31 @@ it('keeps organization refusal ahead of a failed overlapping lookup without reso
   expect(calls.filter(op => op === 'handle_lookup')).toHaveLength(1);
   expect(calls).not.toContain('owned_repo_resolve');
 });
+
+it('keeps every branch choice but omits unused branch hashes only in the flagged Overview view', async () => {
+  const r = await setup('overview_ref_names');
+  for (const ref of ['chosen', 'other'])
+    expect((await api(`/repos/${r.id}/branches`, r.owner, { body: { ref, commit: r.commit, expected: null } }, on)).status).toBe(200);
+  expect((await api(`/repos/${r.id}/tags`, r.owner, { body: { name: 'v1', commit: r.commit } }, on)).status).toBe(200);
+  const seen = countingOps(on);
+  const env = { ...seen.env, OVERVIEW_REF_NAMES: 'on' } as Env;
+  const path = `/repos/${r.id}?${mode}&ref=chosen`;
+  const full = await api(path, r.owner, {}, seen.env);
+  const compact = await api(path, r.owner, {}, env);
+  expect(compact.status).toBe(200);
+  expect(compact.body.refs.find((ref: any) => ref.name === 'refs/heads/other')).toEqual({ name: 'refs/heads/other' });
+  expect(compact.body.refs.find((ref: any) => ref.name === 'refs/heads/chosen')).toEqual(full.body.refs.find((ref: any) => ref.name === 'refs/heads/chosen'));
+  expect(compact.body.refs.find((ref: any) => ref.name === 'refs/heads/main')).toEqual(full.body.refs.find((ref: any) => ref.name === 'refs/heads/main'));
+  expect(compact.body.refs.find((ref: any) => ref.name === 'refs/tags/v1')).toEqual(full.body.refs.find((ref: any) => ref.name === 'refs/tags/v1'));
+  expect(compact.body.refs.map((ref: any) => ref.name)).toEqual(full.body.refs.map((ref: any) => ref.name));
+  expect(compact.body.overview).toEqual(full.body.overview);
+  expect(compact.body.viewer).toEqual(full.body.viewer);
+  expect(compact.body.version).toBe(full.body.version);
+  const named = await api(`/resolve/overview_ref_names/project?${mode}&ref=chosen`, r.owner, {}, env);
+  expect(named.body.summary.refs).toEqual(compact.body.refs);
+  const ordinary = await api(`/repos/${r.id}?summary=true`, r.owner, {}, env);
+  const disabled = await api(`${path}&refs_view=full`, r.owner, {}, env);
+  expect(ordinary.body.refs).toEqual(full.body.refs);
+  expect(disabled.body.refs).toEqual(full.body.refs);
+  expect(seen.take().repo_status).toBe(5);
+});

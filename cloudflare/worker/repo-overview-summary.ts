@@ -2,6 +2,7 @@
 import type { Json, RepoContext } from './repo-ops';
 import { overview, overviewRequested } from './repo-overview';
 import { admittedOverviewSnapshot, overviewSnapshotRequest } from './repo-overview-admission';
+import { overviewRefNames } from './repo-overview-refs';
 import { withPath } from './repo-paths';
 
 export async function browserSummary(ctx: RepoContext, query: URLSearchParams): Promise<Json> {
@@ -13,6 +14,9 @@ export async function browserSummary(ctx: RepoContext, query: URLSearchParams): 
   const { objects: _objects, snapshot: _snapshot, ...summary } = status;
   const decorated = await withPath(ctx.env, ctx.repo, summary);
   return overviewRequested(ctx.env, query)
-    ? { ...decorated, overview: await overview(ctx, summary, query, admitted) }
+    ? {
+        ...overviewRefNames(ctx.env, decorated, query),
+        overview: await overview(ctx, summary, query, admitted),
+      }
     : decorated;
 }
