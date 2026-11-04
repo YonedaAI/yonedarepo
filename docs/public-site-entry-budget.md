@@ -80,3 +80,20 @@ the app. A missing renderer chunk reached the existing Reload action and rendere
 the correct README after retry. Public-site preload/navigation tests also passed.
 These controlled local checks establish ordering and correctness, not a live
 performance result.
+
+## Start renderer preload before blocking styles
+
+The deployed f7 trace still started the renderer at 468/441 ms, immediately after
+CSS ended at 468/439 ms, while the app bundle ended at 555/542 ms. The classic
+head script was placed after that stylesheet and therefore waited for it. Core
+was 797/809 ms in those samples; the earlier preload did not eliminate the full
+renderer delay. The separate fresh median improved from 1,008 to 809 ms, while
+reload was mixed (538 to 576 ms); these are observations, not this fix's result.
+
+Place only the existing renderer preload script immediately after the opening
+head tag, before stylesheets. Preserve its existing switch and URL guard. A
+production-served regression holds both CSS and the app bundle: the eligible
+renderer request must start before CSS is released. Off and unsupported routes
+still make no head renderer request, and ordinary lazy rendering remains intact.
+No new API read, cache policy, routing or authorization behavior is introduced.
+Live timing remains to be measured after the frontend deployment.
