@@ -44,6 +44,7 @@ const detail = (over: Partial<CommitDetail> = {}): CommitDetail => ({
 const status = (viewer: Viewer, policy = noChecks): RepoStatus => ({
   name: 'demo',
   version: 2,
+  history_chain: null,
   owner: 'kit',
   owner_handle: 'kit',
   path: '/kit/demo',
@@ -55,7 +56,6 @@ const status = (viewer: Viewer, policy = noChecks): RepoStatus => ({
     { name: 'refs/heads/main', commit_id: 'b'.repeat(40), version: 2 },
     { name: 'refs/heads/dev', commit_id: 'c'.repeat(40), version: 1 },
   ],
-  objects: {},
   bundled: false,
   automation: null,
   landings: { create: false, agents: false, land_when_cleared: false, findings_block: false },

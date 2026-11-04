@@ -75,7 +75,7 @@ async function tokenDigest(credentials: Json): Promise<string | null> {
   return [...hash].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** One fetch per key at a time in this isolate; concurrent callers share it. */
+/** One unfinished fetch per key in this request; completed head copies remain shared. */
 const once = (key: string, load: () => Promise<Json>) => loading.join(key, load).work;
 
 async function headOf(env: Env, repo: string, minVersion: number): Promise<Json> {
@@ -93,7 +93,7 @@ async function headOf(env: Env, repo: string, minVersion: number): Promise<Json>
   return head;
 }
 
-/** Fetches main's head and caches it, dated when the fetch started (`at`). Fetches that
+/** Fetches main's head and caches it, dated when the fetch started (`at`). Fetches in this request that
  * need no newer version than the copy share one call (the holder answers it from memory);
  * one that needs a landing waits for the holder to reach it, alone. With a cached copy,
  * only the overlay entries newer than it travel, and the access snapshot only when it

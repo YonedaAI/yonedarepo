@@ -138,13 +138,13 @@ export async function accountSession(origin, username, password) {
 /**
  * The second kit account (`<kit username>_m`, the same private password, signed up on first
  * use): another person than the kit account, for members and for reviews the platform refuses
- * to their author. Returns its account name and a cookie session on the platform API.
+ * to their author. Returns its account name, actual sign-in identifier and API session.
  */
 export async function secondAccount(origin, { KIT_USERNAME, KIT_PASSWORD, KIT_SECOND_USERNAME, KIT_SECOND_PASSWORD }) {
   // An email-named kit account names its second user outright.
   const username = KIT_SECOND_USERNAME ?? `${KIT_USERNAME}_m`;
-  const { cookie, name } = await accountSession(origin, username, KIT_SECOND_PASSWORD ?? KIT_PASSWORD);
-  return { name, session: new Session(`${origin}/api/v1`, { cookie }) };
+  const { cookie, name, identifier } = await accountSession(origin, username, KIT_SECOND_PASSWORD ?? KIT_PASSWORD);
+  return { name, identifier, session: new Session(`${origin}/api/v1`, { cookie }) };
 }
 
 /** Polls `probe` until it returns a truthy value or the deadline passes. */

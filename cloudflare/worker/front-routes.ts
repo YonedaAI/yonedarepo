@@ -5,11 +5,12 @@
 // proxied on the same origin, as is the managed agents Worker's browser API (/api/managed).
 // Repositories, Git, tokens and MCP all live on the platform Worker.
 
-import { accountRoute } from './accounts';
+import { accountRoute, sessionAccount } from './accounts';
 import { frontEnv, signInEnv } from './cell-edge';
 import { cellsOn } from './cells';
 import { clientError } from './client-errors';
 import { isInstaller, serveDownload, serveInstallScript } from './downloads';
+import { forwardRequest } from './forward-request';
 import { error, response } from './http';
 import { logFailure } from './log';
 import { oauthRoute } from './oauth';
@@ -22,6 +23,7 @@ import type { Env } from './types';
 import { withWebAnalytics } from './web-analytics';
 import { publicOrigin, websitePage } from './website-metadata';
 
+const FRONT_AUTH = new Set(['/api/auth/providers', '/api/auth/identities', '/api/auth/unlink']);
 const GITHUB_PAGES = new Set(['/github/connect', '/github/connected']);
 
 export async function frontFetch(req: Request, bound: Env): Promise<Response> {
@@ -39,13 +41,14 @@ export async function frontFetch(req: Request, bound: Env): Promise<Response> {
   }
   // Connecting GitHub is the platform's, on its own paths: the App's setup URL is one of them.
   if (GITHUB_PAGES.has(url.pathname) && env.PLATFORM)
-    return env.PLATFORM.fetch(
+    return forwardRequest(
+      env.PLATFORM,
       carriedRequest(new Request(`${url.origin}/api/v1${url.pathname}${url.search}`, req)),
     );
   // Git over HTTPS by readable path is the platform's (`/<handle>/<name>.git`).
   if (GIT_PATH.test(url.pathname))
     return env.PLATFORM
-      ? env.PLATFORM.fetch(carriedRequest(req))
+      ? forwardRequest(env.PLATFORM, carriedRequest(req))
       : error('NOT_FOUND', 'The source platform is not bound', 404);
   if (!url.pathname.startsWith('/api/')) {
     const moved = env.PLATFORM
@@ -60,15 +63,35 @@ export async function frontFetch(req: Request, bound: Env): Promise<Response> {
   if (url.pathname === '/api/client-error') return clientError(req, env);
   if (url.pathname.startsWith('/api/v1/'))
     return env.PLATFORM
-      ? env.PLATFORM.fetch(carriedRequest(req))
+      ? forwardRequest(env.PLATFORM, carriedRequest(req))
       : error('NOT_FOUND', 'The source platform is not bound', 404);
+  if (url.pathname === '/api/managed/self') {
+    if (req.method !== 'GET' || url.search || req.body) {
+      await req.body?.cancel().catch(() => undefined);
+      return req.method !== 'GET'
+        ? error('METHOD_NOT_ALLOWED', 'Use GET for your agents', 405)
+        : error('INVALID_INPUT', 'This read takes no query or body', 400);
+    }
+    // A cookie name chooses the existing route; only managed access and native sessions admit it.
+    const account = req.headers.has('authorization') ? null : sessionAccount(req);
+    if (!account) return error('UNAUTHORIZED', 'Sign in to view your agents', 401);
+    url.pathname = `/api/managed/workspaces/${encodeURIComponent(account)}`;
+    return env.MANAGED
+      ? forwardRequest(env.MANAGED, carriedRequest(new Request(url, req)))
+      : error('NOT_FOUND', 'Managed agents are not available here', 404);
+  }
   if (url.pathname.startsWith('/api/managed/'))
     return env.MANAGED
-      ? env.MANAGED.fetch(carriedRequest(req))
+      ? forwardRequest(env.MANAGED, carriedRequest(req))
       : error('NOT_FOUND', 'Managed agents are not available here', 404);
-  // Sign-in stays on a pinned Worker: its limiter is one count per cell, not one per location.
-  if (cellsOn(env) && env.PLATFORM && url.pathname.startsWith('/api/auth/'))
-    return env.PLATFORM.fetch(carriedRequest(req));
+  // Provider configuration belongs to this Worker; credential routes use the API.
+  if (
+    cellsOn(env) &&
+    env.PLATFORM &&
+    url.pathname.startsWith('/api/auth/') &&
+    !FRONT_AUTH.has(url.pathname)
+  )
+    return forwardRequest(env.PLATFORM, carriedRequest(req));
   try {
     const authResponse = await accountRoute(req, env);
     if (authResponse) return authResponse;

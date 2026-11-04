@@ -89,16 +89,13 @@ On the 115 kit runs so far, the live thresholds leave 83 of the 114 comparisons 
 
 ## Deep differential
 
-`.github/workflows/nightly.yml` runs the 100×200 differential against `dev` at 09:17 UTC. Each night uses new seeds (`YONEDA_DIFF_SEED_START`), because the fixed seeds on an unchanged commit prove nothing new. A failure names its seed; replay it with `YONEDA_DIFF_SEED=<seed>`.
+The scheduled Nightly workflow is removed. Run the deep 100×200 differential manually:
 
-| Cost | Figure |
-|---|---|
-| The run | 160 s on the Mac (measured, 18 cores) |
-| One night on GitHub | About 10 minutes (estimate: not yet run there) |
-| A month | 1 job a night, about 300 runner minutes |
-| Added to every push | No new job |
+```sh
+YONEDA_DIFF_SEED_START="$(date +%s)00" cargo test -p yoneda-platform --lib differential -- --ignored
+```
 
-GitHub only runs a schedule from the default branch, so this starts once the file reaches `main`. GitHub also pauses schedules after 60 days without repository activity.
+Choose a fresh seed range; replay a failure with `YONEDA_DIFF_SEED=<seed>`.
 
 ## Coverage
 

@@ -1,10 +1,79 @@
 # Handoff
 
+Updated 2026-11-03. This section supersedes the historical handoff below.
+
+## Current work
+
+Dev deployment `5bb293ee` completed, including its deployment smoke and the
+regional monitoring fix. The routing/loading measurements below were taken at
+`c8d6d9ae`; application routing code is unchanged by that monitoring/docs wave.
+Production still serves `de317bbda605`;
+source merges and resource preparation are not a production promotion. The
+latest production workflow did not complete its watch.
+
+| Task | Current evidence and next step |
+|---|---|
+| Repository loading | Overview, immutable content reuse, early Markdown, edge-first bytes, Search reuse and recent Versions are deployed. New Versions paging and selected-revision UI passed. Current repeat Overview is 494–762 ms (562 median), fresh-context Overview 1,049–2,226 ms and Agents 1,123–1,319 ms. Speed remains open. Transport/startup also changed; the dated measurements do not isolate a code regression. See the new validation report. |
+| SSH | The production clone/push/revocation smoke passed. Lifecycle failures remain under investigation; they are not evidence that the same percentage of Git operations failed. Alert wording is repaired on dev. |
+| Flight Path demos | Commander's repair and second-account approval phases landed with exact-head reviews. Independent native acceptance passed 8/8 groups, 21 CLI observations and 39/39 authored tests on the approved snapshot. Six Click coding heads and final functional acceptance remain. Temporary policy/settings were restored and run credentials/containers cleaned up. Retained history is preserved. See the [agentic coding proof](flight-path-agentic-proof-20261103.md). |
+| Release | A fresh CLI walk and full kit at the final dev tip remain required. The older 34/35 kit result cannot accept current source. Then push dev, record live-tests, open the ship PR, pass its checks, merge, watch production and run the Mac smoke. |
+| Global locality | Global entries now select six API destinations from original caller geography. Dev observed IAD/FRA/SIN/SYD/GRU/CPT in three samples each; EU forwarding and retained authority/ref/history state stayed correct. Two new fixtures followed the observed US caller. The shared sign-in counter passed across all six aliases and the entry. Three independent 1,000-writer runs passed every commit, landing and exact readback; temporary tokens were revoked. These are not worldwide speed or universal storage-residency proof. |
+| Regional monitoring | The fix is deployed on dev after 131 runtime and 68 infrastructure cases. Actual EU resource resolution and telemetry reads passed. Customer HTTP denominators stay unchanged. Shared customer death-point attribution is still limited; live telemetry access is separate from end-to-end alert-delivery proof. |
+| Analytics | Site/platform traffic analytics is enabled in dev and prod. Per-repository usage analytics remains off. Contribution drill-down is implemented on dev; it is separate from usage analytics. |
+| Basin change history | Dev's primary pipeline and SQL are working: 14 existing versions and five landings match the authority, with zero drift. EU is unbound; production and the seven-day soak are not validated. See the [dated validation](basin-dev-validation-20261103.md). |
+| Organization members | Handle and exact-email lookup, add/remove behavior and access boundaries have dev evidence. The tidied organization view is on dev. |
+
+The current global rule follows the requesting human or agent's location, not an
+account region picker. New unrestricted repository objects use nearby placement;
+an existing object's home does not move merely because Workers are unpinned.
+US/Europe copy validation does not prove EU-only residency or GDPR compliance.
+A real Asian-client placement check is explicitly deferred by the owner.
+
+New proposed work: [shared repository indexes and global discovery](global-search-index-plan.md)
+and [a controlled regional performance baseline](regional-performance-baseline-plan.md).
+These plans reuse the real indexes already implemented. They do not implement a
+new indexer or authorize a rollout. The earlier placement figure changed compute
+while data stayed in US East; it did not compare two complete local-data stacks.
+
+Current evidence: [global routing and loading validation](global-routing-validation-20261103.md),
+[dated performance figure](performance/2026-11-03-global/global-routing-validation.png)
+and [regional monitoring coverage](regional-monitoring.md). Read p95 under the
+three bursts was 1,703 / 2,807 / 1,569 ms; correctness passed, subsecond loaded
+reads did not. The earlier 424 ms Overview observation remains in its dated
+snapshot rather than being presented as the current result.
+
+The broad automated-QA expansion is paused. Continue feature acceptance and the
+required release checks. Preserve activity/contributors above the Overview README;
+optional activity must not block the repository header, files or README text.
+
+The [admitted Overview snapshot](overview-admitted-snapshot-budget.md) is locally
+verified. Dev declares it on for a controlled rollout; production remains off.
+It removes a redundant published-head selection lookup after fresh admission,
+with existing tree reads unchanged. Live performance is still unverified.
+
+For retained demos, reserve maintained review maxima before each new head, run
+stock coding agents only in the Docker sandbox, and request reviews at the exact
+captured head after coding exits. Preserve the original $2.90 managed-review cap.
+Do not start paid coding while any source worktree or remote is changing. Restore
+temporary repository policies, revoke temporary tokens and verify host/remote
+state afterwards. An owner-requested review is not automatic-trigger evidence.
+
+Private run receipts and the changing work ledger are under
+`.local/implementation-20261103/`; do not publish their account or monitor data.
+
+Future proposal: [local Rust repository service](local-repository-future.md).
+This records a possible Git-compatible local mode; no implementation is authorized.
+
+## Historical handoff
+
+The following records the earlier state and superseded plan. It is retained for
+context, not as the current task list or deployment evidence.
+
 Written 2026-11-01, corrected 2026-11-02, at dev `a86ce1f0`, deployed to dev.
 
 Rules for this work are in `AGENTS.md`. Plans are linked under each task.
 
-## Bad news first
+## Earlier gaps
 
 1. **Regions are not on.** Every repository still lives in the US, so the site's "global" claim is false.
 2. **Your region rule isn't built.** Nobody gets a region at login, and nobody can change one.

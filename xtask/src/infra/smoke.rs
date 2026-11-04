@@ -70,16 +70,27 @@ pub(crate) async fn run(args: &[String]) -> Result<()> {
     let env = Env::from_args(args)?;
     let spec = Spec::load(&env)?;
     let workers = inventory::deployables(&spec, &Lock::load(&env)?)?;
+    let head = head()?;
+    captured_run(&env, &spec, &workers, &head).await
+}
+
+/// A deployment verifies the exact revision and inventory it captured before building.
+/// Standalone smoke still resolves today's HEAD and spec through run above.
+pub(crate) async fn captured_run(
+    env: &Env,
+    spec: &Spec,
+    workers: &[Deployable],
+    head: &str,
+) -> Result<()> {
     let owner = super::secrets::read(&spec.secrets_path())?
         .remove("OWNER_TOKEN")
         .ok_or("No OWNER_TOKEN in the secrets file")?;
-    let head = head()?;
     let client = crate::admin::platform_client(Duration::from_secs(30))?;
     let mut check = Check {
         rows: Vec::new(),
         failed: 0,
     };
-    let origin = front(&workers)
+    let origin = front(workers)
         .and_then(|w| w.health.as_ref().map(|(o, _)| o.clone()))
         .ok_or("No public front Worker in the spec")?;
     check.record(
@@ -106,9 +117,12 @@ pub(crate) async fn run(args: &[String]) -> Result<()> {
         let live = crate::deploy_live::live_revision(worker).await;
         let outcome = match live.as_deref() {
             Some(revision) if revision == head => Ok(short(revision).to_owned()),
-            other => Err(format!("{other:?}, expected {}", short(&head))),
+            other => Err(format!("{other:?}, expected {}", short(head))),
         };
-        check.record(&format!("{} /health = HEAD", worker.name), outcome);
+        check.record(
+            &format!("{} /health = deployment revision", worker.name),
+            outcome,
+        );
     }
     check.record(
         "owner GET /api/v1/repos (platform proxy)",
@@ -131,7 +145,7 @@ pub(crate) async fn run(args: &[String]) -> Result<()> {
                 reqwest::Method::POST,
                 &format!("{origin}/api/v1/repos"),
                 Some(&owner),
-                Some(json!({"name": format!("smoke-{}", short(&head))})),
+                Some(json!({"name": format!("smoke-{}", short(head))})),
             )
             .await,
         )
@@ -160,7 +174,7 @@ pub(crate) async fn run(args: &[String]) -> Result<()> {
         }
     }
     table(
-        &format!("{} smoke at {}", env.name(), short(&head)),
+        &format!("{} smoke at {}", env.name(), short(head)),
         &["Check", "Result", "Detail"],
         &check.rows,
     );
@@ -168,4 +182,70 @@ pub(crate) async fn run(args: &[String]) -> Result<()> {
         return Err(format!("{} smoke check(s) failed", check.failed).into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn deploy_smoke_uses_captured_revision_and_inventory_despite_later_head() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("secrets.env");
+        std::fs::write(&file, "OWNER_TOKEN=local-fixture-owner\n").unwrap();
+        let mut spec = Spec::parse(include_str!("../../../infra/envs/dev.json")).unwrap();
+        spec.secrets_file = file.to_str().unwrap().into();
+        let captured = "1111111111111111111111111111111111111111";
+        assert_ne!(crate::deploy_guard::head().unwrap(), captured);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                tokio::spawn(async move {
+                    let mut bytes = vec![0; 4096];
+                    let n = stream.read(&mut bytes).await.unwrap();
+                    let request = String::from_utf8_lossy(&bytes[..n]);
+                    let body = if request.starts_with("GET /health ") {
+                        format!(r#"{{"service":"fixture","revision":"{captured}"}}"#)
+                    } else if request.starts_with("GET /api/v1/repos ") {
+                        "{\"repos\":[]}".into()
+                    } else {
+                        "<!doctype html><html></html>".into()
+                    };
+                    stream.write_all(format!("HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",body.len()).as_bytes()).await.unwrap();
+                });
+            }
+        });
+        let workers = vec![Deployable {
+            name: "captured-worker".into(),
+            role: "agents".into(),
+            config_path: "unused".into(),
+            config: Value::Null,
+            secrets: vec![],
+            optional_secrets: vec![],
+            secret_files: BTreeMap::new(),
+            health: Some((origin, "fixture".into())),
+            has_containers: false,
+            always_on: BTreeMap::new(),
+        }];
+        assert!(
+            captured_run(&Env::Dev, &spec, &workers, captured)
+                .await
+                .is_ok()
+        );
+        assert!(
+            captured_run(
+                &Env::Dev,
+                &spec,
+                &workers,
+                "2222222222222222222222222222222222222222"
+            )
+            .await
+            .is_err()
+        );
+        server.abort();
+    }
 }

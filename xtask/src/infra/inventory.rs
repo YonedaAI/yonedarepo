@@ -157,8 +157,11 @@ pub(crate) fn consumers(config: &Value) -> BTreeSet<String> {
         .collect()
 }
 
+/// Only locally defined workflows are owned resources; cross-script bindings are references.
 pub(crate) fn workflows(config: &Value) -> BTreeSet<String> {
-    strings(config, "/workflows", "name")
+    items(config, "/workflows")
+        .filter(|w| w.get("script_name").is_none())
+        .filter_map(|w| w["name"].as_str())
         .map(str::to_owned)
         .collect()
 }

@@ -41,7 +41,6 @@ fn good_prod() -> Facts {
         head: HEAD.into(),
         dirty: vec![],
         ref_tips: vec![HEAD.into()],
-        dev_revisions: vec![("yonedarepo-dev-platform".into(), Some(HEAD.into()))],
         evidence: Some(evidence(HEAD, "pass")),
         ..Facts::default()
     }
@@ -146,8 +145,8 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
     assert_eq!(
         migrations,
         [
-            "yonedarepo-dev-platform-index-weur",
             "yonedarepo-dev-platform-index",
+            "yonedarepo-dev-platform-index-weur",
             "yonedarepo-dev-managed-revenue"
         ]
     );
@@ -177,6 +176,7 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
             Step::Secrets { worker: 2 },
             Step::Health { worker: 2 },
             d(3),
+            Step::Secrets { worker: 3 },
             Step::Health { worker: 3 },
             d(4),
             Step::Secrets { worker: 4 },
@@ -186,19 +186,36 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
             Step::Health { worker: 5 },
             d(6),
             Step::Secrets { worker: 6 },
+            Step::Health { worker: 6 },
             d(7),
             Step::Secrets { worker: 7 },
+            Step::Health { worker: 7 },
             d(8),
             Step::Secrets { worker: 8 },
+            Step::Health { worker: 8 },
             d(9),
-            Step::Secrets { worker: 9 },
+            Step::Health { worker: 9 },
             d(10),
             Step::Secrets { worker: 10 },
+            Step::Health { worker: 10 },
             d(11),
             Step::Secrets { worker: 11 },
+            Step::Health { worker: 11 },
             d(12),
+            Step::Secrets { worker: 12 },
+            d(13),
+            Step::Secrets { worker: 13 },
+            d(14),
+            Step::Secrets { worker: 14 },
+            d(15),
+            Step::Secrets { worker: 15 },
+            d(16),
+            Step::Secrets { worker: 16 },
+            d(17),
+            Step::Secrets { worker: 17 },
+            d(18),
         ],
-        "superfan (no /health), the cell, platform, edge (no secrets), agents-managed (optional secrets), agents, bench, bench2 and the regional clients (BENCH_KEY, no /health), deadman (no secrets, no /health)"
+        "superfan (no /health), platform, the EU authority, six API aliases, edge (no secrets), agents-managed (optional secrets), agents, bench, bench2 and the regional clients (BENCH_KEY, no /health), deadman (no secrets, no /health)"
     );
     assert!(
         !plan.iter().any(|s| matches!(s, Step::ActiveGate { .. })),
@@ -268,6 +285,13 @@ fn prod_checks_active_runs_right_before_each_container_rollout() {
         [
             "superfan",
             "platform",
+            "platform-weur",
+            "api-enam",
+            "api-weur",
+            "api-apac",
+            "api-oc",
+            "api-sam",
+            "api-afr",
             "agents-managed",
             "agents",
             "deadman"
@@ -289,8 +313,24 @@ fn prod_checks_active_runs_right_before_each_container_rollout() {
             );
         }
     }
-    assert!(workers[1].has_containers && workers[2].has_containers);
-    assert!(!workers[0].has_containers && !workers[3].has_containers);
+    for role in ["platform", "platform-weur", "agents-managed"] {
+        assert!(
+            workers
+                .iter()
+                .find(|w| w.role == role)
+                .unwrap()
+                .has_containers
+        );
+    }
+    for role in ["superfan", "agents", "deadman"] {
+        assert!(
+            !workers
+                .iter()
+                .find(|w| w.role == role)
+                .unwrap()
+                .has_containers
+        );
+    }
 }
 
 #[test]
@@ -387,74 +427,20 @@ fn dirty_tree_and_wrong_ref_are_refused() {
 }
 
 #[test]
-fn prod_needs_confirm_dev_at_head_and_passing_kit_evidence() {
-    let prod = prod();
-    guard::preflight(&Env::Prod, &prod, &good_prod(), &confirmed()).unwrap();
+fn prod_requires_confirm_and_the_ci_release_path() {
     refused(
         &Env::Prod,
-        &prod,
+        &prod(),
         &good_prod(),
         &Options::default(),
         "without --confirm",
     );
-    let stale = Facts {
-        dev_revisions: vec![("yonedarepo-dev-agents".into(), Some(OTHER.into()))],
-        ..good_prod()
-    };
-    refused(&Env::Prod, &prod, &stale, &confirmed(), "deploy --env dev");
-    let down = Facts {
-        dev_revisions: vec![("yonedarepo-dev-agents".into(), None)],
-        ..good_prod()
-    };
-    refused(&Env::Prod, &prod, &down, &confirmed(), "nothing reachable");
-    let none = Facts {
-        dev_revisions: vec![],
-        ..good_prod()
-    };
-    refused(&Env::Prod, &prod, &none, &confirmed(), "no dev Worker");
-    let missing = Facts {
-        evidence: None,
-        ..good_prod()
-    };
     refused(
         &Env::Prod,
-        &prod,
-        &missing,
+        &prod(),
+        &good_prod(),
         &confirmed(),
-        "no real-world kit evidence",
-    );
-    let other_sha = Facts {
-        evidence: Some(evidence(OTHER, "pass")),
-        ..good_prod()
-    };
-    refused(
-        &Env::Prod,
-        &prod,
-        &other_sha,
-        &confirmed(),
-        "not recorded against HEAD",
-    );
-    let failing = Facts {
-        evidence: Some(evidence(HEAD, "fail")),
-        ..good_prod()
-    };
-    refused(
-        &Env::Prod,
-        &prod,
-        &failing,
-        &confirmed(),
-        "is fail, not pass",
-    );
-    let skipped = Facts {
-        evidence: Some(evidence(HEAD, "skip")),
-        ..good_prod()
-    };
-    refused(
-        &Env::Prod,
-        &prod,
-        &skipped,
-        &confirmed(),
-        "is skip, not pass",
+        "CI release workflow",
     );
     let dirty = Facts {
         dirty: vec!["?? deploy.txt".into()],
@@ -462,7 +448,7 @@ fn prod_needs_confirm_dev_at_head_and_passing_kit_evidence() {
     };
     refused(
         &Env::Prod,
-        &prod,
+        &prod(),
         &dirty,
         &confirmed(),
         "uncommitted changes",
@@ -703,115 +689,6 @@ fn the_browser_item_must_be_in_the_evidence_and_pass() {
     assert!(evidence_passes(Some(&no_item_zero), &good_prod()).is_err());
 }
 
-/// A merged ship PR: HEAD is the merge commit, the dev Workers and the kit ran its PR head.
-const TREE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const OTHER_TREE: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-fn merged_ship() -> Facts {
-    let mut kit = evidence(OTHER, "pass");
-    kit["tree"] = json!(TREE);
-    Facts {
-        head_tree: TREE.into(),
-        trees: BTreeMap::from([(OTHER.to_owned(), TREE.to_owned())]),
-        dev_revisions: vec![("yonedarepo-dev-platform".into(), Some(OTHER.into()))],
-        evidence: Some(kit),
-        ..good_prod()
-    }
-}
-
-#[test]
-fn a_merge_commit_counts_the_dev_workers_and_kit_of_its_identical_tree() {
-    guard::preflight(&Env::Prod, &prod(), &merged_ship(), &confirmed()).unwrap();
-}
-
-#[test]
-fn a_different_tree_or_an_unknown_commit_is_not_the_same_code() {
-    let prod = prod();
-    let other_tree = Facts {
-        trees: BTreeMap::from([(OTHER.to_owned(), OTHER_TREE.to_owned())]),
-        ..merged_ship()
-    };
-    refused(
-        &Env::Prod,
-        &prod,
-        &other_tree,
-        &confirmed(),
-        "deploy --env dev",
-    );
-    let unknown = Facts {
-        trees: BTreeMap::new(),
-        ..merged_ship()
-    };
-    refused(
-        &Env::Prod,
-        &prod,
-        &unknown,
-        &confirmed(),
-        "deploy --env dev",
-    );
-    // No tree facts at all must never make two different commits equal.
-    let blank = Facts {
-        head_tree: String::new(),
-        trees: BTreeMap::from([(OTHER.to_owned(), String::new())]),
-        ..merged_ship()
-    };
-    refused(&Env::Prod, &prod, &blank, &confirmed(), "deploy --env dev");
-    let dev_only = Facts {
-        dev_revisions: vec![("yonedarepo-dev-platform".into(), Some(HEAD.into()))],
-        trees: BTreeMap::new(),
-        ..merged_ship()
-    };
-    refused(
-        &Env::Prod,
-        &prod,
-        &dev_only,
-        &confirmed(),
-        "not recorded against HEAD",
-    );
-}
-
-#[test]
-fn the_tree_the_kit_recorded_must_be_heads() {
-    let mut kit = evidence(HEAD, "pass");
-    kit["tree"] = json!(OTHER_TREE);
-    let facts = Facts {
-        head_tree: TREE.into(),
-        evidence: Some(kit),
-        ..good_prod()
-    };
-    refused(
-        &Env::Prod,
-        &prod(),
-        &facts,
-        &confirmed(),
-        "not recorded against HEAD",
-    );
-}
-
-#[test]
-fn both_workers_in_the_evidence_must_be_the_same_code() {
-    let mut facts = merged_ship();
-    let evidence = facts.evidence.as_mut().unwrap();
-    evidence["items"][0]["metrics"]["platform"] = json!("1111111111111111111111111111111111111111");
-    refused(
-        &Env::Prod,
-        &prod(),
-        &facts,
-        &confirmed(),
-        "not recorded against HEAD",
-    );
-}
-
-#[test]
-fn local_deploys_at_head_need_no_tree() {
-    // Evidence from before the kit recorded a tree, and a head whose tree was never gathered.
-    guard::preflight(&Env::Prod, &prod(), &good_prod(), &confirmed()).unwrap();
-    let with_tree = Facts {
-        head_tree: TREE.into(),
-        ..good_prod()
-    };
-    guard::preflight(&Env::Prod, &prod(), &with_tree, &confirmed()).unwrap();
-}
-
 #[test]
 fn tree_of_reads_a_commit_and_refuses_anything_else() {
     let head = guard::head().unwrap();
@@ -921,12 +798,12 @@ fn each_d1_database_migrates_under_its_own_workers_config() {
         migrations,
         [
             (
-                "yonedarepo-dev-platform-index-weur",
-                "cloudflare/wrangler.dev-platform-weur.jsonc"
-            ),
-            (
                 "yonedarepo-dev-platform-index",
                 "cloudflare/wrangler.dev-platform.jsonc"
+            ),
+            (
+                "yonedarepo-dev-platform-index-weur",
+                "cloudflare/wrangler.dev-platform-weur.jsonc"
             ),
             (
                 "yonedarepo-dev-managed-revenue",

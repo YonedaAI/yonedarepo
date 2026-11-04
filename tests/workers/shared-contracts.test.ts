@@ -1,7 +1,8 @@
 // Drift guard for the generated shared contracts (shared/contracts, `cargo xtask contracts`):
-// the live `GET /repos/:id` answer has exactly the generated RepoStatus fields, with the
-// generated required ones present, shared/account.ts reads its limits from the schema, and
-// a policy the editor builds from the generated Policy (every catalog value) is accepted.
+// the live `GET /repos/:id` answer has no undeclared RepoStatus fields, with the
+// generated required ones present (optional fields may be absent). shared/account.ts reads
+// its limits from the schema, and a policy the editor builds from the generated Policy
+// (every catalog value) is accepted.
 import { expect, it } from 'vitest';
 import {
   ACCOUNT_IDENTIFIER_HELP,
@@ -24,7 +25,7 @@ import { api, author, file, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
-it('answers GET /repos/:id with exactly the generated RepoStatus fields', async () => {
+it('answers GET /repos/:id with required generated fields and no undeclared fields', async () => {
   const owner = { cookie: await signup('contracts') };
   const created = await api(
     '/repos',
@@ -32,9 +33,12 @@ it('answers GET /repos/:id with exactly the generated RepoStatus fields', async 
     { body: { name: 'contracts', files: [file('a.txt', 'a\n')], author } },
   );
   const status = (await api(`/repos/${created.body.id}`, owner, {})).body;
-  const fields = Object.keys(repoStatusSchema.properties).sort();
-  expect(Object.keys(status).sort()).toEqual(fields);
+  const undeclared = Object.keys(status).filter(
+    (field) => !Object.hasOwn(repoStatusSchema.properties, field),
+  );
+  expect(undeclared).toEqual([]);
   for (const field of repoStatusSchema.required) expect(status[field]).not.toBeUndefined();
+  expect(status).not.toHaveProperty('snapshot');
   const viewer = repoStatusSchema.$defs.Viewer.properties;
   expect(Object.keys(status.viewer).sort()).toEqual(Object.keys(viewer).sort());
   const ref = repoStatusSchema.$defs.RefHead.properties;

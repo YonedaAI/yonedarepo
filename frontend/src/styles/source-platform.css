@@ -15,19 +15,6 @@
   flex-wrap: wrap;
   align-items: center;
 }
-.source-version {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  color: var(--muted);
-}
-/* The Code tab's branch and version pickers: compact, as wide as the chosen value. */
-.source-toolbar .source-version select {
-  field-sizing: content;
-  min-height: 32px;
-  padding: 5px 8px;
-  font-size: var(--text-md);
-}
 .source-meta,
 .source-empty,
 .source-note {
@@ -446,4 +433,12 @@ button.danger:not(:disabled) {
 }
 .source-danger h2 {
   color: var(--danger);
+}
+
+/* An unloaded repository image still has an observable place in the document. */
+.repo-image {
+  display: inline-block;
+  min-width: 1px;
+  min-height: 1em;
+  max-width: 100%;
 }

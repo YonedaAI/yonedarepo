@@ -110,7 +110,21 @@ export function AgentsPage({
   orgs: { org: string; role: string }[];
   navigate: Navigate;
 }) {
-  const loaded = useSource<WorkspaceState>(workspacePath(workspace), '/api/managed');
+  const personalRead = import.meta.env.VITE_EARLY_READS === 'on' && workspace === account;
+  const result = useSource<WorkspaceState>(
+    personalRead ? '/self' : workspacePath(workspace),
+    '/api/managed',
+  );
+  // The early response may predate session discovery. Never paint another viewer's envelope.
+  const loaded =
+    personalRead && result.data && result.data.workspace !== account
+      ? {
+          ...result,
+          data: undefined,
+          loading: false,
+          error: 'Could not load your agents. Refresh and try again.',
+        }
+      : result;
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [enabledOnly, setEnabledOnly] = useState(false);

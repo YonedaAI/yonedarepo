@@ -4,9 +4,10 @@
 // prerendered, and their content is ours.
 import { lazy, Suspense } from 'react';
 import { type ImageResolver, Markdown } from './markdown';
+import { loadRichMarkdown } from './markdownLoader';
 
 const GfmDocument = lazy(() =>
-  import('./GfmDocument').then(({ GfmDocument }) => ({ default: GfmDocument })),
+  loadRichMarkdown().then(({ GfmDocument }) => ({ default: GfmDocument })),
 );
 
 /** Past this a document is its text: a reader's tab should not parse a megabyte. */
@@ -26,7 +27,7 @@ export function RichMarkdown({
   if (source.length > MAX_CHARS) return <pre>{source}</pre>;
   return (
     <div className="md-body">
-      <Suspense fallback={<Markdown source={source} shift={shift} image={image} />}>
+      <Suspense fallback={<Markdown source={source} shift={shift} />}>
         <GfmDocument source={source} shift={shift} anchors={anchors} image={image} />
       </Suspense>
     </div>

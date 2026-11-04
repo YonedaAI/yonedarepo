@@ -1,0 +1,555 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{amsmath,amssymb}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+\setlist{itemsep=2pt,topsep=4pt}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcolumntype{R}{>{\raggedleft\arraybackslash}X}
+
+\title{YonedaRepo: A Global-First Git Forge\\Built as a Code-as-Transactions Database}
+\author{Matthew Long\\YonedaAI}
+\date{Draft, 4 November 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Coding agents change the load on a source forge: many writers, one trunk, and changes
+that arrive seconds apart. We describe YonedaRepo, a Git-compatible forge that treats a
+repository as a small transactional database while keeping Git's object model unchanged.
+Every repository has one authority, a SQLite-backed Cloudflare Durable Object, that keeps
+an append-only, hash-chained transaction log of ref transitions in the style of Delta
+Lake. Commits are built by stateless compute and recorded in sharded objects; a landing
+is a compare-and-swap of a branch plus one log entry, validated optimistically against
+the entries written after the change's base. Changes may declare what they read, down to
+a single symbol, and a landing whose reads were overwritten is refused. Path-disjoint
+landings are batched into changesets and projected to ordinary Git commits afterwards.
+The forge is global-first: requests run in the caller's region, new repositories are
+placed near their creator, and verified immutable data is copied to readers' regions
+behind epoch fences.
+On the hosted development environment, batched landing takes 1,000 concurrent writers
+on one branch to 1,000 of 1,000 landed and read back, at 404--491 landings/s in three
+runs, where a polling design landed 4 of 1,000. Moving the request path into the
+caller's region cut median landing latency from 205 to 53\,ms in Europe and from 382
+to 33\,ms in Asia. We state the guarantees precisely: each landing is an atomic,
+durable transaction in one repository, serializable over the reads a change declares.
+Without declared reads, isolation is close to snapshot isolation. We report the gaps
+that remain, including loaded read latency above our 1\,s target.
+\end{abstract}
+
+\section{Introduction}
+
+A conventional forge assumes that people write code, that a pull request waits hours
+for review, and that conflicts are rare enough to resolve by hand. Coding agents break
+each assumption. They are fast, numerous, and often edit the same trunk at the same
+time. When a thousand agents commit to one branch in the same few seconds, the forge's
+job is no longer to store files; it is to order concurrent transactions and prove what
+each one saw.
+
+YonedaRepo is a forge built for that load. Its central decision is to treat source
+control as a database problem without leaving Git. Git already gives an immutable,
+content-addressed object store and atomic ref updates. What it does not give is a
+transaction model across many concurrent writers: an order, a validation rule, a
+durable record of what landed and why, and a defined isolation level. YonedaRepo adds
+those around Git, never inside it.
+
+\paragraph{Contributions.}
+\begin{enumerate}
+\item An architecture that keeps Git's object model as the foundation and places a
+  per-repository transaction log, commit shards and stateless compute around it on
+  serverless primitives (\S\ref{sec:arch}, \S\ref{sec:log}).
+\item Optimistic concurrency at landing with declared read sets at file, directory or
+  symbol granularity, plus batched path-disjoint changesets that remove the single
+  branch's merge commit from the critical path (\S\ref{sec:landing}).
+\item A global-first placement design: in-region execution, origin-placed authorities
+  and epoch-fenced read copies, with the platform limits that bound it
+  (\S\ref{sec:global}).
+\item Current measurements of 1,000-writer bursts, sustained landing and regional
+  latency on a hosted environment, with their run counts and failures
+  (\S\ref{sec:eval}), and a precise statement of the transaction guarantees and their
+  gaps (\S\ref{sec:guarantees}).
+\end{enumerate}
+
+The theory behind the design (the transaction model, the independence condition and a
+Lean development of batch landing) appears in a companion series~\cite{long2026series}.
+This paper is the systems report: what was built, how it behaves under load, and what
+it does not yet guarantee.
+
+\section{Design principles}
+\label{sec:principles}
+
+\begin{enumerate}
+\item \textbf{Git's object model is the foundation.} Blobs, trees, commits and tags stay
+  standard, immutable and content-addressed. There are no new object types, no extra
+  headers and no rewritten history. Any Git client clones, fetches and pushes an
+  ordinary repository.
+\item \textbf{Transactions act on refs, never on objects.} The log records ref
+  transitions and the paths each touched. Replaying it rebuilds the refs.
+\item \textbf{One authority per repository.} A repository is the unit of serialization.
+  Its authority's SQLite database holds the log, refs, approvals and grants; every
+  other store is a rebuildable projection.
+\item \textbf{No network I/O inside a transaction.} State, ordered events and the outbox
+  commit together; anything that talks to the network runs before or after, driven by
+  the outbox.
+\item \textbf{Agents are clients.} Agents use stock Git, a command-line client and MCP.
+  The platform does not orchestrate them. What an agent claims (that it read a file,
+  that tests passed) is an assertion, checked against the exact commit that lands.
+\item \textbf{Locality follows the request.} Work runs near the agent or person who
+  asked, and data does not cross continents to answer them.
+\end{enumerate}
+
+\section{Architecture}
+\label{sec:arch}
+
+YonedaRepo runs entirely on Cloudflare. Rust owns the domain rules and durable state
+transitions and is compiled to WebAssembly for Workers and Durable Objects; a thin
+TypeScript layer adapts the platform SDKs. Table~\ref{tab:components} lists the
+components.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}lXl@{}}
+\toprule
+Component & Role & Authoritative \\
+\midrule
+SourceRepository object & Per-repository authority: log, refs, approvals, grants (SQLite) & Yes \\
+CommitShard objects (64) & Record commits built by stateless compute, chosen by commit id & For their records \\
+LandCombiner object & Branch combiner and head holder; the authority's CAS decides & No \\
+WorkspaceAuthority object & One per account: sessions, tokens, device logins & For accounts \\
+Read-copy objects & Per-region copies of verified immutable trees and small blobs & No; epoch-fenced \\
+R2 & Git objects (store of record), log segments, bundles, packs, LFS & Yes, for objects \\
+D1 & Repository index and discovery & No; rebuildable \\
+Queues, Workflows & Derived data, ref projection, imports (at least once) & No \\
+\bottomrule
+\end{tabularx}
+\caption{Components. Authorities are Durable Objects with SQLite storage.}
+\label{tab:components}
+\end{table}
+
+\paragraph{Commits without the authority.} Building a commit touches no ref. Stateless
+compute builds the Git objects and records the commit in one of 64 commit shards,
+chosen by the first byte of the commit id; a 1,000-writer burst places about 16 commits
+on each. The authority adopts a commit only when it first needs it, at landing.
+
+\paragraph{Objects and staging.} R2 is the store of record for Git objects, keyed
+\path{platform/v1/<repo>/git/<id>} and never deleted. Because an R2 write takes on the
+order of a second, a small commit is accepted once its authority durably holds every
+object it built. The same transaction writes an object-outbox row; a projector writes
+the objects to R2, confirms each write, and only then drops the staged copies. Reads fall
+back to staged copies by id, and nothing is dropped unwritten. Large pushes are written as bundles (frames of kind, 20-byte id,
+length and content) because a Worker request may have at most six R2 operations in
+flight; one object per R2 write made a 12,000-file push take minutes.
+
+\paragraph{Workers.} A front Worker serves the browser application and sign-in and
+proxies the API to a platform Worker. Six regional API Workers (Section~\ref{sec:global})
+share the same Durable Objects and storage and own no duplicates of them.
+
+\section{The transaction log}
+\label{sec:log}
+
+\paragraph{Entries.} Each entry records one ref transition: its version, the base
+version the change started from, a kind (commit, merge, revert, import, ref move, ref
+delete or changeset), the ref name, old and new commit ids, the paths touched relative
+to the first parent (with operation, old and new blob, and mode), the declared read set,
+the actor, and the commit time. Validation requires the base to precede the version, a
+fully qualified ref, no duplicate path, and a correct chain digest.
+
+\paragraph{Hash chain and checkpoints.} An entry's chain digest is
+\[ c_v = \mathrm{sha256}\bigl(c_{v-1} \,\|\, \text{entry}_v \text{ without its chain}\bigr), \]
+streamed path by path so a large fast-forward does not have to be held as one value. Every 64
+versions a checkpoint records the full ref map and its digest; the next entry carries
+the digest of the checkpoint before it, as Delta Lake's version checksum
+does~\cite{armbrust2020delta}. Replay checks contiguity, the chain, and each ref's old
+value.
+
+\paragraph{Reads at a version.} Reads take a version, a time or a commit, and answer
+from the log's snapshot at that point.
+
+\paragraph{Archive and compaction.} The log is sealed into segments of 1,024 versions,
+written to R2 with the fingerprint of their content. Compaction writes and reads back a
+segment, rebuilds it from the rows, requires identical fingerprints, then deletes the
+rows and advances the anchor in one transaction; a rerun is idempotent. A read below the
+floor answers with the names of the archived objects; the adapter fetches them and the
+authority accepts them only with their recorded fingerprints, keeping network I/O out
+of the authority.
+
+\section{Concurrency control at landing}
+\label{sec:landing}
+
+\subsection{Optimistic validation}
+
+A landing moves a branch by compare-and-swap and appends one entry. There is no merge
+lock. The authority performs backward validation~\cite{kung1981occ} against the entries
+on the target ref after the change's base, which are serialized before it:
+
+\begin{description}
+\item[Fast-forward] nothing moved the ref; swap directly.
+\item[Rebase] later entries wrote only other paths; build a merge commit.
+\item[Merge] later entries wrote some of the same files and nothing this change read;
+  attempt a three-way content merge.
+\item[Conflict] a later entry wrote something this change read, or moved the ref
+  without path detail (a reset or delete cannot be proven independent).
+\end{description}
+
+Two paths overlap when they are equal or one is a directory prefix of the other. The
+platform computes merge commits with its own Rust merge; the authority checks that a
+merge commit's parents are the current head and the landed work, that its principal is
+the platform, and that it changes no path the merged work did not.
+
+\subsection{Declared reads and symbols}
+
+A change may declare its read set with \code{git push -o yoneda.reads=\ldots}, through
+the \code{yoneda push} client, or through agent hooks that record the files an agent
+reads. An entry is a file, a directory prefix, or a symbol such as
+\code{src/lib.rs\#Policy::backoff}. Symbol writes are derived per commit from both sides
+of the diff; an unparsed file, or a commit whose symbols are not derived, counts as a
+whole-file write, so an unknown never reads as disjoint. A later write then conflicts
+with a symbol read only if it touched that symbol.
+
+\subsection{Batches, changesets and the queue}
+
+Landing one change per authority call does not scale to a thousand writers on one
+branch. In batch mode, the deployed default, a combiner submits every waiting landing on
+a branch in one call of up to 256. The authority re-checks each member's credentials
+(scope, path grant, pause, revocation) and partitions the batch:
+\begin{itemize}
+\item path-disjoint members become \emph{changesets}: one indexed query each, no Git
+  objects and no merge commit at landing time. A deterministic projector later builds
+  one ordinary Git commit for them;
+\item members that write the same files take the merge path;
+\item a member that would read or write what an earlier member of the same batch wrote
+  waits, which prevents write skew within a batch (Adya G2-item~\cite{adya2000isolation}).
+\end{itemize}
+A merge queue lets whoever holds a branch's advisory lease (10\,s) merge pending
+independent landings into one octopus merge; a batch lands only if its base is still
+the head, so a late builder loses the swap and a vanished one never blocks the branch.
+
+\subsection{Checks and clearance}
+
+A pure function decides whether a landing is cleared, held (a pending check or approval,
+an unresolved comment, a full repository) or sent around (a failed required check, a
+rejection, a stale read, a conflicted merge). Every caller (the page, the background
+job, the land call and the batch) asks the same function, and the land call decides
+again inside its own transaction with the expected head. After main moves, platform
+checks run on the combined head; a failure proposes a revert commit.
+
+\section{Global-first placement}
+\label{sec:global}
+
+\paragraph{Rule.} Data does not cross continents to answer a request. A request from
+Europe is served by Europe's Workers, objects and storage, and likewise elsewhere.
+Only the platform's trusted view of the caller's continent selects a region; headers,
+cookies and request bodies cannot.
+
+\paragraph{Execution and placement.} Six regional API Workers run in North America,
+Europe, Asia-Pacific, Oceania, South America and Africa. A new repository's authority
+and shards are created with a location hint taken from the creator's continent before
+first access. Durable Objects never move, so existing authorities stay where they were
+created and identifiers never change. A request that reaches the wrong cell is
+forwarded: it can be answered slowly, never wrongly. There is no automatic write
+failover; an unavailable region fails rather than start a second history.
+
+\paragraph{Read copies.} Verified immutable data (trees and small blobs) is copied into
+the reader's region: at most 16 objects and 4\,MiB per request, 1\,MiB per object, and
+512\,MiB per store. Commits, refs, large files and access grants are never answered from
+a copy. Deletion is fenced: a registry advances a publication epoch before a purge fans
+out, each store keeps the highest epoch and deletes bytes in the same SQL transaction, a
+late fill with an older epoch is rejected, and the purge job cannot acknowledge until
+every enrolled region is fenced.
+
+\paragraph{Platform limits.} The design is bounded by what the platform offers as of
+October 2026~\cite{cfdurableobjects}. Location hints are best effort and some regions do
+not host objects; jurisdictions exist for the EU, the US and FedRAMP but not for Asia;
+queues have no location hint; D1 writes always go to the primary; and a container is not
+guaranteed to run where its object does.
+
+\section{Git compatibility}
+\label{sec:git}
+
+YonedaRepo serves smart HTTP and protocol v2 for fetch (including partial clone with
+\code{blob:none} and shallow clone), receive-pack for push, Git LFS through presigned
+storage URLs, and SSH through a tunnel to a gateway container that bridges to smart HTTP.
+A pushed pack is verified before any ref moves: every introduced tree and file must be
+in the pack or already in the repository, and each commit's bytes must hash to its id.
+Objects are served only if reachable from a current branch or tag. Working branches move
+by compare-and-swap on the value Git saw; \code{main} is protected, so a force push lands
+like any other push (merge or conflict) and never rewrites it. A push holds at most
+64\,MiB of pack in memory and 40,000 objects; larger files stream to storage.
+
+\section{Evaluation}
+\label{sec:eval}
+
+\paragraph{Method.} All measurements below are from the hosted development environment
+unless marked local. The load-testing rules require at least three runs per size and
+server-side timing; where a result has fewer runs we say so. In every burst each writer
+commits one new file on \code{main} and lands it, with no conflicting writes and no
+declared reads, from a benchmark Worker in \code{aws:us-east-1}. The bursts therefore
+measure throughput and latency of the landing path, not its conflict handling, and are
+not evidence for the isolation guarantees in Section~\ref{sec:guarantees}.
+
+\subsection{1,000 writers on one branch}
+
+\paragraph{Landing designs.} Table~\ref{tab:modes} compares three landing designs at
+one revision with one run each. Polling the authority per landing collapsed (994 of
+1,000 refused as overloaded); a per-landing combiner timed out 615 landings; changesets
+landed all 1,000. The comparison varies the whole landing path, so it does not isolate
+the cost of building Git objects.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Landing design & Landed / 1,000 & Commit p95 (ms) & Land p95 (ms) \\
+\midrule
+Polling, Git built per landing & 4 & 2,221 & 104,034 \\
+Combiner, Git built per landing & 385 & 2,704 & 64,756 \\
+Changesets & 1,000 & 1,698 & 18,728 \\
+\bottomrule
+\end{tabular}
+\caption{Landing designs, 1,000 writers, one run each (revision \code{dd6c9a8}). Client-side p95.}
+\label{tab:modes}
+\end{table}
+
+\paragraph{Batch mode.} Table~\ref{tab:batch} shows batch mode, the deployed default.
+Across six runs no commit, landing or read was refused and all 1,000 reads returned the
+correct content. Separate tokens per writer landed 404--491 changes per second over the
+burst; one shared login for all writers landed 235--284.
+Main's Git commit trailed the log by 3.2--5.4\,s at p95, because changesets are
+projected after landing. Three later runs at revision \code{19d58ad} (27 October)
+landed 1,000 of 1,000 each at 259--303 landings/s with land p95 of 2.7--3.0\,s.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Writers' credentials & Runs & Landings/s & Commit p95 (ms) & Land p95 (ms) \\
+\midrule
+One token per writer & 3 & 404--491 & 714--1,673 & 1,212--1,865 \\
+One shared login & 3 & 235--284 & 1,140--1,614 & 2,167--3,027 \\
+\bottomrule
+\end{tabular}
+\caption{Batch mode, 1,000 writers, revision \code{fef94e7}; 1,000 of 1,000 landed in
+every run. Ranges are across runs; client-side p95.}
+\label{tab:batch}
+\end{table}
+
+\paragraph{Current revision.} Table~\ref{tab:current} gives server-side timing for three
+runs on 3 November 2026 (revision \code{c8d6d9ae}), with 1,000 temporary-token writers
+each. All 3,000 commits, landings and exact-content readbacks passed. Client read p95
+across runs was 1,569 / 1,703 / 2,807\,ms (min / median / max; not a pooled p95). Three
+runs the same day at revision \code{b38706d6} also passed 3,000 of 3,000, with read p95
+of 1,732 / 2,644 / 2,796\,ms. \textbf{Correctness held; subsecond reads under load did
+not}: our budget is a read p95 under 1\,s during any burst. Fetching the head
+accounts for most of the server's read time (p95 969--2,309\,ms of 1,436--2,735\,ms);
+reads served from the edge took 35--48\,ms at p95.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Run & Commit (server) & Land (server) & Read (client) & Head fetch (server) \\
+\midrule
+1 & 2,981 / 3,218 / 3,356 & 679 / 1,349 / 1,412 & 1,524 / 1,703 / 7,578 & 819 / 1,528 / 1,623 \\
+2 & 1,862 / 2,228 / 3,280 & 501 / 755 / 2,638 & 2,553 / 2,807 / 4,948 & 1,650 / 2,309 / 2,614 \\
+3 & 1,842 / 2,179 / 2,681 & 833 / 1,148 / 1,495 & 1,382 / 1,569 / 4,386 & 760 / 969 / 1,469 \\
+\bottomrule
+\end{tabular}
+\caption{1,000-writer bursts at revision \code{c8d6d9ae}, 3 November 2026. Each cell is
+p50 / p95 / max in ms over 1,000 samples.}
+\label{tab:current}
+\end{table}
+
+\paragraph{Between revisions.} Nineteen further 1,000-writer runs from 1 to 4 November,
+one per revision, all landed and read back 1,000 of 1,000 with no overload refusals, at
+137.9--557.7 landings/s and server land p95 of 593--2,986\,ms. With one run per revision
+they form a time series, not per-revision results, and we do not attribute the spread
+to any change. Their evidence files are not yet published with the repository.
+
+\paragraph{What the bursts do not show.} Three bursts of 1,000 are not 3,000
+simultaneous writers. They use API writers, not real agents or native Git pushes, and
+none ran in production. More than 1,000 writers has not been measured.
+
+\subsection{Sustained landing and write skew}
+
+An open-loop test on one repository (27 October, one run per step of two minutes) held
+100 landings/s offered (99.6/s achieved, p95 2.6\,s, 0.02\% refused) and missed 200/s
+(123/s achieved, 17\% refused), placing the knee between the two. At a later revision
+(\code{75e7752}), 200/s offered for 60\,s achieved 193.7/s with none refused and p95 3.4\,s
+(one run).
+
+A write-skew workload of 200 writers, three runs, found 0 serializability violations
+among 6,441--8,001 log entries checked; 114--127 changes landed with declared reads.
+
+\subsection{Regional latency}
+
+Table~\ref{tab:region} compares median client latency with the request path in North
+America (today) against the same path placed in the client's region, three runs each on
+1 November 2026 with zero failures. The path ran in Amsterdam for Europe and Singapore
+for Asia in all runs. Reads, lists, commits and landings, which the repository's own
+objects answer, fell to 4--53\,ms in region. Search and repository creation became slower, because D1 and R2 stayed in
+North America and moved further from the code; a personal-token read stays bounded by
+D1. For reference, North America today answers a read in 41\,ms and a landing in
+113\,ms.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Operation & Europe & Asia \\
+\midrule
+Read (repository token) & 162 $\to$ 22 & 275 $\to$ 15 \\
+List & 144 $\to$ 11 & 256 $\to$ 4 \\
+Commit & 224 $\to$ 51 & 342 $\to$ 41 \\
+Land & 205 $\to$ 53 & 382 $\to$ 33 \\
+Sign-in & 244 $\to$ 123 & 398 $\to$ 76 \\
+Push & 444 $\to$ 251 & 763 $\to$ 426 \\
+Search & 496 $\to$ 566 & 670 $\to$ 1,142 \\
+Repository create & 2,439 $\to$ 2,959 & 2,361 $\to$ 3,814 \\
+\bottomrule
+\end{tabular}
+\caption{Median client latency (ms), request path in North America $\to$ in region.
+Clients in \code{aws:eu-central-1} and \code{aws:ap-southeast-1}; 3 runs.}
+\label{tab:region}
+\end{table}
+
+On 3 November the six regional API Workers were each observed executing in their
+region (IAD, FRA, SIN, SYD, GRU, CPT). Every test caller reported a US origin, so this
+establishes execution placement, not the experience of a European or Asian user.
+
+\subsection{Storage}
+
+A one-file landing costs about 4\,KB in the authority once projected (1,024 landings in
+four batches), so a repository reaches its 9.4\,GB internal stop after about 2.3 million
+such landings. A spike on one object found writes refused at about 10.7\,GB; deleting
+950\,MB in one transaction reset the object, which then missed two 120-second requests,
+while a 19\,MB delete was fine. Planned history shards seal old history into read-only
+objects before that limit; they are not built.
+
+\subsection{Correctness testing}
+
+An independent reference model of a repository, with no dependencies of any kind, is
+the oracle for seeded random operation sequences (16 cases of 80 steps by default) that
+must reach 22 named outcomes. After each step every outcome, merge plan, ref, version
+and file is compared; at the end real Git checks the objects with
+\code{fsck --strict} and the merge bases. Contract tests pin dirty write, atomic
+multi-ref batches, lost update in both directions and stale reads, and one test records
+the known write-skew gap described next.
+
+\section{Guarantees and gaps}
+\label{sec:guarantees}
+
+\paragraph{Boundary.} A transaction is one landing: one ref transition, or one atomic
+batch of working-branch moves, in one repository. Its commit point is the SQLite
+transaction that moves the ref and appends the log entry. There are no transactions
+across repositories.
+
+\paragraph{What holds.}
+\begin{itemize}
+\item \emph{Atomicity}: the ref swap and the log entry commit together or not at all; an
+  atomic push with one stale branch moves nothing.
+\item \emph{Durability}: the reply waits until the authority's transaction is durable,
+  and staged objects remain in the authority until storage confirms each write.
+\item \emph{Isolation}: Table~\ref{tab:isolation}. With declared reads, landing is
+  serializable over the declared read set. Without them, a landing is checked only for
+  writes to the same files, which are merged three ways: lost updates are prevented but
+  write skew~\cite{berenson1995critique} through undeclared reads can land.
+\item \emph{Consistency}: required checks and approvals are judged on the exact head and
+  decided again inside the land transaction.
+\end{itemize}
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+Path & Isolation \\
+\midrule
+Explicit landing, no declared reads & Close to snapshot isolation: no lost update; write skew possible \\
+Explicit landing, declared reads & Serializable over the declared read set \\
+Batch (combiner) & Serializable over declared reads; a member with none counts its writes as reads \\
+Land when cleared & As batch, plus separation in queue order \\
+\bottomrule
+\end{tabularx}
+\caption{Isolation by landing path, as built.}
+\label{tab:isolation}
+\end{table}
+
+\paragraph{Gaps, each with a planned fix.}
+\begin{enumerate}
+\item \emph{Checks after merges.} A platform merge commit lands under the gates of the
+  work it merges; checks on the merged tree run after main moves. Planned: hold the merge
+  until its checks pass, then land it with the expected head.
+\item \emph{Merge content.} Verification checks a merge commit's shape (parents,
+  principal, paths), not that its tree is the correct three-way merge. Planned: recompute
+  the merge in the authority and refuse a differing tree.
+\item \emph{Undeclared reads.} Planned: a serializable policy in which a landing with no
+  declared reads counts its writes as reads, as batches already do.
+\item \emph{Read coverage.} Declared reads are agent claims. In one experiment the hooks
+  missed files read through shell commands; serializability is only as strong as the
+  read set.
+\item \emph{Failure model.} Isolate crash, object restart, storage failure and lost
+  acknowledgements are not yet each covered by a named test.
+\end{enumerate}
+
+\section{Related work}
+\label{sec:related}
+
+\paragraph{Transactional Git storage.} Gitaly's transaction manager gives ACID writes
+to refs, objects and hooks with serializable snapshot isolation and a write-ahead
+log~\cite{gitaly2024tx}. Its conflicts are defined on repository state; YonedaRepo's
+landing validation is defined on what a change read in the source tree. Piper serves
+Google's monorepo from Bigtable and later Spanner~\cite{potvin2016piper}; it is not
+stock-Git compatible. Sapling's server performs server-side rebase
+(pushrebase)~\cite{sapling}, which corresponds to our rebase outcome for disjoint
+writes.
+
+\paragraph{Keeping trunk green.} SubmitQueue orders changes speculatively and treats
+changes as conflicting when they touch overlapping build packages
+\cite{ananthanarayanan2019submitqueue,juloori2025ci}; merge trains do the same with
+pipelines~\cite{gitlabmergetrains}. These validate by rebuilding. YonedaRepo validates
+by read set at landing and checks the combined result afterwards.
+
+\paragraph{Transaction logs over object stores.} Delta Lake keeps an ordered log with
+optimistic commits and checkpoints over cloud object storage~\cite{armbrust2020delta};
+our log follows its shape for refs instead of table files. Dolt~\cite{dolt} and
+Git4Data~\cite{gou2026git4data} bring Git-style branching to relational data; Jujutsu
+keeps an operation log on the client~\cite{jujutsu}.
+
+\paragraph{Concurrency for agents.} CoAgent fixes a serialization order for agents
+sharing state such as a Git tree and repairs conflicting writes in middleware
+\cite{lyu2026coagent}. Cognitive Serializability asks that an agent's commit revalidate
+its data, evidence, policy and authority~\cite{he2026cognitive}, close in spirit to our
+declared reads and exact-head clearance, though not applied to source control.
+MetaGPT~\cite{hong2023metagpt} and CAID~\cite{caid2026} coordinate agents through
+workflows and isolated worktrees; YonedaRepo deliberately leaves orchestration to the
+clients.
+
+To our knowledge, no prior forge validates landings against declared read sets at
+symbol granularity while serving stock Git. Our search was not exhaustive.
+
+\section{Conclusion}
+
+Treating a repository as a database, with Git as its immutable object layer and a
+per-repository log as its transaction record, lets a forge take a thousand concurrent
+writers on one branch and land all of them, and lets it run near its users without a
+global database. The guarantees are real but scoped: atomic and durable per landing,
+serializable over declared reads. The remaining work is to close the isolation and
+consistency gaps listed above, measure beyond a thousand writers, and bring loaded read
+latency under one second.
+
+\bibliographystyle{plain}
+\bibliography{refs}
+
+\end{document}

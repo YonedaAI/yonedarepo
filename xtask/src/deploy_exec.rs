@@ -2,10 +2,11 @@
 use crate::deploy_env::Step;
 use crate::deploy_guard::{self as guard, Options};
 use crate::deploy_prebuilt::{Prebuilt, prebuilt};
+pub(crate) use crate::deploy_timings::Timings;
 use crate::infra::inventory::Deployable;
 use crate::infra::retired::Kind;
 use crate::infra::spec::{Env, Spec};
-use crate::infra::wrangler::{self, table};
+use crate::infra::wrangler;
 use crate::process::Result;
 use std::collections::BTreeMap;
 use std::time::Instant;
@@ -37,9 +38,13 @@ impl Run<'_> {
         summary: &mut BTreeMap<usize, Vec<String>>,
     ) -> Result<()> {
         for step in plan {
+            crate::deploy_source::verify(self.head)?;
             let label = self.label(&step);
             let started = Instant::now();
-            let outcome = self.step(step, summary).await;
+            let outcome = self
+                .step(step, summary)
+                .await
+                .and_then(|()| crate::deploy_source::verify(self.head));
             self.timings.record(&label, started, outcome.is_ok());
             outcome?;
         }
@@ -70,6 +75,7 @@ impl Run<'_> {
                     if *dry_run { " (dry run)" } else { "" }
                 )
             }
+            Step::Bootstrap { worker, .. } => format!("bootstrap {}", name(worker)),
             Step::Secrets { worker } => format!("secrets {}", name(worker)),
             Step::Health { worker } => format!("/health {}", name(worker)),
             Step::Smoke => "smoke".into(),
@@ -81,7 +87,7 @@ impl Run<'_> {
             (self.env, self.spec, self.workers, self.options, self.head);
         match step {
             Step::BuildWasm => crate::commands::build_wasm()?,
-            Step::BuildFrontend => frontend_build(&crate::infra::api_origin::api_origin(spec)?)?,
+            Step::BuildFrontend => frontend_build(spec)?,
             Step::InstallPrebuilt => prebuilt(self.prebuilt)?.install(spec)?,
             Step::BuildImage => {
                 let id = crate::deploy_registry::build_local(spec)?;
@@ -176,9 +182,22 @@ impl Run<'_> {
                 let config = copy.as_ref().map_or(w.config_path.as_str(), |c| c.path());
                 let message = crate::deploy_ledger::message(env, head);
                 let deploy = deploy_args(config, &revision, head, &message, dry_run);
-                wrangler::run(&spec.account_id, &deploy)?;
+                crate::deploy_wrangler::run(&spec.account_id, &deploy, head, dry_run)?;
                 let state = if dry_run { "dry run" } else { "deployed" };
                 summary.insert(worker, row(w, state, "-"));
+            }
+            Step::Bootstrap { worker, config } => {
+                self.rollout_started
+                    .get_or_insert_with(crate::deploy_ledger::now_ms);
+                crate::deploy_bootstrap::deploy(
+                    env,
+                    spec,
+                    &workers[worker],
+                    config,
+                    self.image.as_deref(),
+                    head,
+                )?;
+                summary.insert(worker, row(&workers[worker], "bootstrapped", "-"));
             }
             Step::Secrets { worker } => crate::deploy_secrets::ensure(spec, &workers[worker])?,
             Step::Health { worker } => {
@@ -190,7 +209,7 @@ impl Run<'_> {
                 guard::revision_gate(&w.name, head, live.as_deref())?;
             }
             Step::Smoke => {
-                crate::infra::smoke::run(&["--env".to_owned(), env.name()]).await?;
+                crate::infra::smoke::captured_run(env, spec, workers, head).await?;
             }
         }
         Ok(())
@@ -242,49 +261,6 @@ fn row(w: &Deployable, state: &str, revision: &str) -> Vec<String> {
     ]
 }
 
-/// Wall time per step, printed as a table (and to the Actions job summary).
-#[derive(Debug, Default)]
-pub(crate) struct Timings {
-    rows: Vec<(String, f64, bool)>,
-}
-
-impl Timings {
-    pub(crate) fn record(&mut self, step: &str, started: Instant, ok: bool) {
-        self.rows
-            .push((step.into(), started.elapsed().as_secs_f64(), ok));
-    }
-
-    pub(crate) fn print(&self) {
-        let mut rows: Vec<Vec<String>> = self
-            .rows
-            .iter()
-            .map(|(step, secs, ok)| {
-                let result = if *ok { "ok" } else { "FAILED" };
-                vec![step.clone(), format!("{secs:.1}"), result.into()]
-            })
-            .collect();
-        let total: f64 = self.rows.iter().map(|(_, secs, _)| secs).sum();
-        rows.push(vec!["total".into(), format!("{total:.1}"), String::new()]);
-        table("deploy timings", &["Step", "Seconds", "Result"], &rows);
-    }
-}
-
-/// Builds the frontend without pnpm (worktrees symlink node_modules), pointing its Git, CLI
-/// and MCP lines at the env's platform API origin.
-pub(crate) fn frontend_build(api_origin: &str) -> Result<()> {
-    for (program, args) in [
-        ("node_modules/.bin/tsc", vec!["-b"]),
-        ("node_modules/.bin/vite", vec!["build"]),
-    ] {
-        let status = std::process::Command::new(program)
-            .args(&args)
-            .current_dir(crate::layout::FRONTEND)
-            .env(crate::infra::api_origin::FRONTEND_VAR, api_origin)
-            .status()
-            .map_err(|error| format!("Cannot start frontend {program}: {error}"))?;
-        if !status.success() {
-            return Err(format!("Frontend {program} failed ({status})").into());
-        }
-    }
-    Ok(())
+pub(crate) fn frontend_build(spec: &crate::infra::spec::Spec) -> Result<()> {
+    crate::frontend_build::run(spec)
 }

@@ -7,7 +7,7 @@
 // GITHUB_APP_ID, GITHUB_APP_SLUG and the optional secret GITHUB_APP_PRIVATE_KEY (the App's PEM): the production GitHub App for private repository imports. Setup URL: https://yonedarepo.com/github/connected. Dev uses a separate App and key.
 // WEB_ORIGIN is where people approve device logins (/device). Secrets, set from stdin:
 // OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)
-// Placed next to the data (aws:us-east-1, R2 and CheckContainer in ENAM), batched landing.
+// The global entry dispatches default fetch to regional API aliases; authorities and storage stay in place.
 // PUSH_BUNDLES=on writes a large push's objects as bundles (one R2 object per batch, indexed by the repository authority); dev measured a 12,000-file push at 4.9 s (489 s without). Turn it off before rolling back below the bundle reader.
 // ACCOUNT_SEARCH=on keeps a search summary per repository in its owner's directory (search:<owner> instances of WorkspaceAuthority) and serves GET /api/v1/search, the search_repos MCP tool and the CLI's search --all; off writes none and the route answers 404, so the website asks each repository itself as before.
 // AUDIT_LOG=on keeps organizations' audit logs (audit:<org> instances of WorkspaceAuthority) and people's sign-in events; off writes neither and /orgs/:org/audit answers 404. Set it on this Worker and the front Worker together: sign-ins go through both.
@@ -50,6 +50,7 @@
 // REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.
 // SPAN_SAMPLE=<N> keeps the Server-Timing phases of 1 request in N, and of every request over 5 seconds, as a request.spans log line and one SITE_EVENTS point, after the answer (worker/repo-span-sample.ts). off keeps none.
 // SERVICE_LEVELS=on writes one SITE_EVENTS point per landing, clone, push and repository create and per 10 API reads, after the answer, for the admin page (shared/service-levels.ts). Set it on this Worker and Superfan together. Budget: docs/observability-plan.md.
+// REPO_ANALYTICS=on records admitted repository usage in the existing SITE_EVENTS point and enables Insights; TRAFFIC_EVENTS and TRAFFIC_REPORT must also be on. No historical usage is backfilled.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -137,6 +138,11 @@
       "database_id": "0d2ef2d4-c105-4802-847f-d308c80833b4",
       "database_name": "yonedarepo-prod-platform-index",
       "migrations_dir": "migrations"
+    },
+    {
+      "binding": "INDEX_WEUR",
+      "database_id": "af956759-d02b-442a-a6ef-9b8915fc2b8d",
+      "database_name": "yonedarepo-prod-platform-index-weur"
     }
   ],
   "durable_objects": {
@@ -172,6 +178,10 @@
       {
         "class_name": "PackBuilder",
         "name": "PACK_BUILDERS"
+      },
+      {
+        "class_name": "RepositoryReadCopy",
+        "name": "READ_COPIES"
       }
     ]
   },
@@ -230,15 +240,17 @@
         "ImportContainer"
       ],
       "tag": "v8"
+    },
+    {
+      "new_sqlite_classes": [
+        "RepositoryReadCopy"
+      ],
+      "tag": "v9"
     }
   ],
   "name": "yonedarepo-prod-platform",
   "observability": {
     "enabled": true
-  },
-  "placement": {
-    "mode": "targeted",
-    "region": "aws:us-east-1"
   },
   "preview_urls": false,
   "queues": {
@@ -324,6 +336,38 @@
     {
       "binding": "MANAGED",
       "service": "yonedarepo-prod-agents-managed"
+    },
+    {
+      "binding": "CELL_WEUR",
+      "service": "yonedarepo-prod-platform-weur"
+    },
+    {
+      "binding": "CELL_ENAM",
+      "service": "yonedarepo-prod-api-enam"
+    },
+    {
+      "binding": "API_ENAM",
+      "service": "yonedarepo-prod-api-enam"
+    },
+    {
+      "binding": "API_WEUR",
+      "service": "yonedarepo-prod-api-weur"
+    },
+    {
+      "binding": "API_APAC",
+      "service": "yonedarepo-prod-api-apac"
+    },
+    {
+      "binding": "API_OC",
+      "service": "yonedarepo-prod-api-oc"
+    },
+    {
+      "binding": "API_SAM",
+      "service": "yonedarepo-prod-api-sam"
+    },
+    {
+      "binding": "API_AFR",
+      "service": "yonedarepo-prod-api-afr"
     }
   ],
   "tail_consumers": [
@@ -343,12 +387,17 @@
     "ADMIN_NOTIFY_EMAIL": "",
     "AGENT_SIGNUP": "on",
     "AUDIT_LOG": "off",
+    "AUTOMATIC_LOCALITY": "on",
     "BLOB_WRITE_THROUGH": "off",
+    "CELLS": "on",
     "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
+    "EDGE_FIRST_READS": "on",
     "EMAIL_CONTACT": "hello@yonedarepo.com",
     "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
     "GITHUB_APP_ID": "5583304",
     "GITHUB_APP_SLUG": "yonedarepo-import",
+    "GLOBAL_AUTH_LIMITS": "on",
+    "JOINED_REPO_PATH": "on",
     "LANDING_INSTRUMENTS": "on",
     "LAND_MODE": "batch",
     "LAND_WHEN_CLEARED": "on",
@@ -356,15 +405,24 @@
     "LFS_S3_BUCKET": "yonedarepo-prod-platform-objects",
     "LFS_S3_ENDPOINT": "https://f011d0ee02b23cad26b4b38151b204ad.r2.cloudflarestorage.com",
     "NEWSLETTER": "on",
+    "OVERVIEW_ADMITTED_SNAPSHOT": "on",
+    "OVERVIEW_BOOTSTRAP": "on",
+    "OVERVIEW_DEFER_ACTIVITY": "on",
     "PACK_CACHE": "on",
     "PUSH_BUNDLES": "on",
-    "REGION_SIGNALS": "off",
+    "RECENT_VERSIONS": "on",
+    "REGIONAL_API": "on",
+    "REGION_SIGNALS": "on",
+    "REPO_ANALYTICS": "on",
     "REPO_ERASE": "on",
+    "REPO_IMAGE_REVALIDATION": "on",
     "REPO_SIZE_GUARD": "on",
     "REPO_STORAGE_GUARD": "on",
     "REPO_UNDO_DAYS": "30",
     "REQUEST_IDS": "off",
+    "SEARCH_CODE_MEMO": "on",
     "SERVICE_LEVELS": "on",
+    "SHARED_READ_TREES": "on",
     "SITE_EVENTS_DATASET": "yonedarepo_prod_site_events",
     "SPAN_SAMPLE": "off",
     "SSH_FRONT_DOOR": "tunnel",

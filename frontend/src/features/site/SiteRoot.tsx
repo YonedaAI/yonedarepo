@@ -14,22 +14,12 @@ import { SitePricing } from './SitePricing';
 import { SiteSignIn } from './SiteSignIn';
 import { SiteUpdates, SiteUpdatesLink } from './SiteUpdates';
 import { documentTitle } from './seo';
-import { SIGNED_IN_HINT, type SitePage } from './siteRoute';
+import { signedInHint } from './signedInHint';
+import type { SitePage } from './siteRoute';
 
 // The docs (their pages, search index and layout) load on the first docs visit; the page
 // sets its own title.
 const SiteDocs = lazy(() => import('./docs/SiteDocs').then((m) => ({ default: m.SiteDocs })));
-
-/** Remembers whether this browser is signed in (see `siteView`); storage may be blocked. */
-export function signedInHint(value?: boolean): boolean {
-  try {
-    if (value === true) window.localStorage.setItem(SIGNED_IN_HINT, '1');
-    else if (value === false) window.localStorage.removeItem(SIGNED_IN_HINT);
-    return window.localStorage.getItem(SIGNED_IN_HINT) === '1';
-  } catch {
-    return false;
-  }
-}
 
 export function SiteRoot({
   site,

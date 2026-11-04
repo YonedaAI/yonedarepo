@@ -10,6 +10,11 @@
   },
   "services": [
     {
+      "binding": "GEOGRAPHY_ECHO",
+      "service": "yoneda-test",
+      "entrypoint": "GeographyEcho"
+    },
+    {
       "binding": "SELF",
       "service": "yoneda-test"
     }
@@ -31,6 +36,14 @@
       {
         "name": "LAND_COMBINERS",
         "class_name": "LandCombiner"
+      },
+      {
+        "name": "READ_COPIES",
+        "class_name": "RepositoryReadCopy"
+      },
+      {
+        "name": "DURABLE_FLIGHTS",
+        "class_name": "DurableFlightsFixture"
       }
     ]
   },
@@ -42,6 +55,18 @@
         "SourceRepository",
         "CommitShard",
         "LandCombiner"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "RepositoryReadCopy"
+      ]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": [
+        "DurableFlightsFixture"
       ]
     }
   ],

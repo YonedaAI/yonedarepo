@@ -1,10 +1,14 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { App } from '../../App';
 import { type Session, useSession } from '../../hooks/useSession';
 import { api, onUnauthorized } from '../../lib/api';
+import { loadSiteRoot } from '../site/SiteEntry';
 import { SiteRoot } from '../site/SiteRoot';
+
+// main preserves the public document until its client component is ready.
+beforeAll(() => loadSiteRoot());
 
 vi.mock('../../hooks/useSession', () => ({ useSession: vi.fn() }));
 afterEach(() => vi.unstubAllGlobals());

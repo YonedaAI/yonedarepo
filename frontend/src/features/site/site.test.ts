@@ -311,6 +311,8 @@ describe('home', () => {
       ),
     ];
     expect(rows).toHaveLength(5);
+    expect(rows.filter(([, , panel]) => panel === 'memory')).toHaveLength(1);
+    expect(rows.filter(([, , panel]) => panel === 'ci')).toHaveLength(1);
     for (const [, , panel, chip] of rows)
       expect(BUILD_ON.find((b) => b.id === panel)?.title).toBe(chip.replace('&amp;', '&'));
   });
@@ -666,7 +668,7 @@ describe('content', () => {
       'country',
       'device type',
       'campaign tags',
-      'Cloudflare Web Analytics',
+      'cookieless website analytics',
       'sessionStorage',
     ])
       expect(body).toContain(field);

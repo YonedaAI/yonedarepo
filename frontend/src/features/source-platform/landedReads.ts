@@ -7,6 +7,7 @@ const REPO = 'r[0-9a-f]{20}';
 const LAND = new RegExp(`^/repos/(${REPO})/land(?:\\?|$)`);
 const CHANGE = new RegExp(`^/repos/(${REPO})/changes/\\d+(?:\\?|$)`);
 const PUBLISHED_READ = new RegExp(`^/repos/(${REPO})/(?:tree|blob|refs)(?:\\?|$)`);
+const OVERVIEW_READ = new RegExp(`^/repos/(${REPO})$`);
 
 const landed = new Map<string, number>();
 
@@ -24,11 +25,13 @@ export function noteLanding(path: string, method: string, answer: { [key: string
 
 /** `path`, naming the newest landing here when it reads main as it is now. */
 export function atLatestLanding(path: string) {
-  const repo = PUBLISHED_READ.exec(path)?.[1];
+  const [bare, query = ''] = path.split('?');
+  const direct = PUBLISHED_READ.exec(path)?.[1];
+  const repo = direct ?? OVERVIEW_READ.exec(bare)?.[1];
   const version = repo && landed.get(repo);
   if (!version) return path;
-  const [bare, query = ''] = path.split('?');
   const params = new URLSearchParams(query);
+  if (!direct && params.get('overview') !== 'true') return path;
   const ref = params.get('ref') ?? 'main';
   if (params.has('min_version') || params.has('at') || params.has('commit') || ref !== 'main')
     return path;

@@ -16,6 +16,10 @@
   min-width: 0;
   max-width: 100%;
 }
+/* Facts already share the toolbar row; their standalone spacing would lift the chips. */
+.page-toolbar-view > .repo-facts {
+  margin-bottom: 0;
+}
 .page-toolbar-view select {
   width: auto;
   max-width: 260px;

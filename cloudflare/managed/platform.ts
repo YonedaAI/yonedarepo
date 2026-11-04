@@ -2,7 +2,7 @@
 // the PLATFORM service binding. Runs authenticate with the repository's scoped token; enabling
 // an agent forwards the signed-in caller's own credential, so only the platform decides who
 // may mint a token or register a webhook. Nothing here can land, approve or change policy.
-import { carriedHeaders } from '../worker/request-scope';
+import { carriedHeaders, timed } from '../worker/request-scope';
 import type { ManagedEnv } from './config';
 
 export type Json = Record<string, any>;
@@ -49,6 +49,7 @@ export class Platform {
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
         redirect: 'manual',
+        cf: 'forward' in this.credential ? this.credential.forward.cf : undefined,
       }),
     );
     const answer = (await res.json().catch(() => null)) as Json | null;
@@ -64,15 +65,17 @@ export class Platform {
   }
 
   /** The signed-in account: its own personal workspace, owned even before its first repository. */
-  session() {
-    return this.#call('GET', '/session', undefined, '/api/auth');
+  session(summary = false) {
+    return timed('managed.platform.session', () =>
+      this.#call('GET', summary ? '/session?summary=true' : '/session', undefined, '/api/auth'),
+    );
   }
   /** The caller's repositories (owner, role) and orgs: who owns which workspace. */
   repos() {
-    return this.#call('GET', '/repos');
+    return timed('managed.platform.repos', () => this.#call('GET', '/repos'));
   }
   orgs() {
-    return this.#call('GET', '/orgs');
+    return timed('managed.platform.orgs', () => this.#call('GET', '/orgs'));
   }
   status(repo: string) {
     return this.#call('GET', `/repos/${repo}`);

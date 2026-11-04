@@ -21,6 +21,8 @@ pub mod map;
 mod protocol;
 mod push;
 mod tags;
+#[cfg(test)]
+mod test_support;
 mod upload;
 pub mod url;
 

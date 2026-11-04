@@ -86,10 +86,13 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     );
     assert_eq!(platform["vars"]["WEB_ORIGIN"], "https://yonedarepo.com");
     assert_eq!(platform["ratelimits"][0]["namespace_id"], "1001");
-    assert_eq!(platform["placement"]["region"], "aws:us-east-1");
+    assert!(
+        platform.get("placement").is_none(),
+        "the public API entry stays global"
+    );
     assert_eq!(platform["vars"]["TRAFFIC_EVENTS"], "on");
     assert_eq!(platform["vars"]["TRAFFIC_REPORT"], "on");
-    assert_eq!(platform["vars"]["REGION_SIGNALS"], "off");
+    assert_eq!(platform["vars"]["REGION_SIGNALS"], "on");
     assert_eq!(
         platform["analytics_engine_datasets"],
         json!([{"binding": "SITE_EVENTS", "dataset": "yonedarepo_prod_site_events"}])
@@ -121,12 +124,28 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     assert_eq!(vars["TRAFFIC_EVENTS"], "on");
     // Internal accounts leave the ping too, so it is set with the platform Worker's.
     assert_eq!(vars["TRAFFIC_REPORT"], "on");
-    // Sign-ups run here too; off until the owner clears the privacy text.
-    assert_eq!(vars["REGION_SIGNALS"], "off");
+    // Sign-ups and repository requests share the approved locality behavior.
+    assert_eq!(vars["REGION_SIGNALS"], "on");
     // Observability O1's two switches stay off until dev has run them.
     assert_eq!(vars["REQUEST_IDS"], "off");
     assert_eq!(vars["CLIENT_ERRORS"], "off");
-    assert_eq!(vars.as_object().map(|v| v.len()), Some(10));
+    for switch in [
+        "CELLS",
+        "AUTOMATIC_LOCALITY",
+        "GLOBAL_AUTH_LIMITS",
+        "STATIC_ASSET_CACHE",
+        "FAST_APP_HEAD",
+        "OVERVIEW_MARKDOWN_PRELOAD",
+        "EARLY_READS",
+        "REGIONAL_API",
+    ] {
+        assert_eq!(vars[switch], "on", "{switch}");
+    }
+    assert_eq!(vars.as_object().map(|v| v.len()), Some(18));
+    assert!(
+        agents.get("placement").is_none(),
+        "frontend runs at the edge"
+    );
     assert_eq!(
         agents["analytics_engine_datasets"],
         json!([{"binding": "SITE_EVENTS", "dataset": "yonedarepo_prod_site_events"}])
@@ -282,10 +301,52 @@ fn dev_and_prod_never_share_a_rate_limit_namespace() {
             .filter_map(|r| r["namespace_id"].as_str().map(str::to_owned))
             .collect()
     };
-    let (dev, prod) = (namespaces(&dev().1), namespaces(&prod().1));
-    assert_eq!(prod, BTreeSet::from(["1001".to_owned(), "1002".to_owned()]));
+    let (dev_namespaces, prod_namespaces) = (namespaces(&dev().1), namespaces(&prod().1));
+    let prod_ids = ["1001", "1002", "1003", "1004"].map(str::to_owned);
+    assert_eq!(prod_namespaces, BTreeSet::from(prod_ids));
     let dev_ids = ["2001", "2002", "2003", "2004"].map(str::to_owned);
-    assert_eq!(dev, BTreeSet::from(dev_ids));
+    assert_eq!(dev_namespaces, BTreeSet::from(dev_ids));
+    assert!(dev_namespaces.is_disjoint(&prod_namespaces));
+    for (_, workers) in [dev(), prod()] {
+        let ids = |name| {
+            role(&workers, name).config["ratelimits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|limit| limit["namespace_id"].as_str().unwrap().to_owned())
+                .collect::<BTreeSet<_>>()
+        };
+        assert!(ids("platform").is_disjoint(&ids("platform-weur")));
+        assert!(ids("agents").is_subset(&ids("platform")));
+    }
+}
+
+#[test]
+fn read_performance_switches_have_dev_prod_parity() {
+    for (_, workers) in [dev(), prod()] {
+        assert_eq!(role(&workers, "agents").config["vars"]["EARLY_READS"], "on");
+        assert_eq!(
+            role(&workers, "agents").config["vars"]["OVERVIEW_MARKDOWN_PRELOAD"],
+            "on"
+        );
+        for name in ["platform", "platform-weur"] {
+            for flag in [
+                "SHARED_READ_TREES",
+                "EDGE_FIRST_READS",
+                "JOINED_REPO_PATH",
+                "OVERVIEW_BOOTSTRAP",
+                "OVERVIEW_DEFER_ACTIVITY",
+                "REPO_IMAGE_REVALIDATION",
+                "RECENT_VERSIONS",
+            ] {
+                assert_eq!(
+                    role(&workers, name).config["vars"][flag],
+                    "on",
+                    "{name} must inherit the same {flag} configuration"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -297,8 +358,14 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
         spec.worker_names().unwrap(),
         [
             "yonedarepo-dev-superfan",
-            "yonedarepo-dev-platform-weur",
             "yonedarepo-dev-platform",
+            "yonedarepo-dev-platform-weur",
+            "yonedarepo-dev-api-enam",
+            "yonedarepo-dev-api-weur",
+            "yonedarepo-dev-api-apac",
+            "yonedarepo-dev-api-oc",
+            "yonedarepo-dev-api-sam",
+            "yonedarepo-dev-api-afr",
             "yonedarepo-dev-edge",
             "yonedarepo-dev-agents-managed",
             "yonedarepo-dev-agents",
@@ -317,11 +384,17 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
         hosts,
         [
             vec![],
-            vec![],
             vec![
                 host("api.dev.yonedarepo.com", true),
                 host("https://api.dev.yonedarepo.com/*", false)
             ],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
             vec![host("edge.dev.yonedarepo.com", true)],
             vec![host("managed.dev.yonedarepo.com", true)],
             vec![
@@ -668,27 +741,38 @@ fn hosts_held_by_old_workers_are_moved_and_own_hosts_are_left_alone() {
 
 #[test]
 fn pending_d1_entries_generate_but_count_as_not_created() {
-    // The lock as it is before the first `infra up` records the real D1 ids.
+    // A new regional database is pending while the existing identities stay recorded.
+    let database = "yonedarepo-prod-platform-index-weur";
     let mut pending: serde_json::Value = serde_json::from_str(PROD_LOCK).unwrap();
-    for id in pending["d1"].as_object_mut().unwrap().values_mut() {
-        *id = json!(PENDING_D1);
-    }
+    pending["d1"][database] = json!(PENDING_D1);
     let (spec, workers) = workers(PROD, &pending.to_string());
     let lock: Lock = serde_json::from_value(pending).unwrap();
-    let platform = role(&workers, "platform");
-    assert_eq!(
-        platform.config["d1_databases"][0]["database_id"],
-        PENDING_D1
-    );
+    for worker in [role(&workers, "platform"), role(&workers, "platform-weur")] {
+        let binding = worker.config["d1_databases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|binding| binding["database_name"] == database)
+            .unwrap();
+        assert_eq!(binding["database_id"], PENDING_D1);
+    }
     let mut live = Live::default();
-    live.d1
-        .insert("yonedarepo-prod-platform-index".into(), "real-id".into());
+    live.d1.insert(database.into(), "real-id".into());
     let effective = effective_lock(&spec, &lock, &live).unwrap();
-    assert_eq!(effective.d1["yonedarepo-prod-platform-index"], "real-id");
+    let mut expected = lock.d1.clone();
+    expected.insert(database.into(), "real-id".into());
+    assert_eq!(
+        effective.d1, expected,
+        "existing identities must stay unchanged"
+    );
     let error = crate::deploy_guard::refuse_pending(&super::spec::Env::Prod, &lock)
         .unwrap_err()
         .to_string();
-    assert!(error.contains("infra up --env prod"), "{error}");
+    assert!(error.contains(database), "{error}");
+    assert!(
+        error.contains("infra prepare --env prod --confirm"),
+        "{error}"
+    );
     crate::deploy_guard::refuse_pending(&super::spec::Env::Prod, &effective).unwrap();
 }
 
@@ -719,4 +803,89 @@ fn an_empty_2xx_answer_counts_as_success() {
     assert!(!ok(StatusCode::OK, &json!({"success": false})));
     assert!(!ok(StatusCode::NOT_FOUND, &serde_json::Value::Null));
     assert!(!ok(StatusCode::FORBIDDEN, &json!({"success": true})));
+}
+
+#[test]
+fn search_code_memo_has_dev_prod_and_cell_parity() {
+    for (_, workers) in [dev(), prod()] {
+        for worker in workers.iter().filter(|w| w.role.starts_with("platform")) {
+            assert_eq!(worker.config["vars"]["SEARCH_CODE_MEMO"], "on");
+        }
+    }
+}
+
+#[test]
+fn overview_admitted_snapshot_has_dev_prod_and_cell_parity() {
+    for ((_, workers), expected) in [(dev(), "on"), (prod(), "on")] {
+        for worker in workers
+            .iter()
+            .filter(|w| w.role.starts_with("platform") || w.role.starts_with("api-"))
+        {
+            assert_eq!(
+                worker.config["vars"]["OVERVIEW_ADMITTED_SNAPSHOT"],
+                expected
+            );
+        }
+    }
+}
+
+#[test]
+fn managed_list_speed_switch_has_dev_prod_parity() {
+    for (_, workers) in [dev(), prod()] {
+        assert_eq!(
+            role(&workers, "agents-managed").config["vars"]["FAST_AGENTS_LIST"],
+            "on"
+        );
+    }
+}
+
+#[test]
+fn api_alias_and_authority_placement_leave_public_entries_global() {
+    for (_, workers) in [dev(), prod()] {
+        for (name, region) in [
+            ("api-enam", "aws:us-east-1"),
+            ("platform-weur", "aws:eu-central-1"),
+        ] {
+            assert_eq!(
+                role(&workers, name).config["placement"],
+                json!({"mode":"targeted", "region":region})
+            );
+        }
+        let front = &role(&workers, "agents").config;
+        assert!(front.get("placement").is_none());
+        for binding in front["services"].as_array().unwrap() {
+            let name = binding["binding"].as_str().unwrap();
+            if name == "PLATFORM" || name.starts_with("CELL_") {
+                assert!(
+                    binding.get("entrypoint").is_none(),
+                    "placement must reach default fetch"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn repository_usage_is_enabled_for_each_api_and_authority_in_both_environments() {
+    for (_, workers) in [dev(), prod()] {
+        for worker in workers
+            .iter()
+            .filter(|w| w.role.starts_with("platform") || w.role.starts_with("api-"))
+        {
+            assert_eq!(
+                worker.config["vars"]["REPO_ANALYTICS"], "on",
+                "{}",
+                worker.role
+            );
+            assert_eq!(worker.config["vars"]["TRAFFIC_EVENTS"], "on");
+            assert_eq!(worker.config["vars"]["TRAFFIC_REPORT"], "on");
+            assert!(
+                worker.config["analytics_engine_datasets"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|d| d["binding"] == "SITE_EVENTS")
+            );
+        }
+    }
 }

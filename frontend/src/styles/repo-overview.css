@@ -47,15 +47,27 @@
   align-items: start;
   gap: 24px;
 }
-/* Reserve chart space while loading, not after an empty activity result. */
-.overview-numbers:has([aria-busy="true"]) {
+/* Reserve the chart while its optional request runs; settled content stays compact. */
+.overview-numbers.is-deferred:has([aria-busy="true"]) {
+  min-height: 190px;
+  align-content: start;
+}
+.overview-numbers > :is(.source-error, .source-empty, .source-meta) {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.overview-numbers .home-section:has(.time-chart) {
+  min-height: 190px;
+}
+/* Legacy readers also reserve chart space while loading. */
+.overview-numbers:not(.is-deferred):has([aria-busy="true"]) {
   min-height: 190px;
 }
 .overview-people {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 2px;
-  margin: 0 0 8px;
+  gap: 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -63,8 +75,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0;
+  padding: 0;
   font-size: var(--text-md);
+  line-height: var(--leading-chrome);
+}
+.overview-numbers .home-section > .source-meta {
+  margin: 0;
 }
 .overview-person {
   min-width: 0;
@@ -76,5 +92,8 @@
 @media (max-width: 800px) {
   .overview-numbers {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .overview-numbers.is-deferred:has([aria-busy="true"]) {
+    min-height: 394px;
   }
 }

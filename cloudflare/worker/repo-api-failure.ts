@@ -10,6 +10,7 @@ const STATUS: Record<string, number> = {
   FORBIDDEN: 403,
   UNAUTHORIZED: 401,
   CONFLICT: 409,
+  ACTIVITY_CHANGED: 409,
   MERGE_REQUIRED: 409,
   STALE_PARENT: 409,
   NOT_READY: 409,
@@ -32,6 +33,7 @@ const STATUS: Record<string, number> = {
   OVERLOADED: 503,
   // A create that failed and took back what it did: the same request can be repeated.
   CREATE_UNAVAILABLE: 503,
+  REGION_UNAVAILABLE: 503,
   // Contact support: no address to reply to, email not set up here, or the send failed.
   NO_EMAIL: 409,
   SUPPORT_UNAVAILABLE: 503,

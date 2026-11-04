@@ -8,6 +8,7 @@ import { auditMember } from './account-audit';
 import { accountCreated, emailRoute } from './account-email';
 import { handleState, setHandle } from './account-handles';
 import { noteSeen } from './account-index';
+import { notificationsRoute } from './account-notifications';
 import { passwordRoute } from './account-password';
 import { noteHome } from './account-place';
 import { isAdminAccount } from './admin-auth';
@@ -60,8 +61,8 @@ function sessionValue(req: Request) {
   const token = parts[1];
   return { name, token };
 }
-/** The account a session cookie names, unchecked: enough to leave a point out of the figures,
- * which is all a forged name can do. */
+/** The account a session cookie names, unchecked: a routing/analytics hint only. Native
+ * session verification and normal access checks still decide every admission. */
 export const sessionAccount = (req: Request) => sessionValue(req)?.name ?? null;
 /** The signed-in account and its session's digest (linking a provider records both). */
 export async function signedInSession(req: Request, env: Env) {
@@ -97,27 +98,35 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
     return error('UNAUTHORIZED', 'Same-origin request required', 401);
   const action = path.slice('/api/auth/'.length);
   try {
+    if (action === 'notifications' || action.startsWith('notifications/'))
+      return notificationsRoute(req, env, async () => {
+        const session = await signedInSession(req, env);
+        return session ? { workspace: session.account, sessionHash: session.sessionHash } : null;
+      });
     let result: Response;
     if (action === 'session' && req.method === 'GET') {
       const { principal, suspended } = await sessionCheck(req, env);
-      // The account menu's picture; a failed lookup only means initials.
-      const avatar = principal
-        ? // No picture is the page's plain fallback: a person's initials.
-          await avatarInfo(env, principal.workspace).catch(() => null)
-        : null;
-      result = response(
-        principal
-          ? {
-              authenticated: true,
-              username: principal.workspace,
-              ...(await handleState(env, principal.workspace)),
-              avatar_url: ownAvatarUrl(avatar),
-              avatar_source: avatar?.source ?? null,
-              // A hint for the UI's admin entry; every admin route checks for itself.
-              is_admin: isAdminAccount(env, principal.workspace),
-            }
-          : { authenticated: false, ...(suspended ? { suspended: true } : {}) },
-      );
+      const identity = principal
+        ? {
+            authenticated: true,
+            username: principal.workspace,
+            is_admin: isAdminAccount(env, principal.workspace),
+          }
+        : { authenticated: false, ...(suspended ? { suspended: true } : {}) };
+      if (!principal || new URL(req.url).searchParams.get('summary') === 'true') {
+        result = response(identity);
+      } else {
+        const [avatar, handle] = await Promise.all([
+          avatarInfo(env, principal.workspace).catch(() => null),
+          handleState(env, principal.workspace),
+        ]);
+        result = response({
+          ...identity,
+          ...handle,
+          avatar_url: ownAvatarUrl(avatar),
+          avatar_source: avatar?.source ?? null,
+        });
+      }
     } else if (action === 'handle' && req.method === 'PUT') {
       const principal = await accountPrincipal(req, env);
       if (!principal) return error('UNAUTHORIZED', 'Sign in to choose a handle', 401);

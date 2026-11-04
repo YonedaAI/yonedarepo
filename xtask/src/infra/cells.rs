@@ -28,8 +28,9 @@ const OFF_IN_A_CELL: [&str; 2] = ["ADMIN_BILLING", "NEWSLETTER"];
 pub(crate) struct CellSpec {
     /// Its region code, the one accounts and repository ids name.
     pub code: String,
-    /// Where its Worker's fetch handler runs: `placement.region`.
-    pub placement: String,
+    /// Optional fetch placement: `smart` or a cloud region; absent means edge execution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placement: Option<String>,
     /// Where its containers run: `constraints.regions`.
     pub containers: String,
     /// Its objects', bucket's, D1's and queues' jurisdiction, fixed at creation.
@@ -110,15 +111,17 @@ fn vars(config: &mut Value, cell: &CellSpec) {
     }
     if let Some(all) = vars.as_object_mut() {
         all.remove("SSH_HOST");
-        // A test of the pinned stack: a cell is the real thing.
-        all.remove("REGION_HINT_TEST");
+        // Keep an explicitly enabled dev-only location diagnostic in derived cells too.
+        // Production declares none, so it exposes no extra diagnostic route.
     }
 }
 
 fn bindings(config: &mut Value, cell: &CellSpec, name: &str) -> Result<()> {
     let enam_index = platform_index(config)?;
     for binding in each(config, "/durable_objects/bindings") {
-        if binding["class_name"] == "WorkspaceAuthority" {
+        if binding["class_name"] == "WorkspaceAuthority"
+            || binding["class_name"] == "RepositoryReadCopy"
+        {
             binding["script_name"] = json!("{prefix}-platform");
         }
     }
@@ -170,7 +173,13 @@ fn cell_worker(platform: &WorkerSpec, spec: &Spec, cell: &CellSpec) -> Result<Wo
     let name = cell.service();
     config["name"] = json!(name);
     config["workers_dev"] = json!(true);
-    config["placement"] = json!({"mode": "targeted", "region": cell.placement});
+    if cell.placement.as_deref() == Some("smart") {
+        config["placement"] = json!({"mode": "smart"});
+    } else if let Some(region) = &cell.placement {
+        config["placement"] = json!({"mode": "targeted", "region": region});
+    } else if let Some(config) = config.as_object_mut() {
+        config.remove("placement");
+    }
     if let Some(all) = config.as_object_mut() {
         // Reached through bindings; `CHANGELOG` is one stream, and not yet a cell's.
         all.remove("routes");
@@ -247,17 +256,17 @@ fn cell_role(cell: &CellSpec) -> String {
     format!("{PLATFORM}{}", cell.suffix())
 }
 
-/// Adds each cell's Worker, ahead of the platform's: a binding to a Worker that isn't there yet
-/// fails a deploy.
+/// Shared class exports must exist before a regional Worker's cross-script bindings.
+/// Bootstrap regional Workers unbound before enabling service bindings back to them.
 pub(super) fn expand(spec: &mut Spec) -> Result<()> {
-    for cell in spec.cells.clone() {
+    for (offset, cell) in spec.cells.clone().into_iter().enumerate() {
         let at = spec
             .workers
             .iter()
             .position(|w| w.role == PLATFORM)
             .ok_or("A cell copies the platform Worker, and the spec has none")?;
         let worker = cell_worker(&spec.workers[at], spec, &cell)?;
-        spec.workers.insert(at, worker);
+        spec.workers.insert(at + offset + 1, worker);
     }
     for cell in spec.cells.clone() {
         if cell.bound {

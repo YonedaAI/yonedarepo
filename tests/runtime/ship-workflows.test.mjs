@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
+import { runInNewContext } from 'node:vm';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const WORKFLOWS = join(ROOT, '.github/workflows');
@@ -18,11 +19,18 @@ function jobs(text) {
   const parts = body.split(/^ {2}(?=[a-z][a-z-]*:$)/m).slice(1);
   return Object.fromEntries(parts.map((part) => [part.slice(0, part.indexOf(':')), code(part)]));
 }
-const SAME_REPO = "github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'dev'";
 
 test('every action is pinned by commit', () => {
   for (const text of [...files.map(read), ...actions])
     for (const [, action] of code(text).matchAll(/^\s*(?:- )?uses: (\S+)/gm)) if (!action.startsWith('./')) assert.match(action, /@[0-9a-f]{40}$/, action);
+});
+
+test('CI validates PRs or manual requests; only Deploy prod handles main pushes', () => {
+  const ci = code(read('ci.yml'));
+  assert.match(ci, /^ {2}pull_request:$/m);
+  assert.match(ci, /^ {2}workflow_dispatch:$/m);
+  assert.doesNotMatch(ci, /^ {2}push:$/m);
+  assert.match(code(read('deploy-prod.yml')), /^ {2}push:\n {4}branches: \[main\]$/m);
 });
 
 test('no workflow runs on pull_request_target or workflow_run', () => {
@@ -38,20 +46,64 @@ test('secrets reach only jobs with an Environment, and only one secret', () => {
       }
 });
 
-test('the ship is CI only: Check and Full, from this repository, no secrets, no deploy, no kit', () => {
-  const text = read('ship.yml');
-  const ship = jobs(text);
-  assert.deepEqual(Object.keys(ship), ['gate', 'check', 'full']);
-  assert.ok(ship.gate.includes(`if: ${SAME_REPO}`));
-  assert.match(ship.check, /needs: gate\n\s+uses: \.\/\.github\/workflows\/ci\.yml\n\s+with:\n\s+ship: true/);
-  assert.match(ship.full, /needs: gate\n\s+uses: \.\/\.github\/workflows\/full\.yml\n\s+with:\n\s+ship: true/);
-  assert.doesNotMatch(code(text), /secrets|environment:|xtask deploy|staging-realworld|upload-artifact/);
+test('exactly CI, Deploy prod and manual Deploy dev are defined; Nightly is removed', () => {
+  assert.deepEqual(files.sort(), ['ci.yml', 'deploy-dev.yml', 'deploy-prod.yml']);
+  assert.match(read('ci.yml'), /^name: CI$/m);
+  assert.doesNotMatch(code(read('deploy-dev.yml')), /push:|pull_request:|schedule:/);
+  const deep = readFileSync(join(ROOT, 'docs/code-health.md'), 'utf8');
+  assert.match(deep, /cargo test -p yoneda-platform --lib differential -- --ignored/);
+});
+
+test('CI owns secret-free fast and full release validation with a final Ship gate', () => {
+  const text = read('ci.yml'), ci = jobs(text);
+  assert.doesNotMatch(code(text), /secrets\.|environment:|xtask deploy|staging-realworld|workflow_call:/);
+  assert.match(ci.scope, /github\.event_name == 'pull_request'/);
+  assert.match(ci.scope, /github\.base_ref == 'main'/);
+  assert.match(ci.scope, /github\.head_ref == 'dev'/);
+  assert.match(ci.scope, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
+  assert.match(ci['ship-tree'], /HEAD\^\{tree\}/);
+  assert.match(ci['ship-tree'], /PR_HEAD\^\{tree\}/);
+  assert.match(ci['ship-gate'], /^ {4}name: Ship gate$/m);
+  for (const id of ['scope', 'ship-tree', 'check', 'wasm', 'workers-total', 'suites', 'image'])
+    assert.ok(ci['ship-gate'].includes(id), id);
+  assert.match(ci['ship-gate'], /always\(\) && github\.event_name == 'pull_request'/);
+  assert.match(ci['ship-gate'], /github\.base_ref == 'main'/);
+  assert.doesNotMatch(ci['ship-gate'].split('runs-on:')[0], /needs\.scope\.outputs/, 'scope failure must still run and fail the required gate');
+  assert.match(ci['ship-gate'], /toJSON\(needs\)/);
+  assert.match(ci['ship-gate'], /ci-scope\.mjs --gate/);
+  assert.match(ci['workers-total'], /needs.workers.result/);
+  assert.match(ci.suites, /pnpm test:storage-full/);
+});
+
+test('release CI runs partitioned functional coverage, four fail-closed shards and the conditional runtime image', () => {
+  const ci = jobs(read('ci.yml'));
+  for (const id of ['wasm', 'image']) {
+    assert.match(ci[id], /needs: \[scope, ship-tree\]/);
+    assert.match(ci[id], /!cancelled\(\).*needs\.scope\.outputs\.full == 'true'/);
+  }
+  for (const id of ['workers', 'suites']) {
+    assert.match(ci[id], /needs: \[scope, wasm\]/);
+    assert.match(ci[id], /if: needs\.scope\.outputs\.full == 'true'/);
+  }
+  assert.match(ci.workers, /shard: \[1, 2, 3, 4\]/);
+  assert.match(ci.workers, /fail-fast: false/);
+  assert.match(ci.workers, /node tools\/ci\/workers\.mjs platform --shard=/);
+  assert.doesNotMatch(ci.suites, /pnpm test:platform/);
+  assert.match(ci['workers-total'], /if: always\(\) && needs\.scope\.outputs\.full == 'true'/);
+  assert.match(ci['workers-total'], /\$\{#files\[@\]\}.*-ne 4/);
+  for (const command of ['node tools/ci/workers.mjs main', 'pnpm test:storage-full', 'pnpm test:superfan', 'pnpm test:managed'])
+    assert.ok(ci.suites.includes(command), command);
+  assert.match(ci.wasm, /worker-build --release/);
+  assert.match(ci.image, /git diff --quiet origin\/main\.\.\.HEAD -- cloudflare\/containers backend\/crates\/yoneda-runtime/);
+  assert.match(ci.image, /ASKED: \$\{\{ inputs\.image \}\}/);
+  assert.match(ci.image, /outputs: type=cacheonly/);
+  assert.match(ci.image, /DOCKER_BUILD_RECORD_UPLOAD: 'false'/);
 });
 
 test('no kit runs on GitHub and no evidence leaves the Mac', () => {
   for (const name of files) {
     assert.doesNotMatch(code(read(name)), /staging-realworld/, name);
-    if (name !== 'full.yml') assert.doesNotMatch(code(read(name)), /upload-artifact|download-artifact|gh run download/, name);
+    if (name !== 'ci.yml') assert.doesNotMatch(code(read(name)), /upload-artifact|download-artifact|gh run download/, name);
   }
 });
 
@@ -87,26 +139,15 @@ test('Check runs every health gate, in step with `cargo xtask check`', () => {
   assert.ok(text.indexOf('pnpm --dir frontend build') < text.indexOf('cargo xtask health size'));
 });
 
-test('the nightly is one job with no secrets, no artifacts and no deploy, on this repository', () => {
-  const text = read('nightly.yml');
-  const nightly = jobs(text);
-  assert.deepEqual(Object.keys(nightly), ['differential']);
-  assert.match(text, /^permissions:\n {2}contents: read$/m);
-  assert.match(text, /^ {4}- cron: '\d+ \d+ \* \* \*'$/m);
-  assert.match(nightly.differential, /if: github\.repository == 'YonedaAI\/yonedarepo'/);
-  assert.match(nightly.differential, /timeout-minutes: \d+/);
-  assert.match(nightly.differential, /YONEDA_DIFF_SEED_START: \$\{\{ github\.run_number \}\}00/);
-  assert.match(nightly.differential, /--lib differential -- --ignored/);
-  assert.doesNotMatch(code(text), /secrets|environment:|xtask deploy/);
-});
-
-test('Check and Full are reusable and keep their manual runs, in a group of their own', () => {
-  for (const name of ['ci.yml', 'full.yml']) {
-    const text = read(name);
-    assert.match(text, /^ {2}workflow_call:$/m, name);
-    assert.match(text, /^ {2}workflow_dispatch:$/m, name);
-    assert.match(text, /group: \w+-\$\{\{ inputs\.ship && 'ship' \|\| /, name);
-  }
+test('CI manual full validation and PR cancellation stay separate from noncancelable deployment', () => {
+  const ci = read('ci.yml');
+  assert.match(ci, /^ {2}workflow_dispatch:$/m);
+  assert.match(ci, /^ {6}full:$/m);
+  assert.match(ci, /Force the runtime image build when full validation is selected/);
+  assert.match(ci, /group: ci-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/);
+  assert.match(ci, /cancel-in-progress: true/);
+  assert.match(read('deploy-prod.yml'), /group: deploy-prod\n {2}cancel-in-progress: false/);
+  assert.doesNotMatch(code(read('deploy-prod.yml')), /pull_request:/);
 });
 
 test('prod deploys on push to main in ship mode, keeps a manual re-run and the owner gate', () => {
@@ -119,7 +160,7 @@ test('prod deploys on push to main in ship mode, keeps a manual re-run and the o
   assert.match(job.deploy, /needs\.gate\.outputs\.ship == 'true'/);
   assert.match(job.deploy, /flags=\(--confirm --ship-head "\$PR_HEAD"\)/);
   assert.match(job.deploy, /GH_TOKEN: \$\{\{ github\.token \}\}/);
-  assert.match(job.deploy, /statuses: read/);
+  assert.doesNotMatch(job.deploy, /statuses: read/);
   for (const id of ['deploy', 'downloads', 'smoke', 'monitor']) assert.match(job[id], /^ {4}environment: production$/m, id);
   assert.match(job.smoke, /cargo xtask infra smoke --env prod/);
   assert.doesNotMatch(job.smoke, /playwright|cloudflared/);
@@ -156,4 +197,31 @@ test('the env file is written 0600 outside the tree, masked by value', () => {
   assert.match(envFile, /::add-mask::\$value/);
   assert.match(envFile, /YONEDA_ENV_FILE is not set/);
   for (const name of ['deploy-prod.yml', 'deploy-dev.yml']) assert.match(read(name), /rm -rf ~\/\.config\/yonedarepo/, name);
+});
+
+// Full validation shares one Wasm artifact and the Check frontend build.
+test('Check shares full-lane Wasm, but fails closed unless fast Wasm was intentionally skipped', () => {
+  const ci = jobs(read('ci.yml'));
+  assert.match(ci.check, /needs: \[scope, wasm\]/);
+  assert.match(ci.check, /!cancelled\(\)/);
+  assert.match(ci.check, /needs\.wasm\.result == 'success'/);
+  assert.match(ci.check, /needs\.scope\.outputs\.full != 'true' && needs\.wasm\.result == 'skipped'/);
+  assert.match(ci.check, /download-artifact/);
+  assert.match(ci.check, /if: needs\.scope\.outputs\.full != 'true'/);
+  assert.match(ci.check, /if: needs\.scope\.outputs\.full == 'true'/);
+  assert.match(ci.check, /pnpm --dir frontend build/);
+  assert.doesNotMatch(ci.suites, /pnpm --dir frontend build/);
+  const condition = ci.check.match(/^ {4}if: \$\{\{ (.*) \}\}$/m)?.[1];
+  assert.ok(condition);
+  const allowed = (full, wasm, check = 'true', cancelled = false) => runInNewContext(condition, {
+    needs: { scope: { outputs: { full, check } }, wasm: { result: wasm } }, cancelled: () => cancelled,
+  }, { timeout: 50 });
+  for (const full of ['true', 'false']) {
+    assert.equal(allowed(full, 'success'), true);
+    for (const result of ['failure', 'cancelled', undefined]) assert.equal(allowed(full, result), false);
+    assert.equal(allowed(full, 'success', 'false'), false);
+    assert.equal(allowed(full, 'success', 'true', true), false);
+  }
+  assert.equal(allowed('true', 'skipped'), false, 'full release cannot use a missing artifact');
+  assert.equal(allowed('false', 'skipped'), true, 'fast checks build their own Wasm');
 });

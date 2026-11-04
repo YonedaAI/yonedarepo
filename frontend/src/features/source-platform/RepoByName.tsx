@@ -4,6 +4,8 @@
 // viewer: the repository not-found page.
 import { useEffect } from 'react';
 import type { Navigate } from '../shell/useRoute';
+import { preloadOverviewMarkdown } from './markdownLoader';
+import { namedOverviewRef, type OverviewStatus } from './overviewBootstrap';
 import { RepoNotFound, repoMissing } from './RepoNotFound';
 import { type NamedRoute, rememberRepoName } from './repoNames';
 import { Failure, Loading } from './SourceStatus';
@@ -11,10 +13,18 @@ import { parseSourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
 
 /** `GET /resolve/<handle>/<name>`: an earlier name answers with the current one. */
-type Resolved = { id: string; handle: string; name: string; path: string };
+type Resolved = {
+  id: string;
+  handle: string;
+  name: string;
+  path: string;
+  summary?: OverviewStatus;
+};
 
-export const resolvePath = (owner: string, name: string) =>
-  `/resolve/${owner}/${encodeURIComponent(name)}`;
+export const resolvePath = (owner: string, name: string, ref?: string) =>
+  `/resolve/${owner}/${encodeURIComponent(name)}${
+    ref === undefined ? '' : `?summary=true&overview=true&ref=${encodeURIComponent(ref)}`
+  }`;
 
 export function RepoByName({
   route,
@@ -27,14 +37,23 @@ export function RepoByName({
   authenticated: boolean;
   onSignIn: () => void;
 }) {
-  const found = useSource<Resolved>(resolvePath(route.owner, route.name));
+  const preloadsMarkdown = namedOverviewRef(route) !== undefined;
+  useEffect(() => {
+    if (preloadsMarkdown) preloadOverviewMarkdown();
+  }, [preloadsMarkdown]);
+  const found = useSource<Resolved>(resolvePath(route.owner, route.name, namedOverviewRef(route)));
   const id = found.data?.id;
   // biome-ignore lint/correctness/useExhaustiveDependencies: once per resolved repository.
   useEffect(() => {
     if (!found.data || !id) return;
     rememberRepoName(id, found.data.handle, found.data.name);
     const rest = route.rest ? `/${route.rest}` : '';
-    navigate(parseSourceRoute(`/source/${id}${rest}`, route.search), { replace: true });
+    navigate(parseSourceRoute(`/source/${id}${rest}`, route.search), {
+      replace: true,
+      ...(found.data.summary?.overview
+        ? { overview: { repo: id, status: found.data.summary } }
+        : {}),
+    });
   }, [id]);
   if (repoMissing(found.code))
     return <RepoNotFound navigate={navigate} authenticated={authenticated} onSignIn={onSignIn} />;

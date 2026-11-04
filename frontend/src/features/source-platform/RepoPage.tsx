@@ -10,6 +10,8 @@ import { CommitView } from './CommitView';
 import { HistoryTab } from './HistoryTab';
 import { ImportStatus } from './ImportStatus';
 import { RepoHoldBanner } from './LegalHold';
+import { preloadOverviewMarkdown } from './markdownLoader';
+import { type OverviewStatus, overviewStatusPath } from './overviewBootstrap';
 import { ShowEmailsContext } from './people';
 import { ReleaseView } from './ReleaseView';
 import { RepoAgents } from './RepoAgents';
@@ -26,9 +28,8 @@ import { RepoSearch } from './RepoSearch';
 import { ReadOnlyContext, repoAccess, type Visibility } from './repoAccess';
 import { chosenBranch } from './repoBranch';
 import { rememberRepoName, repoNameOf } from './repoNames';
-import type { RepoStatus } from './repoStatus';
 import { SessionView } from './SessionView';
-import { Failure } from './SourceStatus';
+import { Failure, Loading } from './SourceStatus';
 import { formatSourceRoute, type SourceRoute } from './sourceRoute';
 import { useImportProgress } from './useImportProgress';
 import { useSource } from './useSource';
@@ -48,6 +49,7 @@ export function RepoPage({
   onMissing,
   onSignIn,
   onLoaded,
+  initialStatus,
 }: {
   route: RepoRoute;
   /** The name the sidebar shows, until the repository's own status loads. */
@@ -64,10 +66,20 @@ export function RepoPage({
   /** The loaded name and visibility, and whether the viewer may change settings, for the
    * shell's header and sidebar. */
   onLoaded?: (repo: ShownRepo & { visibility: Visibility }) => void;
+  /** The fresh response from this exact named-route navigation, never a stored cache. */
+  initialStatus?: OverviewStatus;
 }) {
+  const preloadsMarkdown = route.view === 'overview';
+  useEffect(() => {
+    if (preloadsMarkdown) preloadOverviewMarkdown();
+  }, [preloadsMarkdown]);
   const repo = route.repo;
-  const status = useSource<RepoStatus & { owner_handle?: string | null; insights?: boolean }>(
-    `/repos/${repo}`,
+  // Every Overview asks for its current bundle; an old/OFF server returns a plain summary.
+  const refName = route.view === 'overview' ? (route.ref ?? chosenBranch(repo)) : undefined;
+  const status = useSource<OverviewStatus>(
+    refName === undefined ? `/repos/${repo}?summary=true` : overviewStatusPath(repo, refName),
+    undefined,
+    initialStatus,
   );
   // Its readable address (`/<handle>/<name>`): the status names the owner's handle (null
   // while an email-named owner has none: the id address keeps working).
@@ -77,8 +89,14 @@ export function RepoPage({
     if (handle) showAddress(route);
   }, [handle, route]);
   const gone = useRepoGone(repo);
-  const missing = gone || repoMissing(status.code);
+  const current = status.current !== false;
+  const error = current ? status.error : undefined;
+  const missing = gone || (current && repoMissing(status.code));
   const data = status.data;
+  const ready = current && !status.loading;
+  const selected =
+    ready && data?.overview && data.overview.ref === refName ? data.overview : undefined;
+  const mismatch = ready && !!data?.overview && data.overview.ref !== refName;
   const access = repoAccess(data?.viewer, authenticated);
   const owner = access.settings;
   const progress = useImportProgress(repo, data?.refs, status.reload);
@@ -106,21 +124,26 @@ export function RepoPage({
         <div className="repo-page">
           {/* The top bar's trail is what a sighted reader goes by; a screen reader gets the same. */}
           <h1 className="sr-only">{name ?? data?.name ?? repoNameOf(repo)?.name ?? repo}</h1>
+          {!data && !error && <Loading what="repository" />}
           {data && <RepoHoldBanner repo={repo} />}
-          {status.error && (
-            <Failure error={status.error} what="this repository" onRetry={status.reload} />
-          )}
+          {error && <Failure error={error} what="this repository" onRetry={status.reload} />}
           {/* Settings stay open: deleting the repository is how a failed import is tried again. */}
-          {!status.error && progress.phase !== 'none' && route.view !== 'repo-settings' && (
+          {!error && progress.phase !== 'none' && route.view !== 'repo-settings' && (
             <ImportStatus repo={repo} progress={progress} owner={owner} navigate={navigate} />
           )}
-          {!status.error && (progress.phase === 'none' || route.view === 'repo-settings') && (
+          {!error && (progress.phase === 'none' || route.view === 'repo-settings') && (
             <div className="repo-view">
+              {route.view === 'overview' && mismatch && (
+                <Failure error="Couldn't load the selected branch." onRetry={status.reload} />
+              )}
               {route.view === 'overview' && data && (
                 <RepoOverview
                   repo={repo}
                   refName={route.ref ?? chosenBranch(repo)}
                   status={data}
+                  bootstrap={selected}
+                  waiting={!ready || mismatch}
+                  onRetry={status.reload}
                   facts={
                     <RepoFacts
                       repo={repo}

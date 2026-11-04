@@ -27,12 +27,19 @@ export const forgetInsights = () => held.clear();
 
 /** The rows of `repo`'s figures over `span`, read at most once every HELD_MS in this isolate. */
 async function usageRows(env: Env, repo: string, span: TrafficSpan, fetcher: typeof fetch) {
-  const key = `${repo}:${span.range}`;
+  const sql = sqlReader(env, fetcher);
+  if (!sql) return null;
+  const key = JSON.stringify([
+    env.CF_ACCOUNT_ID,
+    sql.dataset,
+    repo,
+    span.range,
+    span.start,
+    span.close,
+  ]);
   const now = Date.now();
   const kept = held.get(key);
   if (kept && now - kept.at < HELD_MS) return kept.rows;
-  const sql = sqlReader(env, fetcher);
-  if (!sql) return null;
   const rows = await sql.run(insightsQuery(sql.dataset, repo, span));
   held.delete(key);
   held.set(key, { at: now, rows });

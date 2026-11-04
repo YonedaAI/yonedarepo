@@ -3,7 +3,7 @@
 // /health and Stripe's signed billing webhook (/stripe/webhook); the browser API is served to the front Worker's service binding on the site's own
 // origin. The platform itself never runs, schedules or knows about agents.
 import { log, served } from '../worker/log';
-import { inScope } from '../worker/request-scope';
+import { inScope, withTimings } from '../worker/request-scope';
 import { adminBilling, adminPlatform } from './admin-billing';
 import { ApiRefusal, managedApi, workspaceName } from './api';
 import { BillingRefusal, stripeWebhook } from './billing';
@@ -129,7 +129,10 @@ export async function managedFetch(req: Request, env: ManagedEnv): Promise<Respo
   const own = new URL(env.PUBLIC_URL).host;
   if (parts[0] === 'api' && parts[1] === 'managed' && url.host !== own) {
     try {
-      return json(await managedApi(req, env, parts.slice(2)));
+      const { value, header } = await withTimings(() => managedApi(req, env, parts.slice(2)));
+      const answer = json(value);
+      answer.headers.set('server-timing', header);
+      return answer;
     } catch (e: any) {
       if (e instanceof ApiRefusal || e instanceof PlatformError || e instanceof BillingRefusal)
         return refuse(e.code, e.message, e.status);

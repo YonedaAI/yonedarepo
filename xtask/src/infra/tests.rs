@@ -8,6 +8,28 @@ const DEV_LOCK: &str = include_str!("../../../infra/envs/dev.lock.json");
 const PROD: &str = include_str!("../../../infra/envs/prod.json");
 const PROD_LOCK: &str = include_str!("../../../infra/envs/prod.lock.json");
 
+#[test]
+fn independent_watchers_reach_each_other_over_the_public_network() {
+    // These probes deliberately use public URLs rather than service bindings: each watcher
+    // must observe the other as an outside client would, including its public route.
+    for text in [DEV, PROD] {
+        let spec = Spec::parse(text).unwrap();
+        for worker in spec
+            .workers
+            .iter()
+            .filter(|w| matches!(w.role.as_str(), "superfan" | "deadman"))
+        {
+            assert!(
+                worker.config["compatibility_flags"]
+                    .as_array()
+                    .is_some_and(|flags| flags.iter().any(|f| f == "global_fetch_strictly_public")),
+                "{} must be able to fetch the other watcher's public Worker URL",
+                worker.file
+            );
+        }
+    }
+}
+
 fn committed(file: &str) -> Value {
     let text = match file {
         "wrangler.dev-platform.jsonc" => {
@@ -46,6 +68,9 @@ fn committed(file: &str) -> Value {
         "wrangler.prod-platform.jsonc" => {
             include_str!("../../../cloudflare/wrangler.prod-platform.jsonc")
         }
+        "wrangler.prod-platform-weur.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-platform-weur.jsonc")
+        }
         "wrangler.prod-agents.jsonc" => {
             include_str!("../../../cloudflare/wrangler.prod-agents.jsonc")
         }
@@ -63,6 +88,42 @@ fn committed(file: &str) -> Value {
         }
         "wrangler.prod-deadman.jsonc" => {
             include_str!("../../../cloudflare/wrangler.prod-deadman.jsonc")
+        }
+        "wrangler.dev-api-enam.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-api-enam.jsonc")
+        }
+        "wrangler.dev-api-weur.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-api-weur.jsonc")
+        }
+        "wrangler.dev-api-apac.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-api-apac.jsonc")
+        }
+        "wrangler.dev-api-oc.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-api-oc.jsonc")
+        }
+        "wrangler.dev-api-sam.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-api-sam.jsonc")
+        }
+        "wrangler.dev-api-afr.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-api-afr.jsonc")
+        }
+        "wrangler.prod-api-enam.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-api-enam.jsonc")
+        }
+        "wrangler.prod-api-weur.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-api-weur.jsonc")
+        }
+        "wrangler.prod-api-apac.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-api-apac.jsonc")
+        }
+        "wrangler.prod-api-oc.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-api-oc.jsonc")
+        }
+        "wrangler.prod-api-sam.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-api-sam.jsonc")
+        }
+        "wrangler.prod-api-afr.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-api-afr.jsonc")
         }
         other => panic!("no golden for {other}"),
     };
@@ -88,8 +149,14 @@ fn dev_spec_regenerates_the_committed_dev_configs() {
         files,
         [
             "wrangler.dev-superfan.jsonc",
-            "wrangler.dev-platform-weur.jsonc",
             "wrangler.dev-platform.jsonc",
+            "wrangler.dev-platform-weur.jsonc",
+            "wrangler.dev-api-enam.jsonc",
+            "wrangler.dev-api-weur.jsonc",
+            "wrangler.dev-api-apac.jsonc",
+            "wrangler.dev-api-oc.jsonc",
+            "wrangler.dev-api-sam.jsonc",
+            "wrangler.dev-api-afr.jsonc",
             "wrangler.dev-edge.jsonc",
             "wrangler.dev-agents-managed.jsonc",
             "wrangler.dev-agents.jsonc",
@@ -129,6 +196,13 @@ fn prod_spec_regenerates_the_committed_prod_configs() {
         [
             "yonedarepo-prod-superfan",
             "yonedarepo-prod-platform",
+            "yonedarepo-prod-platform-weur",
+            "yonedarepo-prod-api-enam",
+            "yonedarepo-prod-api-weur",
+            "yonedarepo-prod-api-apac",
+            "yonedarepo-prod-api-oc",
+            "yonedarepo-prod-api-sam",
+            "yonedarepo-prod-api-afr",
             "yonedarepo-prod-agents-managed",
             "yonedarepo-prod-agents",
             "yonedarepo-prod-deadman"
@@ -307,10 +381,13 @@ fn inventory_reads_resources_and_health_origins() {
     );
     assert_eq!(
         inventory::d1(&platform.config),
-        [(
-            "yonedarepo-dev-platform-index".to_string(),
-            Some("cloudflare/migrations".to_string())
-        )]
+        [
+            (
+                "yonedarepo-dev-platform-index".to_string(),
+                Some("cloudflare/migrations".to_string())
+            ),
+            ("yonedarepo-dev-platform-index-weur".to_string(), None)
+        ]
     );
     assert!(
         inventory::containers(&platform.config)
@@ -362,10 +439,24 @@ fn the_managed_worker_has_its_own_d1_and_not_the_platforms() {
         );
         assert_eq!(
             databases("platform"),
-            [(
-                format!("yonedarepo-{env}-platform-index"),
-                Some("cloudflare/migrations".to_string())
-            )]
+            [
+                (
+                    format!("yonedarepo-{env}-platform-index"),
+                    Some("cloudflare/migrations".to_string())
+                ),
+                (format!("yonedarepo-{env}-platform-index-weur"), None)
+            ]
+        );
+        assert_eq!(
+            databases("platform-weur"),
+            [
+                (
+                    format!("yonedarepo-{env}-platform-index-weur"),
+                    Some("cloudflare/migrations".to_string())
+                ),
+                (format!("yonedarepo-{env}-platform-index"), None)
+            ],
+            "only a database's owning Worker applies its migrations"
         );
     }
 }
@@ -742,7 +833,7 @@ fn production_import_app_has_its_own_identity_and_key_binding() {
 /// Prod runs what dev runs. A variable may differ only for the reason given here.
 #[test]
 fn prod_has_every_switch_dev_has() {
-    const OWN: [(&str, &str); 15] = [
+    const OWN: [(&str, &str); 13] = [
         ("EMAIL_FROM", "its own sender"),
         ("ADMIN_NOTIFY_EMAIL", "dev mails nobody"),
         ("ADMIN_ACCOUNTS", "its own operators"),
@@ -754,8 +845,6 @@ fn prod_has_every_switch_dev_has() {
         ("WEB_ANALYTICS_TOKEN", "its own site"),
         ("SEO_INDEXING", "only prod is indexed"),
         ("REGION_HINT_TEST", "a dev test"),
-        ("REGION_SIGNALS", "dev first: prod with its first cell"),
-        ("CELLS", "dev first: prod with its first cell"),
         ("GITHUB_APP_ID", "its own import App"),
         ("GITHUB_APP_SLUG", "its own import App"),
     ];
@@ -794,6 +883,72 @@ fn prod_has_every_switch_dev_has() {
 }
 
 #[test]
+fn dev_and_prod_share_edge_and_regional_backend_topology() {
+    for (text, resource_lock) in [(DEV, DEV_LOCK), (PROD, PROD_LOCK)] {
+        let spec = Spec::parse(text).unwrap();
+        assert_eq!(spec.cells.len(), 1);
+        assert!(spec.cells[0].bound);
+        assert_eq!(spec.cells[0].code, "weur");
+        let configs = spec.configs(&lock(resource_lock)).unwrap();
+        let role = |name: &str| &configs.iter().find(|(w, _)| w.role == name).unwrap().1;
+        let front = role("agents");
+        let primary_binding = front["services"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|service| service["binding"] == "PLATFORM")
+            .unwrap();
+        assert!(
+            primary_binding.get("entrypoint").is_none(),
+            "placed auth HTTP must target the default fetch handler"
+        );
+        assert!(
+            front.get("placement").is_none(),
+            "frontend must run at the edge"
+        );
+        for config in [front, role("platform"), role("platform-weur")] {
+            assert_eq!(config["vars"]["CELLS"], "on");
+            assert_eq!(config["vars"]["AUTOMATIC_LOCALITY"], "on");
+            assert_eq!(config["vars"]["REGION_SIGNALS"], "on");
+        }
+        for (name, region) in [
+            ("api-enam", "aws:us-east-1"),
+            ("platform-weur", "aws:eu-central-1"),
+        ] {
+            assert_eq!(
+                role(name)["placement"],
+                json!({"mode":"targeted", "region":region})
+            );
+        }
+        for config in [front, role("platform"), role("platform-weur")] {
+            assert_eq!(config["vars"]["GLOBAL_AUTH_LIMITS"], "on");
+        }
+        let european_service = format!("{}-platform-weur", spec.prefix);
+        assert!(
+            front["services"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|s| s["binding"] == "CELL_WEUR" && s["service"] == european_service)
+        );
+        assert_eq!(role("platform-weur")["vars"]["CELL_JURISDICTION"], "eu");
+        assert_eq!(
+            role("platform-weur")["vars"]["REGION_HINT_TEST"],
+            role("platform")["vars"]["REGION_HINT_TEST"],
+            "the owner-only dev location diagnostic must reach regional repositories"
+        );
+        for (_, config) in &configs {
+            for (name, _) in inventory::d1(config) {
+                assert!(
+                    name.starts_with(&spec.prefix),
+                    "cross-environment database {name}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn imports_have_their_own_class_with_the_disk_and_checks_stay_on_their_price() {
     let prod = include_str!("../../../infra/envs/prod.json");
     let prod_lock = include_str!("../../../infra/envs/prod.lock.json");
@@ -810,9 +965,25 @@ fn imports_have_their_own_class_with_the_disk_and_checks_stay_on_their_price() {
             class("CheckContainer")["image"]
         );
         let migrations = config["migrations"].as_array().unwrap();
+        let import = migrations.iter().position(|m| m["tag"] == "v8").unwrap();
         assert_eq!(
-            migrations.last().unwrap()["new_sqlite_classes"],
-            json!(["ImportContainer"])
+            migrations[import],
+            json!({"tag": "v8", "new_sqlite_classes": ["ImportContainer"]})
+        );
+        assert_eq!(
+            migrations[import + 1],
+            json!({"tag": "v9", "new_sqlite_classes": ["RepositoryReadCopy"]}),
+            "read copies append to the existing class migration history"
+        );
+        assert_eq!(
+            migrations
+                .iter()
+                .filter(|migration| migration["new_sqlite_classes"]
+                    .as_array()
+                    .is_some_and(|classes| classes.iter().any(|c| c == "ImportContainer")))
+                .count(),
+            1,
+            "the import class must be introduced exactly once"
         );
     }
 }
@@ -834,11 +1005,16 @@ mod cells {
         spec["cells"][0]["bound"] = json!(true);
         Spec::parse(&spec.to_string()).unwrap()
     }
+    fn unbound() -> Spec {
+        let mut spec: Value = serde_json::from_str(DEV).unwrap();
+        spec["cells"][0]["bound"] = json!(false);
+        Spec::parse(&spec.to_string()).unwrap()
+    }
 
     /// The gate of stage R5: a cell adds a Worker, and every Worker that was there is unchanged.
     #[test]
     fn a_cell_changes_no_other_worker() {
-        let (with, without) = (Spec::parse(DEV).unwrap(), without_cells());
+        let (with, without) = (unbound(), without_cells());
         let roles = |spec: &Spec| {
             spec.workers
                 .iter()
@@ -847,10 +1023,29 @@ mod cells {
         };
         let mut expected = roles(&without);
         let at = expected.iter().position(|r| r == "platform").unwrap();
-        expected.insert(at, "platform-weur".into());
+        expected.insert(at + 1, "platform-weur".into());
         assert_eq!(roles(&with), expected);
         for old in &without.workers {
             assert_eq!(worker(&with, &old.role), &old.config, "{}", old.role);
+        }
+    }
+
+    #[test]
+    fn shared_class_provider_deploys_before_regional_consumers() {
+        for spec in [unbound(), bound()] {
+            let pos = |role: &str| spec.workers.iter().position(|w| w.role == role).unwrap();
+            assert!(pos("superfan") < pos("platform"));
+            assert!(
+                pos("platform") < pos("platform-weur"),
+                "primary exports must exist before a regional cross-script class binding"
+            );
+            assert!(pos("platform-weur") < pos("edge"));
+            let reverse: Vec<_> = spec.workers.iter().rev().map(|w| w.role.as_str()).collect();
+            assert!(
+                reverse.iter().position(|r| *r == "platform-weur").unwrap()
+                    < reverse.iter().position(|r| *r == "platform").unwrap(),
+                "rollback consumers before their shared-class provider"
+            );
         }
     }
 
@@ -860,7 +1055,10 @@ mod cells {
         let cell = worker(&spec, "platform-weur");
         assert_eq!(cell["name"], "{prefix}-platform-weur");
         assert_eq!(cell["main"], worker(&spec, "platform")["main"]);
-        assert_eq!(cell["placement"]["region"], "aws:eu-central-1");
+        assert_eq!(
+            cell["placement"],
+            json!({"mode":"targeted", "region":"aws:eu-central-1"})
+        );
         assert!(cell.get("routes").is_none(), "reached through bindings");
         assert_eq!(cell["vars"]["CELL"], "weur");
         assert_eq!(cell["vars"]["CELLS"], "on");

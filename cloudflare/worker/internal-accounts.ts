@@ -1,7 +1,7 @@
 // Accounts that are ours (D1 `platform_accounts.internal`, migration 0013) stay out of every
 // figure. A point holds no account, so the choice is made when it is written: the request's
 // account is noted as its credentials are checked, with no read of its own, and looked up in a
-// list each isolate keeps for five minutes. Budget: docs/load-testing.md. The platform Worker
+// completed list each isolate keeps for five minutes. Budget: docs/load-testing.md. The platform Worker
 // reads the list from D1. The front Worker has no D1, so it asks the platform (RPC, on no HTTP
 // route). A flag therefore reaches every isolate within ten minutes.
 //
@@ -45,7 +45,8 @@ const AGENT_PRINCIPAL = 'agent:';
 
 const noted = new AsyncLocalStorage<Noted>();
 let held: { at: number; accounts: Set<string> } | null = null;
-const reading = new Flights<void>();
+let reading = new Flights<void>();
+let generation = 0;
 
 /** Runs a platform request with a place for `noteAccount` to leave its account. */
 export const withRequestAccount = <T>(run: () => T) => noted.run({ account: null }, run);
@@ -84,16 +85,20 @@ async function read(env: Env): Promise<string[]> {
 
 /** Refreshes the list; a failed read keeps the last one and tries again next time. */
 async function refresh(env: Env, now: number) {
-  if (held && now - held.at < LIST_MS) return;
-  await reading.join('list', () =>
-    read(env)
-      .then((accounts) => {
-        held = { at: now, accounts: new Set(accounts) };
-      })
-      .catch((e) => {
-        log.warn('internal_accounts.unread', { error: e });
-      }),
-  ).work;
+  for (;;) {
+    if (held && now - held.at < LIST_MS) return;
+    const started = generation;
+    await reading.join('list', () =>
+      read(env)
+        .then((accounts) => {
+          if (started === generation) held = { at: now, accounts: new Set(accounts) };
+        })
+        .catch((e) => {
+          log.warn('internal_accounts.unread', { error: e });
+        }),
+    ).work;
+    if (started === generation) return;
+  }
 }
 
 /** The accounts flagged internal, as this isolate holds them; null when it has never read them. */
@@ -113,4 +118,6 @@ export async function isInternal(env: Env, account: string, now = Date.now()) {
 /** An operator changed a flag: this isolate reads the list again next time. */
 export function forgetInternalAccounts() {
   held = null;
+  generation += 1;
+  reading = new Flights<void>();
 }

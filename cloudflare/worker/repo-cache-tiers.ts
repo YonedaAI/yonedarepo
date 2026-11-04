@@ -51,8 +51,13 @@ function after<T>(ms: number, value: T) {
 
 /** The edge copy of `id`, or null on a miss, a failure or a lookup slower than
  * EDGE_WAIT_MS (the edge tier is an optimization: R2 answers instead). */
-async function edgeHit(repo: string, id: string, kind: ObjectKind): Promise<Uint8Array | null> {
-  const { late, stop } = after(EDGE_WAIT_MS, null);
+async function edgeHit(
+  repo: string,
+  id: string,
+  kind: ObjectKind,
+  wait = EDGE_WAIT_MS,
+): Promise<Uint8Array | null> {
+  const { late, stop } = after(wait, null);
   const lookup = caches.default
     .match(edgeKey(repo, id))
     .then(async (hit) =>
@@ -61,6 +66,11 @@ async function edgeHit(repo: string, id: string, kind: ObjectKind): Promise<Uint
     .catch(() => null);
   return Promise.race([lookup, late]).finally(stop);
 }
+
+/** A local-only probe before a regional copy. A slow edge cannot delay it past the
+ * existing hedge budget; a miss proceeds to the other tiers without probing twice. */
+export const edgeFirstCopy = (repo: string, id: string, kind: ObjectKind) =>
+  timed('read.edge', () => edgeHit(repo, id, kind, EDGE_HEDGE_MS));
 
 async function r2Hit(env: Env, key: string, kind: ObjectKind): Promise<Uint8Array | null> {
   const cached = await env.OBJECTS.get(key);
@@ -81,7 +91,12 @@ export async function cachedCopy(
   key: string,
   id: string,
   kind: ObjectKind,
+  edgeChecked = false,
 ) {
+  if (edgeChecked) {
+    const bytes = await timed('read.r2', () => r2Hit(env, key, kind));
+    return bytes ? { bytes, tier: 'r2' as const } : null;
+  }
   const edge = edgeHit(repo, id, kind);
   const hedge = after(EDGE_HEDGE_MS, 'hedge' as const);
   const first = await timed('read.edge', () => Promise.race([edge, hedge.late])).finally(

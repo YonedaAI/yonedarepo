@@ -10,6 +10,8 @@ export type RepoStatus = {
   forks: number;
   /** The paths a path-scoped token may read (null: the whole repository). */
   grant: string[] | null;
+  /** Identity of this version's history, including after an operator re-import reuses version numbers. None before the first transaction-log entry. */
+  history_chain: string | null;
   /** Whether a push opens a Landing, and whether agents run on those. */
   landings: AutoLandings;
   name: string;
@@ -30,6 +32,8 @@ export type RepoStatus = {
   /** Blobs no read serves (quarantined or purged); trees still name them. */
   quarantined: Withheld[];
   refs: RefHead[];
+  /** Optional internal read selection, requested with status and stripped by the adapter. */
+  snapshot?: RepoSnapshot | null;
   version: number;
   viewer: Viewer;
   /** Who may read: members only, or anyone. */
@@ -69,6 +73,15 @@ export type Policy = {
 export type RefHead = {
   commit_id: string;
   name: string;
+  version: number;
+};
+
+/** A current branch selection made in the same transaction as fresh read admission. */
+export type RepoSnapshot = {
+  commit: string;
+  parents: string[];
+  ref: string;
+  tree: string;
   version: number;
 };
 
@@ -241,6 +254,39 @@ export const repoStatusSchema = {
         "name",
         "commit_id",
         "version"
+      ],
+      "type": "object"
+    },
+    "RepoSnapshot": {
+      "description": "A current branch selection made in the same transaction as fresh read admission.",
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "parents": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "tree": {
+          "type": "string"
+        },
+        "version": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "ref",
+        "commit",
+        "tree",
+        "parents"
       ],
       "type": "object"
     },
@@ -437,6 +483,13 @@ export const repoStatusSchema = {
         "null"
       ]
     },
+    "history_chain": {
+      "description": "Identity of this version's history, including after an operator re-import reuses\nversion numbers. None before the first transaction-log entry.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "landings": {
       "$ref": "#/$defs/AutoLandings",
       "description": "Whether a push opens a Landing, and whether agents run on those."
@@ -503,6 +556,17 @@ export const repoStatusSchema = {
       },
       "type": "array"
     },
+    "snapshot": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RepoSnapshot"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional internal read selection, requested with status and stripped by the adapter."
+    },
     "version": {
       "format": "uint64",
       "minimum": 0,
@@ -519,6 +583,7 @@ export const repoStatusSchema = {
   "required": [
     "name",
     "version",
+    "history_chain",
     "owner",
     "object_store",
     "policy",

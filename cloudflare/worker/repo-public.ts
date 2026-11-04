@@ -16,6 +16,9 @@ import { audited } from './repo-audit';
 import { refreshHead } from './repo-head';
 import { ApiError, type Credentials, type Json, type RepoContext } from './repo-ops';
 import { withPaths } from './repo-paths';
+
+export { admitAnonymous } from './repo-path-admission';
+
 import { voidSummary } from './repo-search-directory';
 import { currentScope } from './request-scope';
 import type { Env } from './types';
@@ -40,19 +43,6 @@ export function anonymousRead(req: Request, url: URL): boolean {
   if (req.method === 'POST') return OBJECTS.test(url.pathname);
   if (req.method !== 'GET' && req.method !== 'HEAD') return false;
   return isExplore(url) || (REPO_READ.test(url.pathname) && !url.pathname.endsWith('/mcp'));
-}
-
-/** Refuses an anonymous request for a repository the discovery index does not list as
- * public, before any of the repository's objects (authority, head holder) wakes: private
- * and unknown repositories get the authority's own NOT_FOUND, so neither is told apart.
- * The index only lags towards private (see `setVisibility`; rows are written once the
- * authority accepted a repository), so this can hide a public repository for a moment but
- * never admits a private one; the authority still decides every request it lets through. */
-export async function admitAnonymous(env: Env, repo: string) {
-  const row = await env.INDEX.prepare('SELECT visibility FROM platform_repos WHERE id=?')
-    .bind(repo)
-    .first<{ visibility: string }>();
-  if (row?.visibility !== 'public') throw new ApiError('NOT_FOUND', 'Repository not found');
 }
 
 /** The repository an anonymous API read addresses (`anonymousRead` admits only these and

@@ -1,5 +1,7 @@
 // Browser client for the public platform API (`/api/v1`), authenticated by the
 // workspace session cookie. The UI holds no authority: every decision is the server's.
+
+import { clearEarlyReads, takeEarlyResponse } from '../../lib/earlyReads';
 import { atLatestLanding, noteLanding } from './landedReads';
 
 export class SourceApiError extends Error {
@@ -67,19 +69,26 @@ export type ApiInit = {
 export async function sourceApi<T = any>(path: string, init: ApiInit = {}): Promise<T> {
   const base = init.base ?? '/api/v1';
   const method = init.method ?? (init.body === undefined ? 'GET' : 'POST');
+  if (method !== 'GET') clearEarlyReads();
   const retries = method === 'GET' && !init.once ? RETRY_DELAYS_MS.length : 0;
   const url = method === 'GET' ? atLatestLanding(path) : path;
   for (let attempt = 0; ; attempt++) {
     let response: Response;
+    const early =
+      attempt === 0 && method === 'GET'
+        ? takeEarlyResponse(`${base}${url}`, init.signal)
+        : undefined;
     try {
-      response = await fetch(`${base}${url}`, {
-        method,
-        headers: { 'content-type': 'application/json' },
-        body: init.body === undefined ? undefined : JSON.stringify(init.body),
-        signal: init.signal,
-        credentials: 'same-origin',
-      });
+      response = await (early?.response ??
+        fetch(`${base}${url}`, {
+          method,
+          headers: { 'content-type': 'application/json' },
+          body: init.body === undefined ? undefined : JSON.stringify(init.body),
+          signal: init.signal,
+          credentials: 'same-origin',
+        }));
     } catch (e) {
+      early?.release();
       if (init.signal?.aborted || attempt >= retries) {
         if (init.signal?.aborted) throw e;
         throw new SourceApiError('NETWORK', "Couldn't reach YonedaRepo. Check your connection.", 0);
@@ -87,7 +96,16 @@ export async function sourceApi<T = any>(path: string, init: ApiInit = {}): Prom
       await wait(RETRY_DELAYS_MS[attempt] ?? 0, init.signal);
       continue;
     }
-    const value = await response.json().catch(() => ({}));
+    let value: any;
+    try {
+      value = await response.json().catch((error) => {
+        if (init.signal?.aborted) throw error;
+        return {};
+      });
+      if (init.signal?.aborted) throw init.signal.reason;
+    } finally {
+      early?.release();
+    }
     if (response.ok) {
       noteLanding(path, method, value);
       return value as T;
@@ -95,8 +113,8 @@ export async function sourceApi<T = any>(path: string, init: ApiInit = {}): Prom
     // 507 is the platform's own refusal (a repository at its limit), not a fault.
     const fault = response.status >= 500 && response.status !== 507;
     // Main has not reached a named landing yet: it will.
-    const early = value.error?.code === 'STALE_READ';
-    if ((fault || early) && attempt < retries) {
+    const notLanded = value.error?.code === 'STALE_READ';
+    if ((fault || notLanded) && attempt < retries) {
       await wait(RETRY_DELAYS_MS[attempt] ?? 0, init.signal);
       continue;
     }

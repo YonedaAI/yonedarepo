@@ -17,6 +17,7 @@
 
 import { Container, type StopParams } from '@cloudflare/containers';
 import { deferred } from './background';
+import { forwardRequest } from './forward-request';
 import { log } from './log';
 import type { Env } from './types';
 
@@ -42,7 +43,7 @@ export function forwardToPlatform(req: Request, env: Env): Promise<Response> | R
   if (!env.SELF || !PLATFORM_PATHS.test(url.pathname))
     return new Response('Not reachable from the SSH gateway\n', { status: 403 });
   const target = new URL(`${url.pathname}${url.search}`, 'https://platform.internal');
-  return env.SELF.fetch(new Request(target, req));
+  return forwardRequest(env.SELF, new Request(target, req));
 }
 
 /** The container's start environment for a front door; throws when a secret is missing. */

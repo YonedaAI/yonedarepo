@@ -3,7 +3,7 @@
 // runs table, and the loading, not-an-owner and unavailable states.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type AgentState,
   MANAGED_AGENTS,
@@ -86,8 +86,32 @@ const workspace: WorkspaceState = {
 };
 
 beforeEach(() => answers.byPath.clear());
+afterEach(() => vi.unstubAllEnvs());
 
 describe('the Agents overview', () => {
+  it('uses a first-visit self read only for the personal workspace and rejects another viewer envelope', () => {
+    vi.stubEnv('VITE_EARLY_READS', 'on');
+    answers.byPath.set('/self', { data: workspace });
+    expect(render(AgentsPage, { workspace: 'ada', account: 'ada', orgs: [], navigate })).toContain(
+      '$0.40 used',
+    );
+    answers.byPath.set('/self', { data: { ...workspace, workspace: 'grace' } });
+    const wrong = render(AgentsPage, { workspace: 'ada', account: 'ada', orgs: [], navigate });
+    expect(wrong).not.toContain('$0.40 used');
+    expect(wrong).not.toContain('parser');
+    expect(wrong).toContain('Refresh');
+    expect(wrong).toContain('Could not load');
+    answers.byPath.set('/workspaces/acme', { data: { ...workspace, workspace: 'acme' } });
+    expect(render(AgentsPage, { workspace: 'acme', account: 'ada', orgs: [], navigate })).toContain(
+      '$0.40 used',
+    );
+    vi.stubEnv('VITE_EARLY_READS', 'off');
+    answers.byPath.set('/workspaces/ada', { data: workspace });
+    expect(render(AgentsPage, { workspace: 'ada', account: 'ada', orgs: [], navigate })).toContain(
+      '$0.40 used',
+    );
+  });
+
   it('shows the credit card and one card per managed agent: Add agent, or Active with a menu', () => {
     answers.byPath.set('/workspaces/ada', { data: workspace });
     const html = render(AgentsPage, { workspace: 'ada', account: 'ada', orgs: [], navigate });
@@ -167,8 +191,8 @@ describe("an agent's pages", () => {
     expect(html).not.toContain('Reset to maintained defaults');
     for (const [label, value] of [
       ['Name', 'Slop review'],
-      ['Harness', 'opencode'],
-      ['Model', 'MiMo V2.6 Flash'],
+      ['Harness', 'Codex'],
+      ['Model', 'GPT-5.6 Luna'],
       ['Reasoning effort', 'Low'],
       ['Time limit', '15 minutes'],
       ['Result format', 'Low, medium or high'],
@@ -284,6 +308,8 @@ describe("an agent's pages", () => {
     expect(html).toContain('2026-10-30 12:19 UTC');
     expect(html).toContain(`href="/agents/runs/${repoA}/${run.id}"`);
     expect(html).toContain('parser #2');
+    expect(html).toContain('aria-label="Agent usage"');
+    expect(html).toContain('Latest 1 run');
     expect(html).toContain('Codex · GPT-5.6 Luna');
     expect(html).toContain('On every push, changes ready for review');
     expect(html).toContain('Created by ada,');

@@ -7,6 +7,9 @@
 import react from '@vitejs/plugin-react';
 import { createServer, type Plugin } from 'vite';
 import type { SeoManifest } from './src/features/site/seo';
+import { overviewEntryTemplate, publicEntryTemplates } from './vite-public-entry';
+import { plainNamedOverview } from './src/lib/overviewEntryRoute';
+import { reservedHandlesSchema } from '../shared/contracts/reserved-handles';
 
 type Prerender = {
   seoManifest(): SeoManifest;
@@ -25,7 +28,7 @@ const trimmed = (markup: string) => markup.replaceAll(' xmlns="http://www.w3.org
 /** The asset a site page's copy is served from (front Worker: `/_site/<path>`). */
 export const prerenderedFile = (path: string) => `_site${path === '/' ? '/home' : path}.html`;
 
-export function prerenderSite(): Plugin {
+export function prerenderSite(overviewMarkdown = false): Plugin {
   let root = '';
   return {
     name: 'yoneda-prerender-site',
@@ -38,6 +41,20 @@ export function prerenderSite(): Plugin {
       const index = bundle['index.html'];
       const template = index?.type === 'asset' ? String(index.source) : '';
       if (!template.includes(ROOT)) this.error('index.html has no empty #root to prerender into');
+      const renderer = Object.values(bundle).find((item) =>
+        item.type === 'chunk' && item.facadeModuleId?.endsWith('/src/features/source-platform/GfmDocument.tsx'));
+      const startup = overviewMarkdown && renderer
+        ? overviewEntryTemplate(template, renderer.fileName, reservedHandlesSchema.enum, plainNamedOverview.toString())
+        : template;
+      const client = Object.values(bundle).find((item) =>
+        item.type === 'chunk' && item.facadeModuleId?.endsWith('/src/features/site/SiteRoot.tsx'));
+      const metadata = client && 'viteMetadata' in client
+        ? client.viteMetadata as { importedCss?: Set<string> }
+        : undefined;
+      const templates = client
+        ? publicEntryTemplates(startup, client.fileName, [...(metadata?.importedCss ?? [])])
+        : { app: startup, site: startup };
+      if (index?.type === 'asset') index.source = templates.app;
       const server = await createServer({
         configFile: false,
         root,
@@ -55,7 +72,7 @@ export function prerenderSite(): Plugin {
           this.emitFile({
             type: 'asset',
             fileName: prerenderedFile(route.path),
-            source: template.replace(ROOT, `<div id="root">${markup}</div>${guard}`),
+            source: templates.site.replace(ROOT, `<div id="root">${markup}</div>${guard}`),
           });
         }
         this.emitFile({

@@ -6,9 +6,9 @@
 // (yonedarepo-prod-*). Browsers reach it through the dev front Worker's
 // /api/v1 proxy (PLATFORM service binding); workers.dev stays on for direct API benches.
 // OWNER_TOKEN  dev-only owner credential (~/.config/yonedarepo/staging.env, name kept)
-// Run next to the data: a commit makes about ten round trips to its repository's
-// Durable Object and R2 (ENAM), so each costs a hop to the client's colo
-// otherwise. New repository objects are created near the placed Worker.
+// The global entry dispatches default fetch to the API region nearest the caller.
+// Fetch-only regional aliases share these original authorities and storage bindings.
+// Repository data and queue ownership stay with the platform authorities.
 // The dev superfan (wrangler.dev-superfan.jsonc) receives this Worker's tail
 // events: outcomes, logs, exceptions and CPU/wall time, with no API token.
 // Batched landing, with commits beginning from and main reads served by the published
@@ -60,6 +60,7 @@
 // REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.
 // SPAN_SAMPLE=<N> keeps the Server-Timing phases of 1 request in N, and of every request over 5 seconds, as a request.spans log line and one SITE_EVENTS point, after the answer (worker/repo-span-sample.ts). off keeps none.
 // SERVICE_LEVELS=on writes one SITE_EVENTS point per landing, clone, push and repository create and per 10 API reads, after the answer, for the admin page (shared/service-levels.ts). Set it on this Worker and Superfan together. Budget: docs/observability-plan.md.
+// REPO_ANALYTICS=on records admitted repository usage in the existing SITE_EVENTS point and enables Insights; TRAFFIC_EVENTS and TRAFFIC_REPORT must also be on. No historical usage is backfilled.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -147,6 +148,11 @@
       "database_id": "ec419fb5-308e-4c52-8252-6d321302d771",
       "database_name": "yonedarepo-dev-platform-index",
       "migrations_dir": "migrations"
+    },
+    {
+      "binding": "INDEX_WEUR",
+      "database_id": "2c8c288e-8975-4b8f-955a-7e7e916fee7d",
+      "database_name": "yonedarepo-dev-platform-index-weur"
     }
   ],
   "durable_objects": {
@@ -182,6 +188,10 @@
       {
         "class_name": "PackBuilder",
         "name": "PACK_BUILDERS"
+      },
+      {
+        "class_name": "RepositoryReadCopy",
+        "name": "READ_COPIES"
       }
     ]
   },
@@ -240,6 +250,12 @@
         "ImportContainer"
       ],
       "tag": "v8"
+    },
+    {
+      "new_sqlite_classes": [
+        "RepositoryReadCopy"
+      ],
+      "tag": "v9"
     }
   ],
   "name": "yonedarepo-dev-platform",
@@ -256,10 +272,6 @@
       "stream": "4ff4b2c0c4ec4234934fa94498ab73c5"
     }
   ],
-  "placement": {
-    "mode": "targeted",
-    "region": "aws:us-east-1"
-  },
   "preview_urls": false,
   "queues": {
     "consumers": [
@@ -344,6 +356,38 @@
     {
       "binding": "MANAGED",
       "service": "yonedarepo-dev-agents-managed"
+    },
+    {
+      "binding": "CELL_WEUR",
+      "service": "yonedarepo-dev-platform-weur"
+    },
+    {
+      "binding": "CELL_ENAM",
+      "service": "yonedarepo-dev-api-enam"
+    },
+    {
+      "binding": "API_ENAM",
+      "service": "yonedarepo-dev-api-enam"
+    },
+    {
+      "binding": "API_WEUR",
+      "service": "yonedarepo-dev-api-weur"
+    },
+    {
+      "binding": "API_APAC",
+      "service": "yonedarepo-dev-api-apac"
+    },
+    {
+      "binding": "API_OC",
+      "service": "yonedarepo-dev-api-oc"
+    },
+    {
+      "binding": "API_SAM",
+      "service": "yonedarepo-dev-api-sam"
+    },
+    {
+      "binding": "API_AFR",
+      "service": "yonedarepo-dev-api-afr"
     }
   ],
   "tail_consumers": [
@@ -363,12 +407,17 @@
     "ADMIN_NOTIFY_EMAIL": "",
     "AGENT_SIGNUP": "on",
     "AUDIT_LOG": "off",
+    "AUTOMATIC_LOCALITY": "on",
     "BLOB_WRITE_THROUGH": "off",
+    "CELLS": "on",
     "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
+    "EDGE_FIRST_READS": "on",
     "EMAIL_CONTACT": "hello@yonedarepo.com",
     "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
     "GITHUB_APP_ID": "5571444",
     "GITHUB_APP_SLUG": "yonedarepo-dev-import",
+    "GLOBAL_AUTH_LIMITS": "on",
+    "JOINED_REPO_PATH": "on",
     "LANDING_INSTRUMENTS": "on",
     "LAND_MODE": "batch",
     "LAND_WHEN_CLEARED": "on",
@@ -376,16 +425,25 @@
     "LFS_S3_BUCKET": "yonedarepo-dev-platform-objects",
     "LFS_S3_ENDPOINT": "https://f011d0ee02b23cad26b4b38151b204ad.r2.cloudflarestorage.com",
     "NEWSLETTER": "on",
+    "OVERVIEW_ADMITTED_SNAPSHOT": "on",
+    "OVERVIEW_BOOTSTRAP": "on",
+    "OVERVIEW_DEFER_ACTIVITY": "on",
     "PACK_CACHE": "on",
     "PUSH_BUNDLES": "on",
+    "RECENT_VERSIONS": "on",
+    "REGIONAL_API": "on",
     "REGION_HINT_TEST": "on",
     "REGION_SIGNALS": "on",
+    "REPO_ANALYTICS": "on",
     "REPO_ERASE": "on",
+    "REPO_IMAGE_REVALIDATION": "on",
     "REPO_SIZE_GUARD": "on",
     "REPO_STORAGE_GUARD": "on",
     "REPO_UNDO_DAYS": "30",
     "REQUEST_IDS": "off",
+    "SEARCH_CODE_MEMO": "on",
     "SERVICE_LEVELS": "on",
+    "SHARED_READ_TREES": "on",
     "SITE_EVENTS_DATASET": "yonedarepo_dev_site_events",
     "SPAN_SAMPLE": "off",
     "SSH_FRONT_DOOR": "tunnel",

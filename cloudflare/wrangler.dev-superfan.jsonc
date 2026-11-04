@@ -30,6 +30,9 @@
     }
   ],
   "compatibility_date": "2026-10-07",
+  "compatibility_flags": [
+    "global_fetch_strictly_public"
+  ],
   "durable_objects": {
     "bindings": [
       {
@@ -87,6 +90,7 @@
     "SERVICE_LEVELS": "on",
     "SUPERFAN_MODEL": "mimo-v2.6-flash",
     "TELEMETRY_SOURCE": "cloudflare",
+    "WATCH_BACKENDS": "platform-weur,api-enam,api-weur,api-apac,api-oc,api-sam,api-afr",
     "WATCH_FRONT_URL": "https://dev.yonedarepo.com",
     "WATCH_SCRIPT": "yonedarepo-dev-platform",
     "WATCH_URL": "https://api.dev.yonedarepo.com",

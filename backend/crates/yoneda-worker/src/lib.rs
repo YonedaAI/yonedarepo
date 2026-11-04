@@ -13,11 +13,14 @@
 //! adapter owns all network I/O (object tiers, Artifacts, queues) and feeds bytes in.
 use worker::*;
 mod workspace;
+mod workspace_notices;
 pub use workspace::WorkspaceAuthority;
 mod commit_shard;
 mod compute;
 mod git_http;
+mod read_copy;
 mod source_repository;
+pub use read_copy::RepositoryReadCopy;
 mod stack;
 mod telemetry;
 pub use commit_shard::CommitShard;

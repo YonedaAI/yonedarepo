@@ -157,7 +157,9 @@ pub fn land<S: SqlStore>(db: &S, c: &Value, principal: &str, settings: &Settings
     let current = rows::projected_ref(db, &refname)?;
     // Already landed (directly, or through a platform merge): a retried land is a no-op.
     if current == Some(commit.id) || landed_version(db, &commit.id, &refname)?.is_some() {
-        return Ok(json!({ "landed": true, "already": true, "ref": refname, "commit": commit.id }));
+        return Ok(
+            json!({ "landed": true, "already": true, "ref": refname, "commit": commit.id, "version": rows::current_version(db)? }),
+        );
     }
     if super::capacity::landing_refused(db, c, &refname, &commit.id)? {
         return Err(super::capacity::refusal());

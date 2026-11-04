@@ -72,7 +72,7 @@ fn run<S: SqlStore>(
         StoreOp::Repo(op) => op,
     };
     match op {
-        R::Status => serde_json::to_value(super::status::status(db, settings, actor)?)
+        R::Status => serde_json::to_value(super::status::status(db, c, settings, actor)?)
             .map_err(|e| yoneda_core::Error::new("ENCODING", e.to_string())),
         R::Storage => capacity::repo_usage(db, settings),
         R::SizeAdd => capacity::add_pack(db, settings, c).map(|()| json!({})),
@@ -82,6 +82,7 @@ fn run<S: SqlStore>(
         R::Txlog => reads::txlog(db, c),
         R::ChangeRecords => change_records::records(db, c),
         R::Activity => activity::activity(db, c),
+        R::Contributions => super::contributions::contributions(db, c, actor),
         R::Insights => super::insights::insights(db, c, actor),
         R::Commit => reads::commit(db, c, settings),
         R::MergeBase => reads::merge_base(db, c),

@@ -2,7 +2,10 @@
 # A jump fails `cargo xtask health size`; a rise on purpose is a reviewed edit of this file.
 # js and dist rose on 2026-11-01 for CodeMirror and its grammars, then the Markdown parser: lazy
 # chunks, none on a first page.
+# CSS rose on 2026-11-03 for organization/member search, contribution details and image
+# placeholders: 154,092 bytes measured, 4,719 above origin/dev (+802 bytes gzip).
+# The reviewed ceiling retains headroom without removing requested interface styles.
 wasm = 6120000
 js = 2440000
-css = 150000
+css = 160000
 dist = 5100000

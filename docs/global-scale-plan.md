@@ -1,5 +1,10 @@
 # Scale and global plan
 
+Owner update (2026-11-02): locality follows the actual agent or human request,
+including automatic read copies for existing repositories. The fixed home-region
+and manual region-picker proposals below are historical. The current bounded,
+off-by-default implementation and its limits are in [Automatic locality](automatic-locality.md).
+
 Status: regions are the priority work again, on the owner's word of 2026-11-01; the freeze of that morning no longer applies. Built: item 1, erase, item 5 (`ACCOUNT_SEARCH`, on in dev, and in prod from the next ship) and archive stage A (four switches, off). Regions: R1's sampling and a same-region test, then [cells as built](#cells-as-built). Written 2026-10-30 at dev `169fb5b0`.
 
 ## Context

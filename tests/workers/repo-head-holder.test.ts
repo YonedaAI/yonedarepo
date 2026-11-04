@@ -85,3 +85,41 @@ it('reloads again after a load that read the authority before the landing', asyn
   await holder.idle();
   expect((await holder.head(id, 0)).version).toBe(version);
 });
+
+it('one durable holder reads a cold tree once across independent caller scopes', async () => {
+  const { id } = await repository('head-cold-durable-tree');
+  const { fetchHead } = await import('../../cloudflare/worker/repo-head-holder');
+  const { edgeDelete } = await import('../../cloudflare/worker/repo-cache-tiers');
+  const { inScope } = await import('../../cloudflare/worker/request-scope');
+  const head = await fetchHead(scoped, id);
+  const root = head.head.tree as string;
+  await edgeDelete(id, root);
+  let reads = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const objects = scoped.OBJECTS;
+  const env = { ...scoped, OBJECTS: new Proxy(objects, {
+    get: (bucket, key) => key === 'get' ? async (...args: unknown[]) => {
+      if (args[0] === `platform/v1/${id}/objects/${root}`) {
+        reads++;
+        await gate;
+      }
+      return Reflect.apply(bucket.get, bucket, args);
+    } : typeof Reflect.get(bucket, key) === 'function' ? Reflect.get(bucket, key).bind(bucket) : Reflect.get(bucket, key),
+  }) } as Env;
+  const retained: Promise<unknown>[] = [];
+  const holder = new HeadHolder(env, { waitUntil: (work: Promise<unknown>) => { retained.push(work); } });
+  const work = Array.from({ length: 25 }, () => inScope({}, () => holder.trees(id, root, ['a.txt'])));
+  try {
+    await vi.waitFor(() => expect(reads).toBeGreaterThan(0));
+    // Let every independent call reach the held object read, not merely its head fetch.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(reads).toBe(1);
+  } finally {
+    release();
+    const answers = await Promise.all(work);
+    for (const answer of answers) expect(answer[root].map((entry) => entry.name)).toEqual(['a.txt']);
+    await holder.idle();
+    await Promise.all(retained);
+  }
+});

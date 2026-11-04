@@ -6,6 +6,7 @@ import { HARNESS_LABELS, modelRate } from '../../../../shared/managed-agents';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { useSource } from '../source-platform/useSource';
 import { AgentMenu } from './AgentMenu';
+import { AgentUsage } from './AgentUsage';
 import { useAgentActions } from './agentActions';
 import { AgentIcon, HistoryStrip, loadState, StatusChip } from './agentParts';
 import {
@@ -117,6 +118,9 @@ export function AgentDetail({
         />
       </div>
       {actions.notices}
+      {!runs.error && (
+        <AgentUsage runs={runs.data?.runs ?? []} loading={runs.loading && !runs.data} />
+      )}
       <div className="agent-detail-grid">
         <section aria-labelledby="runs-heading">
           <h2 id="runs-heading">Runs</h2>

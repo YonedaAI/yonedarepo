@@ -10,6 +10,7 @@ import {
   requestAccount,
   withRequestAccount,
 } from '../../cloudflare/worker/internal-accounts';
+import { inScope } from '../../cloudflare/worker/request-scope';
 import type { Credentials } from '../../cloudflare/worker/repo-ops';
 import type { Env } from '../../cloudflare/worker/types';
 
@@ -29,13 +30,13 @@ beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
-it('reads the list once per isolate in five minutes, however many ask', async () => {
+it('coalesces list reads within a request and reuses the completed list for five minutes', async () => {
   const { env, all } = d1(['team']);
-  const asked = await Promise.all([
+  const asked = await inScope({ req: new Request('https://yoneda/api/v1/admin/traffic') }, () => Promise.all([
     isInternal(env, 'team', NOW),
     isInternal(env, 'stranger', NOW),
     isInternal(env, 'team', NOW + 4 * MINUTE),
-  ]);
+  ]));
   expect(asked).toEqual([true, false, true]);
   expect(all).toHaveBeenCalledTimes(1);
   await isInternal(env, 'team', NOW + 5 * MINUTE);
@@ -64,6 +65,26 @@ it('asks the platform where there is no D1, as on the front Worker', async () =>
   expect(await isInternal(env, 'team', NOW)).toBe(true);
   expect(await isInternal(env, 'stranger', NOW)).toBe(false);
   expect(list).toHaveBeenCalledTimes(1);
+});
+
+it('a flag change starts a fresh read and an older read cannot replace its result', async () => {
+  let release!: (value: { results: { account: string }[] }) => void;
+  const old = new Promise<{ results: { account: string }[] }>(resolve => { release = resolve; });
+  const all = vi.fn().mockImplementationOnce(() => old).mockResolvedValue({ results: [{ account: 'team' }] });
+  const env = { INDEX: { prepare: () => ({ bind: () => ({ all }) }) } } as unknown as Env;
+  const before = internalAccounts(env, NOW);
+  forgetInternalAccounts();
+  const after = internalAccounts(env, NOW + 1);
+  try {
+    expect(all).toHaveBeenCalledTimes(2);
+    expect(await after).toEqual(['team']);
+    release({ results: [] });
+    await before;
+    expect(await internalAccounts(env, NOW + 2)).toEqual(['team']);
+  } finally {
+    release({ results: [] });
+    await Promise.allSettled([before, after]);
+  }
 });
 
 it('notes the account credentials name, and nothing for those that name none', () => {

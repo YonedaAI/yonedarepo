@@ -136,13 +136,13 @@ export function CloneButton({
   );
 }
 
-type Detail = {
+export type Detail = {
   commit: string;
   message: string;
   principal: string;
   author_name?: string | null;
   authored_at?: number | null;
-  landings: { refname: string; landed_at: number }[];
+  landings: { landed_at: number }[];
   checks: { name: string; status: string }[];
   gates?: { missing_checks: string[]; failing_checks: string[] };
 };
@@ -177,20 +177,25 @@ export function LatestCommit({
   commit,
   now = Date.now(),
   commitLink,
+  preloaded,
 }: {
   repo: string;
-  commit: string;
+  commit: string | null;
   now?: number;
   commitLink: (commit: string, children: ReactNode) => ReactNode;
+  /** Fresh detail already included in this page's authorized Overview response. */
+  preloaded?: Detail;
 }) {
   const people = usePeople();
-  const detail = useSource<Detail>(`/repos/${repo}/commits/${commit}`);
-  if (detail.error) return <Failure error={detail.error} onRetry={detail.reload} />;
-  const d = detail.data;
+  const detail = useSource<Detail>(
+    !commit || preloaded ? null : `/repos/${repo}/commits/${commit}`,
+  );
+  if (commit && detail.error) return <Failure error={detail.error} onRetry={detail.reload} />;
+  const d = commit ? (preloaded ?? detail.data) : undefined;
   const written = d?.authored_at ?? d?.landings[0]?.landed_at;
   return (
     <div className="latest-commit" aria-busy={!d || undefined}>
-      {d ? (
+      {d && commit ? (
         <>
           <strong>{d.author_name ?? people.principal(d.principal)}</strong>
           <span className="latest-message">{commitLink(commit, d.message.split('\n')[0])}</span>
@@ -200,7 +205,7 @@ export function LatestCommit({
         <span className="source-meta">Loading the latest commit…</span>
       )}
       <span className="latest-meta">
-        {commitLink(commit, <code>{shortSha(commit)}</code>)}
+        {commit && commitLink(commit, <code>{shortSha(commit)}</code>)}
         {written && <time dateTime={new Date(written).toISOString()}>{ago(written, now)}</time>}
       </span>
     </div>

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import { clearEarlyReads } from '../../lib/earlyReads';
 import { isEmailLink } from '../account-settings/emailLinkRoute';
+import type { NavigationOverview } from '../source-platform/overviewBootstrap';
 import {
   formatSourceRoute,
   parseSourceRoute,
@@ -11,7 +13,10 @@ const current = (): SourceRoute =>
     ? { view: 'home' }
     : parseSourceRoute(window.location.pathname, window.location.search, window.location.hash);
 
-export type Navigate = (next: SourceRoute, options?: { replace?: boolean }) => void;
+export type Navigate = (
+  next: SourceRoute,
+  options?: { replace?: boolean; overview?: NavigationOverview },
+) => void;
 
 /**
  * The shell's address: parsed from the URL, pushed on navigation and followed on back and
@@ -21,7 +26,10 @@ export type Navigate = (next: SourceRoute, options?: { replace?: boolean }) => v
 export function useRoute(): [SourceRoute, Navigate] {
   const [route, setRoute] = useState<SourceRoute>(current);
   useEffect(() => {
-    const sync = () => setRoute(current());
+    const sync = () => {
+      clearEarlyReads();
+      setRoute(current());
+    };
     window.addEventListener('popstate', sync);
     const parsed = current();
     // Home keeps its query: the workspace's `?repo=&run=` link is read from it.
@@ -37,6 +45,7 @@ export function useRoute(): [SourceRoute, Navigate] {
     return () => window.removeEventListener('popstate', sync);
   }, []);
   const navigate = useCallback<Navigate>((next, options) => {
+    clearEarlyReads();
     const url = formatSourceRoute(next);
     if (options?.replace) window.history.replaceState(null, '', url);
     else {

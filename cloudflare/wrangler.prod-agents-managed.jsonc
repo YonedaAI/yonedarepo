@@ -168,6 +168,7 @@
     "ADMIN_BILLING": "on",
     "AI_GATEWAY_PROVIDERS": "claude=anthropic,codex=openai,zai=custom-zai,mimo=custom-mimo",
     "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/f011d0ee02b23cad26b4b38151b204ad/yonedarepo-prod-managed-agents",
+    "FAST_AGENTS_LIST": "on",
     "PROMO_CREDIT_USD": "100",
     "PUBLIC_URL": "https://managed.yonedarepo.com",
     "REFUND_DAILY_USD": "1000",

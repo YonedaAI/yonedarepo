@@ -20,6 +20,7 @@ pub fn applied_migrations() -> Vec<AppliedMigration> {
         ("repo_store", repo.copied().collect::<Vec<_>>()),
         ("commit_store", crate::commit_store::MIGRATIONS.to_vec()),
         ("accounts", crate::accounts::MIGRATIONS.to_vec()),
+        ("read_copy", crate::read_copy::MIGRATIONS.to_vec()),
     ];
     let mut applied = Vec::new();
     for (store, migrations) in stores {
@@ -47,7 +48,7 @@ mod tests {
         };
         assert_eq!(last("repo_store"), Some(APPLY_THROUGH));
         assert_eq!(last("commit_store"), Some(3));
-        assert_eq!(last("accounts"), Some(13));
+        assert_eq!(last("accounts"), Some(16));
     }
 
     #[test]

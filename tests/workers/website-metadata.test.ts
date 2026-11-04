@@ -183,3 +183,74 @@ it('preserves a non-HTML conditional response while discarding validators only f
   expect(response.status).toBe(304);
   expect(response.headers.get('etag')).toBe('image-etag');
 });
+
+it('serves a generic signed-in app head without waiting for optional repository metadata', async () => {
+  let release!: (response: Response) => void;
+  const held = new Promise<Response>((resolve) => { release = resolve; });
+  let lookups = 0;
+  const env = { ...bindings(), SEO_INDEXING: 'on', FAST_APP_HEAD: 'on', PLATFORM: {
+    fetch: () => { lookups++; return held; },
+  } } as unknown as Env;
+  const request = new Request('https://preview.example/owner/secret-project', {
+    headers: { cookie: 'yoneda_account=only-a-hint' },
+  });
+  const page = websiteAssets(request, env);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([page, new Promise<string>((resolve) => {
+      timer = setTimeout(() => resolve('waiting for optional metadata'), 500);
+    })]);
+    expect(result).toBeInstanceOf(Response);
+    const response = result as Response;
+    const html = await response.text();
+    expect(await headAttributes(html)).toMatchObject({ robots: 'noindex' });
+    expect(html).not.toContain('secret-project');
+    expect(lookups).toBe(0);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+  } finally {
+    clearTimeout(timer);
+    release(new Response(null, { status: 404 }));
+    await page;
+  }
+});
+
+it('keeps public repository metadata for anonymous requests and when the switch is off', async () => {
+  for (const [flag, cookie] of [['on', ''], ['off', 'yoneda_account=hint'], ['on', 'other_yoneda_account=hint'], ['on', 'yoneda_account=']]) {
+    let lookups = 0;
+    const env = { ...bindings(), SEO_INDEXING: 'on', FAST_APP_HEAD: flag, PLATFORM: {
+      fetch: async () => { lookups++; return Response.json({ handle: 'owner', name: 'public-project', path: '/owner/public-project' }); },
+    } } as unknown as Env;
+    const response = await websiteAssets(new Request('https://preview.example/owner/public-project', { headers: { cookie } }), env);
+    const head = await headAttributes(await response.text());
+    expect(lookups).toBe(1);
+    expect(head.canonical).toBe('https://preview.example/owner/public-project');
+    expect(head.robots).toBeUndefined();
+  }
+});
+
+it('an unfinished manifest read cannot hold a later page request in the isolate', async () => {
+  let release!: (response: Response) => void;
+  const held = new Promise<Response>((resolve) => { release = resolve; });
+  let lookups = 0;
+  const env = { ...bindings(), ASSETS: { fetch: (req: Request) => {
+    if (new URL(req.url).pathname === '/_site/routes.json') {
+      lookups++;
+      return lookups === 1 ? held : Promise.resolve(Response.json({ routes: [], aliases: {} }));
+    }
+    return Promise.resolve(new Response(template, { headers: { 'content-type': 'text/html' } }));
+  } } } as unknown as Env;
+  const first = websiteAssets(new Request('https://preview.example/repositories'), env);
+  const second = websiteAssets(new Request('https://preview.example/settings'), env);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([second, new Promise<string>((resolve) => {
+      timer = setTimeout(() => resolve('held by earlier page request'), 500);
+    })]);
+    expect(result).toBeInstanceOf(Response);
+    expect(lookups).toBe(2);
+  } finally {
+    clearTimeout(timer);
+    release(Response.json({ routes: [], aliases: {} }));
+    await Promise.all([first, second]);
+  }
+});

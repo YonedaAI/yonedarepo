@@ -409,3 +409,33 @@ describe('copy', () => {
     }
   });
 });
+
+describe('SSH gateway lifecycle alerts', () => {
+  it('identifies gateway checks and alarms without claiming Git transfers failed', () => {
+    const finding = row('ssh_gateway:error_rate', { error_rate: 0.0213 }, {
+      signals: { signals: [{ name: 'error_rate', value: 0.0213, anomalous: true }], exception_samples: [{ name: 'Error', message: 'Connection closed: this Durable Object instance is no longer active. Reconnect or retry the request.' }] },
+    });
+    const mail = renderNotice({ ...DEV, env: 'prod' }, [finding]);
+    expect(mail.subject).toBe('[prod] 2.1% of SSH gateway checks failing');
+    expect(mail.text).toContain('Gateway checks include keep-alive calls and housekeeping alarms.');
+    expect(mail.text).toContain('Check alarm and container logs, then try a fresh SSH clone.');
+    expect(mail.text).not.toContain('of SSH calls failing');
+    // Reporting retains the original failure rate and finding identity.
+    expect(finding.dedup_key).toBe('ssh_gateway:error_rate');
+    expect((finding.signals as { signals: { value: number }[] }).signals[0].value).toBe(0.0213);
+  });
+});
+
+describe('latency alert actions', () => {
+  it('retains production latency evidence and asks for measured routes without guessing a dev cause', () => {
+    const finding = row('front_worker:p95_wall_ms', { p95_wall_ms: 2189 }, {
+      signals: { signals: [{ name: 'p95_wall_ms', value: 2189, baseline: 117, anomalous: true }] },
+    });
+    const mail = renderNotice({ ...DEV, env: 'prod' }, [finding]);
+    expect(mail.subject).toBe('[prod] Website execution time rose');
+    expect(mail.text).toContain('Estimated 95th percentile: 2.2 s; usual estimate 117 ms.');
+    expect(mail.text).toContain('Includes background work.');
+    expect(mail.text).toContain("First: Inspect request timings and upstream calls in this Worker's logs.");
+    expect(mail.text).not.toContain('A burst on dev explains most.');
+  });
+});

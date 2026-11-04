@@ -16,6 +16,7 @@ import { auditPage, auditVerify } from './platform-audit-read';
 import { orgHold } from './platform-holds';
 import { holdSwitch } from './platform-legal-hold';
 import { forgetOrgAccess, type OrgAccess, teamKey } from './platform-org-access';
+import { memberCandidates, ownerMembers, resolveOrgMember } from './platform-org-member-lookup';
 import { deletedOf } from './repo-deleted';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { requirePatScope } from './repo-pat';
@@ -235,7 +236,11 @@ async function orgRoute(
   if (!name) throw new ApiError('NOT_FOUND', 'Unknown API path');
   const org = orgArg(name);
   // The audit log and what can be restored are reads that take repo:admin.
-  const change = !get || resource === 'audit' || (resource === 'repos' && item === 'deleted');
+  const change =
+    !get ||
+    resource === 'audit' ||
+    resource === 'member-candidates' ||
+    (resource === 'repos' && item === 'deleted');
   const { account: actor } = orgCaller(auth, change, org);
   const run = (command: Json) => orgCommand(env, org, { ...command, actor });
   if (resource === 'audit' && get && !sub) return auditRoute(env, org, item, query, run);
@@ -249,15 +254,22 @@ async function orgRoute(
   if (resource === 'hold' && !item) return orgHold(env, auth, org, method, run);
   if (resource === 'repos' && item && sub === 'hold' && !target)
     return orgHold(env, auth, org, method, run, item);
+  if (resource === 'member-candidates' && !item && get)
+    return memberCandidates(env, org, actor, query.get('q') ?? '');
   if (resource === 'members' && !item && post) {
     const { account, role } = await body();
-    const invited = accountArg(account);
-    // Who may manage members is asked first, so the account check reveals nothing to others.
-    await run({ op: 'org_show' });
-    const found = await workspace(env, invited, { op: 'account_exists' });
-    if (found.exists !== true) throw new ApiError('NOT_FOUND', `No account named ${invited}`);
-    const put = await run({ op: 'org_member_put', account: invited, role });
-    await hint(env, invited, org, true);
+    await ownerMembers(env, org, actor);
+    const found = await resolveOrgMember(env, account);
+    if (!found) throw new ApiError('NOT_FOUND', 'No account found');
+    const invited = found.account;
+    const { incarnation } = await workspace(env, invited, { op: 'notification_identity' });
+    const put = await run({
+      op: 'org_member_put',
+      account: invited,
+      role,
+      recipient_incarnation: incarnation,
+    });
+    await workspace(env, invited, { op: 'notification_hint', org, incarnation });
     forgetOrgAccess(org, invited);
     return put;
   }

@@ -163,3 +163,20 @@ it('ends quietly for a repository that has gone', async () => {
   expect(logged.mock.calls.flat().join(' ')).not.toContain('compaction.failed');
   logged.mockRestore();
 });
+
+it('hydrates both recent-page dependencies when a held snapshot moves behind another archive segment', async () => {
+  const { owner, repo } = await grown('recent_archived_snapshot', 2_200);
+  const recent = { ...scoped, RECENT_VERSIONS: 'on' } as Env;
+  const first = await api(`${repo}/versions?through=1050`, owner, {}, recent);
+  expect(first.status).toBe(200);
+  expect(first.body.entries[0].version).toBe(1050);
+  await api(`${repo}/retention`, owner, { method: 'PUT', body: { keep_versions: 64 } });
+  const compacted = await api(`${repo}/compact`, owner, { body: {} });
+  expect(compacted.body.floor).toBe(2048);
+  const cursor = new URLSearchParams({ through: '1050', before: '1001', history_chain: first.body.history_chain });
+  const older = await api(`${repo}/versions?${cursor}`, owner, {}, recent);
+  expect(older.status, JSON.stringify(older.body)).toBe(200);
+  expect(older.body.entries[0].version).toBe(1000);
+  expect(older.body.entries[49].version).toBe(951);
+  expect(older.body.history_chain).toBe(first.body.history_chain);
+});

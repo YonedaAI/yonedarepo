@@ -7,7 +7,7 @@ import { expect, it, vi } from 'vitest';
 import { withWaitUntil } from '../../cloudflare/worker/background';
 import { projectObjects } from '../../cloudflare/worker/repo-projection';
 import { shardCall, shardOf } from '../../cloudflare/worker/repo-shards';
-import { api, author, bindings, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, bindings, drainObjects, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -95,6 +95,9 @@ it('keeps an answered record durable and readable from a restarted shard', async
 
 it('answers a retried record and a duplicate drain without a second effect', async () => {
   const { repo, token, id } = await burstRepo('shardretry');
+  // Setup also records a commit. It can hash to this record's shard, so finish its
+  // object projection before asserting the effect of this record's drain alone.
+  await drainObjects(scoped);
   const made = await commitOn(repo, token, 'w/0.txt');
   const shard = shardOf(made.body.commit);
   // A record retried after a reset finds the commit recorded and asks for no second drain.

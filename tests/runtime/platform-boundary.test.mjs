@@ -7,9 +7,16 @@ import test from 'node:test';
 const worker = 'cloudflare/worker';
 const neutral = new Set([
   './auth',
+  // Authenticated default-HTTP transport to the placed backend's existing auth limiter.
+  './auth-limit',
+  './auth-counter',
   './accounts',
+  // Email sign-up/sign-in identifier resolution; account/identity infrastructure, no agent policy.
+  './email-accounts',
   './http',
   './types',
+  // Type-only request identities and queue envelopes, independent of bindings.
+  './transport-types',
   './check-container',
   './import-container',
   // waitUntil plumbing (AsyncLocalStorage), no agent-layer knowledge.
@@ -17,6 +24,8 @@ const neutral = new Set([
   // The logger and the request's scope; they import only each other and types.
   './log',
   './request-scope',
+  // Streaming service-binding transport and cancellation; imports nothing.
+  './forward-request',
   // Work in flight in one isolate; imports nothing.
   './flights',
   // Durable Object call with one retry on a reset instance; imports nothing.
@@ -43,6 +52,8 @@ const neutral = new Set([
   './internal-accounts',
   // Continent and region codes from `request.cf`; imports only types.
   './region',
+  // Deterministic geography-to-binding dispatch; neutral HTTP transport, no domain rules.
+  './regional-api',
   // Which cell a repository, a region or a token belongs to; imports only types.
   './cells',
   './cell-names',
@@ -57,15 +68,23 @@ const neutral = new Set([
   // A digest of an account or token; imports nothing.
   './storage',
   '../../shared/site-traffic',
+  // Dependency-free raster signatures shared with browser previews; no platform policy.
+  '../../shared/raster-image',
   // What's measured for service targets, and its point; imports nothing.
   '../../shared/service-levels',
   // The Insights page's and admin reports' wire shapes; types only.
   '../../shared/repo-insights',
+  // Contribution drill-down pages and cursors, shared with the browser; types only.
+  '../../shared/contributions',
   // The admin Operations, Infrastructure, Visitors and Agents tabs' wire shapes and the clients
   // an agent can name; imports only types.
   '../../shared/platform-reports',
+  // Type-only operator repository listing/order transport, with no product policy or SDK.
+  '../../shared/admin-repositories',
   // Token scope names, generated from Rust; types only.
   '../../shared/contracts/pat-scopes',
+  // Rust-generated repository status/snapshot wire types; no agent-layer policy.
+  '../../shared/contracts/repo-status',
   // Account identifier rules (yoneda-core::account's transport counterpart); imports nothing.
   '../../shared/account',
   // The Flight log's address rule, shared with the /updates form; imports only shared/account.

@@ -104,7 +104,7 @@ export function OrgHoldSection({
 }) {
   const hold = holds.org;
   return (
-    <section aria-labelledby="org-hold-heading">
+    <section aria-labelledby="org-hold-heading" className="org-protection">
       <h2 id="org-hold-heading">Legal hold</h2>
       {hold ? (
         <Banner

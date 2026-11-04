@@ -2,9 +2,12 @@
 // main) at main's published head, which serves landed changesets before their Git commit
 // is projected. Every read is checked against the caller's directory grant first, and
 // resolved without the authority where published or immutable data answers (repo-snapshots).
+
+import type { RepoSnapshot } from '../../shared/contracts/repo-status';
 import { decide, outside, requirePath } from './repo-grants';
 import type { RepoObjects } from './repo-objects';
 import { ApiError, type Json, type RepoContext, walk } from './repo-ops';
+import { warmReadTrees } from './repo-read-trees';
 import { authorizeRead, headAccess, readTarget } from './repo-snapshots';
 import { type TreeEntry, toBase64 } from './repo-stores';
 
@@ -19,14 +22,15 @@ function text(bytes: Uint8Array) {
   }
 }
 
-export async function listTree(ctx: RepoContext, args: Json) {
+export async function listTree(ctx: RepoContext, args: Json, admitted?: RepoSnapshot) {
   const path = String(args.path ?? '').replace(/\/$/, '');
   // Main's latest tree is the published head's (read at least at `min_version`).
-  const head = await authorizeRead(ctx, Number(args.min_version ?? 0));
+  const head = admitted ? null : await authorizeRead(ctx, Number(args.min_version ?? 0));
   const view = await decide(ctx, [path], [path]);
   if (!view.paths[0] && !view.dirs[0]) throw outside();
-  const where = await readTarget(ctx, head, args.commit ?? args.ref, args.at);
+  const where = admitted ?? (await readTarget(ctx, head, args.commit ?? args.ref, args.at));
   const objects = await ctx.objects();
+  await warmReadTrees(objects, where.tree, path, where.commit, true);
   const entry = await walk(objects, where.tree, path);
   if (entry.type !== 'tree') throw new ApiError('NOT_FOUND', `${path} is not a directory`);
   let entries = await objects.tree(entry.id);
@@ -37,6 +41,24 @@ export async function listTree(ctx: RepoContext, args: Json) {
     entries = entries.filter((e, i) => seen.paths[i] || (e.type === 'tree' && seen.dirs[i]));
   }
   return { commit: where.commit, path, entries };
+}
+
+/** Overview's already-authorized root listing selected this immutable commit and entry.
+ * Recheck the file grant and withholding; no second commit/head lookup is necessary. */
+export async function readFileFromTree(ctx: RepoContext, tree: Json, path: string) {
+  await requirePath(ctx, path);
+  const entry = (tree.entries as TreeEntry[]).find((e) => e.name === path);
+  if (!entry || !['blob', 'exec'].includes(entry.type))
+    throw new ApiError('NOT_FOUND', `${path} is not a file`);
+  const bytes = await (await ctx.objects()).blob(entry.id);
+  return {
+    commit: tree.commit,
+    path,
+    id: entry.id,
+    executable: entry.type === 'exec',
+    size: bytes.length,
+    ...text(bytes),
+  };
 }
 
 /** What last changed each entry of a directory, one read for a page of the Code tab. Only what
@@ -55,12 +77,16 @@ async function publishedEntry(objects: RepoObjects, head: Json, path: string) {
   const changed = [...(head.overlay as Json[])]
     .reverse()
     .find((c) => c.paths.some((p: Json) => p.path === path));
-  if (!changed) return walk(objects, head.head.tree, path);
+  if (!changed) {
+    await warmReadTrees(objects, head.head.tree, path, head.head.id);
+    return walk(objects, head.head.tree, path);
+  }
   const touch = changed.paths.find((p: Json) => p.path === path);
   if (!touch.blob) throw new ApiError('NOT_FOUND', `${path} does not exist`);
   // The log recorded the mode: the blob is read by id, no tree walk.
   if (touch.mode)
     return { name: path.split('/').pop() ?? path, type: touch.mode, id: touch.blob } as TreeEntry;
+  await warmReadTrees(objects, changed.tree, path);
   return walk(objects, changed.tree, path);
 }
 
@@ -98,6 +124,7 @@ export async function readFile(ctx: RepoContext, args: Json) {
   }
   const where = await readTarget(ctx, fromHead?.head ?? null, args.commit ?? args.ref, args.at);
   const objects = await ctx.objects();
+  await warmReadTrees(objects, where.tree, path, where.commit);
   const entry = await walk(objects, where.tree, path);
   if (!['blob', 'exec'].includes(entry.type))
     throw new ApiError('NOT_FOUND', `${path} is not a file`);

@@ -1,0 +1,77 @@
+.notification-bell {
+  position: relative;
+}
+.notification-count {
+  position: absolute;
+  top: -3px;
+  right: -5px;
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--blue);
+  color: var(--on-accent);
+  font-size: var(--text-xs);
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.notification-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.notification-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.notification-list li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.notification-list li:last-child {
+  border-bottom: 0;
+}
+.notification-list a {
+  color: var(--text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.notification-list .unread a::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--blue);
+  vertical-align: middle;
+  margin-right: 8px;
+}
+.notification-list time {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.notification-content {
+  height: min(240px, 60dvh);
+  overflow: auto;
+}
+
+.notification-message {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+.notification-list .icon-button {
+  flex: none;
+}

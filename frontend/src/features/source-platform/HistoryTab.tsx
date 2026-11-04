@@ -83,7 +83,12 @@ export function HistoryTab({
         <RepoHistory repo={route.repo} refName={route.ref} onNavigate={navigate} />
       )}
       {route.view === 'transactions' && (
-        <RepoTransactions repo={route.repo} onNavigate={navigate} />
+        <RepoTransactions
+          repo={route.repo}
+          onNavigate={navigate}
+          recent={status ? status.recent_versions === true : undefined}
+          known={status?.version}
+        />
       )}
       {route.view === 'branches' && (
         <RepoBranches

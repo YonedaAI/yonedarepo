@@ -60,6 +60,7 @@ export function repoUsageQuery(
   order: 'actions' | 'pushed_bytes',
   limit = TOP * 2,
 ) {
-  const pushed = `SUM(_sample_interval * if(${B.detail} IN (${list(PUSHES)}), ${SITE_EVENT_BYTES}, 0))`;
+  // Analytics Engine requires IF branches to share a type; byte columns are Double.
+  const pushed = `SUM(_sample_interval * if(${B.detail} IN (${list(PUSHES)}), ${SITE_EVENT_BYTES}, 0.0))`;
   return `SELECT ${B.repo} AS repo, SUM(_sample_interval) AS actions, ${pushed} AS pushed_bytes, ${SAMPLING} FROM ${dataset} WHERE ${POINTS} AND ${B.repo} != '' AND ${B.detail} IN (${list(ACTIONS)}) AND ${from(span.start)} GROUP BY repo ORDER BY ${order} DESC LIMIT ${limit} FORMAT JSON`;
 }

@@ -3,7 +3,7 @@
 // create ignores `region_hint` and `GET /repos/<id>/where` answers as any unknown path. On, only
 // a new repository named `region-hint-*` can take one: a location hint counts only at an object's
 // first `get`, a create's id is always new, and nothing here touches an existing object. No
-// request is routed by this: the platform Worker stays where it is pinned.
+// request is routed by this: only new object placement receives a hint.
 import { hinted } from './cell-env';
 import { ApiError, type Credentials, type Json, type RepoContext } from './repo-ops';
 import type { Env } from './types';
@@ -30,14 +30,14 @@ export function regionHint(env: Env, body: Json): string | null {
 
 /**
  * This create's bindings: the objects made for one repository start near `hint`, and its shards
- * start before the answer, so a request that follows cannot be the first `get` of one. The
- * object pushes stay out.
+ * start before the answer. The development experiment waits for startup by default;
+ * automatic origin fallback keeps the existing deferred warmup. Object pushes stay out.
  */
-export function hintedEnv(env: Env, hint: string): Env {
+export function hintedEnv(env: Env, hint: string, eager = true): Env {
   const namespaces: Partial<Env> = { SOURCE_REPOS: hinted(env.SOURCE_REPOS, hint) };
   if (env.COMMIT_SHARDS) namespaces.COMMIT_SHARDS = hinted(env.COMMIT_SHARDS, hint);
   if (env.LAND_COMBINERS) namespaces.LAND_COMBINERS = hinted(env.LAND_COMBINERS, hint);
-  return { ...env, ...namespaces, SHARD_START: 'request' };
+  return { ...env, ...namespaces, SHARD_START: eager ? 'request' : env.SHARD_START };
 }
 
 const combinerNames = (repo: string) => [`${repo}:main`, `${repo}#head`, `${repo}#projector`];

@@ -1514,6 +1514,7 @@ fn contract_records_bind_to_commit_and_digest_and_respect_grants() {
 
 mod access_gates;
 mod account_access;
+mod acid;
 mod activity;
 mod agent_reads;
 mod audit_outbox;
@@ -1573,6 +1574,7 @@ mod pending_refs;
 mod pushed;
 mod quarantine;
 mod rebase;
+mod recent_versions;
 mod ref_chain;
 mod ref_grants;
 mod releases;
@@ -1583,6 +1585,7 @@ mod separation;
 mod sessions;
 mod shards;
 mod staging;
+mod status_snapshot;
 mod symlink_refs;
 mod tags;
 mod tool_schemas;

@@ -1,4 +1,4 @@
-import { carriedHeaders } from './request-scope';
+import { carriedHeaders, timed } from './request-scope';
 import type { Env, Json } from './types';
 
 async function authority(env: Env, name: string, command: Json): Promise<Json> {
@@ -17,7 +17,13 @@ async function authority(env: Env, name: string, command: Json): Promise<Json> {
 /** An account's authority. With AUDIT_LOG on, it also records the person's sign-ins. */
 export function workspace(env: Env, name: string, command: Json): Promise<Json> {
   const audited = env.AUDIT_LOG === 'on' ? { ...command, audit_log: true } : command;
-  return authority(env, `account:${name}`, audited);
+  // Fixed operation labels separate admission and name lookups without recording identities.
+  const phase = ['session', 'org_access', 'handle_lookup', 'owned_repo_resolve'].includes(
+    command.op,
+  )
+    ? `account.${command.op}`
+    : 'account.authority';
+  return timed(phase, () => authority(env, `account:${name}`, audited));
 }
 
 /** An organization's audit log: an authority instance of its own, beside the org's. */

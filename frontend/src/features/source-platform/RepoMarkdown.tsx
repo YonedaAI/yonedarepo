@@ -1,6 +1,7 @@
 // A repository's Markdown: the file view's Preview and the README under a folder share this, so
 // they read alike and a README's relative images show in both.
 import { useEffect, useState } from 'react';
+import { useNearViewport } from '../../hooks/useNearViewport';
 import { readQuery } from './codeData';
 import type { ImageResolver } from './markdown';
 import { RichMarkdown } from './RichMarkdown';
@@ -14,16 +15,21 @@ const bytesOf = (base64: string) => Uint8Array.from(atob(base64), (c) => c.charC
 /** An image of this repository, or its words while it loads and if it can't be shown. */
 function RepoImage({ place, path, alt }: { place: Place; path: string; alt: string }) {
   const [url, setUrl] = useState<string>();
+  const { ref, near } = useNearViewport<HTMLSpanElement>('0px');
   useEffect(() => {
+    setUrl(undefined);
+    if (!near) return;
     const controller = new AbortController();
     let made: string | undefined;
-    const query = readQuery(place.ref, path, place.at);
+    const query = new URLSearchParams(readQuery(place.ref, path, place.at));
+    query.set('revalidate', 'image');
     sourceApi<{ encoding: string; content: string; size: number }>(
       `/repos/${place.repo}/blob?${query}`,
       { signal: controller.signal },
     )
       .then((file) => {
-        if (file.encoding !== 'base64' || file.size > MAX_IMAGE_BYTES) return;
+        if (controller.signal.aborted || file.encoding !== 'base64' || file.size > MAX_IMAGE_BYTES)
+          return;
         const bytes = bytesOf(file.content);
         const type = imageType(bytes);
         if (!type) return;
@@ -35,8 +41,12 @@ function RepoImage({ place, path, alt }: { place: Place; path: string; alt: stri
       controller.abort();
       if (made) URL.revokeObjectURL(made);
     };
-  }, [place.repo, place.ref, place.at, path]);
-  return url ? <img src={url} alt={alt} /> : alt;
+  }, [near, place.repo, place.ref, place.at, path]);
+  return (
+    <span ref={ref} className="repo-image">
+      {url ? <img src={url} alt={alt} loading="lazy" decoding="async" /> : alt}
+    </span>
+  );
 }
 
 export function RepoMarkdown({ source, place }: { source: string; place: Place }) {

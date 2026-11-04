@@ -19,6 +19,7 @@ import { settleFailedJob } from './platform-job-settle';
 import { laterIfHeld } from './platform-legal-hold';
 import { NEWSLETTER_JOB, sweepNewsletter } from './platform-newsletter';
 import { newsletterJob } from './platform-newsletter-email';
+import { memberNotificationJob } from './platform-org-notifications';
 import { passwordResetJob } from './platform-password-email';
 import { platformFetch } from './platform-routes';
 import { signupNoticeJob } from './platform-signup-notice';
@@ -107,6 +108,10 @@ export async function platformJob(
     message.ack();
   } else if (envelope.kind === SIGNUP_NOTICE) {
     const outcome = await signupNoticeJob(env, envelope, message.attempts);
+    if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
+    else message.ack();
+  } else if (envelope.kind === 'org_member_notification') {
+    const outcome = await memberNotificationJob(env, envelope);
     if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
     else message.ack();
   } else if (envelope.kind === 'account_welcome' || envelope.kind === 'account_verify') {

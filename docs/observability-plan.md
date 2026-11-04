@@ -16,7 +16,7 @@ Analytics asks whether people are using this. Observability asks whether it's wo
 
 | Gap | Evidence |
 |---|---|
-| The prod monitor has never run | `deploy-prod.yml` has 0 runs on GitHub, and `ship.yml` isn't registered |
+| Confirm the production monitor after ship | `deploy-prod.yml` owns deploy, smoke and monitoring; `ci.yml` owns release validation |
 | Unexpected API 500s log no text | `repo-api.ts:523`; the tail counts them and keeps nothing |
 | Nothing reliably reaches a person | One digest email, tested only against a fake, off on dev, with no check that it's alive |
 | No request or correlation id | None generated; a failure can't be followed across Worker, Durable Object, queue and container |
@@ -231,7 +231,7 @@ Failure paths are not on that budget: a line is written only when something alre
 
 ## Phase O3: Ship with a net
 
-1. Register `ship.yml` and run the whole ship pipeline once against dev, so its first real run isn't on prod.
+1. Run `ci.yml` full release validation, then follow the ship pipeline's production smoke and monitoring steps.
 2. **Built.** A deploy ledger: commit, time, environment, who. `--tag` and `--message` on each deploy, so Cloudflare's versions name their commit.
 3. **Built.** Findings carry the revision. After a deploy, compare error rate and latency with the release before.
 4. **Built.** Synthetic checks every few minutes, on dev and prod: `/health`, a page, a public clone, an API read. A landing on a probe repository on dev only at first. Probe traffic is marked as our own.
@@ -266,7 +266,7 @@ Enforce, then track.
 | 300-line rule | `cargo xtask` check: today's 53 files become a list that can only shrink, and no new offenders |
 | Secret scan | `gitleaks` in CI |
 | Migration drift | A CI step, so it's caught before runtime |
-| Deep differential | The 100×200 run nightly, not ignored |
+| Deep differential | The 100×200 manual deep differential |
 | Test timing and flakes | Keep results; flag tests that fail then pass, and tests that slow down |
 | Wasm and bundle size | Budgets in CI; a jump fails the check |
 | Dependencies | Report how far behind we are |
@@ -316,5 +316,5 @@ O1 and O5 can start now. The analytics plan's Phase 7 reads from O1 to O4.
 | After a deploy | `cloudflare/superfan/ledger-deploys.ts`, `release.ts`, `synthetic.ts`, `synthetic-checks.ts` |
 | Spans | `cloudflare/worker/repo-span-sample.ts`, `repo-timing.ts` |
 | Service levels | `shared/service-levels.ts`, `cloudflare/worker/platform-service-levels.ts`, `cloudflare/superfan/service-points.ts`, `frontend/src/features/admin/AdminServiceLevels.tsx` |
-| Code health | `xtask/src/`, `.github/workflows/ci.yml`, `full.yml` |
+| Code health | `xtask/src/`, `.github/workflows/ci.yml` |
 | Evidence | `tools/fanout-bench/results.mjs`, `tools/staging-realworld.mjs` |

@@ -1,6 +1,8 @@
 // Where a request belongs among the cells (docs/global-scale-plan.md, cells as built): a
 // repository's id says its cell, and nothing is read to find out.
 import { describe, expect, it } from 'vitest';
+import { cellForNew } from '../../cloudflare/worker/cell-choice';
+import { inScope } from '../../cloudflare/worker/request-scope';
 import {
   cellOfRegion,
   cellOfRepo,
@@ -85,4 +87,12 @@ it('a Worker knows its own cell, and with no switch it is enam', () => {
   expect(thisCell(inEurope)).toBe('weur');
   expect(cellsOn(off)).toBe(false);
   expect(cellsOn(bound)).toBe(true);
+});
+
+it('automatic creates choose the current client region before the stored account home', async () => {
+  const env={...bound,AUTOMATIC_LOCALITY:'on'} as Env;
+  const req=new Request('https://yoneda/api/v1/repos',{cf:{continent:'EU'}});
+  expect(await inScope({env,req},()=>cellForNew(env,{}))).toBe('weur');
+  // A selected destination carried to a second hop stays selected without cf metadata.
+  expect(await inScope({env,req:new Request(req.url)},()=>cellForNew(env,{region:'weur'}))).toBe('weur');
 });

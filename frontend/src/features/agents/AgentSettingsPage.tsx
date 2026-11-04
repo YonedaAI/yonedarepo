@@ -278,6 +278,7 @@ export function AgentSettingsPage({
   if (!configure && found.created_at !== null)
     return (
       <AgentDetail
+        key={`${workspace}:${agent}`}
         workspace={workspace}
         state={state}
         agent={found}

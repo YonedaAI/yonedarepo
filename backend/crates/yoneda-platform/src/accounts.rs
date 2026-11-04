@@ -16,6 +16,9 @@ mod audit_log;
 mod audit_log_tests;
 mod audit_seal;
 mod auth_events;
+mod auth_limit;
+#[cfg(test)]
+mod auth_limit_tests;
 mod avatars;
 #[cfg(test)]
 mod avatars_tests;
@@ -44,9 +47,16 @@ mod holds_tests;
 mod identities;
 #[cfg(test)]
 mod identities_tests;
+mod member_notices;
 mod names;
 #[cfg(test)]
 mod names_tests;
+mod notification_retention;
+mod notifications;
+#[cfg(test)]
+mod notifications_dismiss_tests;
+#[cfg(test)]
+mod notifications_tests;
 mod oauth_flows;
 mod op;
 mod op_profile;
@@ -91,6 +101,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             .as_i64()
             .ok_or_else(|| bad("Trusted clock required"))?;
         match op::AccountOp::parse(&command)? {
+            op::AccountOp::Notification(op) => notifications::handle(&db, &command, op, now),
             op::AccountOp::Signin(op) => signin::handle(&db, &command, op, now),
             op::AccountOp::Access(op) => access::handle(&db, &command, op, now),
             op::AccountOp::Email(op) => email::handle(&db, &command, op, now),
@@ -116,7 +127,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
     }))
 }
 /// Digest-pinned, forward-only account migrations (version, SQL), applied in order.
-pub(crate) const MIGRATIONS: [(i64, &str); 13] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 16] = [
     (1, include_str!("accounts/migrations/0001_accounts.sql")),
     (
         2,
@@ -144,6 +155,18 @@ pub(crate) const MIGRATIONS: [(i64, &str); 13] = [
     (
         13,
         include_str!("accounts/migrations/0013_github_org_installations.sql"),
+    ),
+    (
+        14,
+        include_str!("accounts/migrations/0014_member_notifications.sql"),
+    ),
+    (
+        15,
+        include_str!("accounts/migrations/0015_notification_incarnation.sql"),
+    ),
+    (
+        16,
+        include_str!("accounts/migrations/0016_notification_dismissal.sql"),
     ),
 ];
 fn migrate<S: SqlStore>(store: &S) -> Result<()> {

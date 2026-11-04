@@ -100,7 +100,7 @@ it('serves every hot read source without an authority call', async () => {
   expect(ops).toEqual([]);
 });
 
-it('reloads an aged refs snapshot once for a burst, and bounds what a reader can miss', async () => {
+it('refreshes expired refs without extending staleness and reuses completed snapshots', async () => {
   const { env, ops } = counted(scoped);
   const { owner, repo, id, commit } = await seededRepo('refsnap', env);
   const writer = (await api(`${repo}/tokens`, owner, { body: { name: 'elsewhere', scopes: ['read', 'write'] } }, env)).body.token as string;
@@ -125,10 +125,22 @@ it('reloads an aged refs snapshot once for a burst, and bounds what a reader can
   const now = Date.now();
   vi.spyOn(Date, 'now').mockImplementation(() => now + 2 * REFS_MS + 1);
   ops.length = 0;
-  const burst = await Promise.all(Array.from({ length: 25 }, () => refs()));
-  // Past the bound every reader sees the move, from one authority read for the burst.
-  expect(burst.every((r) => r.refs['refs/heads/other'] === commit && r.version === other)).toBe(true);
+  // The first expired read refreshes once; completed refs serve later requests.
+  const refreshed = await refs();
+  expect(refreshed.refs['refs/heads/other']).toBe(commit);
+  expect(refreshed.version).toBe(other);
   expect(ops).toEqual(['repo_refs']);
+  ops.length = 0;
+  const warm = await Promise.all(Array.from({ length: 25 }, () => refs()));
+  expect(warm.every((r) => r.refs['refs/heads/other'] === commit && r.version === other)).toBe(true);
+  expect(ops).toEqual([]);
+  // Independent cold requests do not share unfinished I/O: each may refresh once.
+  vi.mocked(Date.now).mockImplementation(() => now + 4 * REFS_MS + 2);
+  const cold = await Promise.all(Array.from({ length: 25 }, () => refs()));
+  expect(cold.every((r) => r.refs['refs/heads/other'] === commit && r.version === other)).toBe(true);
+  expect(ops.length).toBeGreaterThan(0);
+  expect(ops.length).toBeLessThanOrEqual(25);
+  expect(ops.every((op) => op === 'repo_refs')).toBe(true);
   vi.restoreAllMocks();
 
   // This isolate's own branch move is visible to its next read at once.
@@ -229,4 +241,39 @@ it('shows a reader who names a landing the files a stale copy of main is missing
   expect((await api(`${repo}/blob?path=b.txt&ref=main&min_version=${version}`, owner, {}, env)).body.content).toBe('b\n');
   const refs = await api(`${repo}/refs?min_version=${version}`, owner, {}, env);
   expect(refs.body.version).toBeGreaterThanOrEqual(version);
+});
+
+it('a durable refs holder coalesces independent cold requests and fences invalidated loads', async () => {
+  const { id, version } = await seededRepo('refs-durable-cold', scoped);
+  const { inScope } = await import('../../cloudflare/worker/request-scope');
+  const base = scoped.SOURCE_REPOS;
+  let reads = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const env = { ...scoped, SOURCE_REPOS: {
+    idFromName: (name: string) => base.idFromName(name),
+    get: (id: DurableObjectId) => ({ fetch: async (url: string, init: RequestInit) => {
+      const command = JSON.parse(String(init.body));
+      const answer = await base.get(id).fetch(url, init);
+      if (command.op === 'repo_refs') { reads++; await gate; }
+      return answer;
+    } }),
+  } } as unknown as Env;
+  const retained: Promise<unknown>[] = [];
+  const holder = new RefsHolder(env, { waitUntil: (work: Promise<unknown>) => { retained.push(work); } });
+  const work = Array.from({ length: 25 }, () => inScope({}, () => holder.refs(id, version)));
+  try {
+    await vi.waitFor(() => expect(reads).toBeGreaterThan(0));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(reads).toBe(1);
+    holder.forget();
+    work.push(inScope({}, () => holder.refs(id, version)));
+    await vi.waitFor(() => expect(reads).toBe(2));
+  } finally {
+    release();
+    for (const answer of await Promise.all(work)) expect(answer.version).toBe(version);
+    await Promise.all(retained);
+  }
+  expect((await holder.refs(id, version)).version).toBe(version);
+  expect(reads).toBe(2);
 });

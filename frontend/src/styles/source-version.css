@@ -1,0 +1,25 @@
+.source-version {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+}
+.source-version-pages {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.source-version-pages .source-version {
+  min-width: 0;
+  max-width: 100%;
+}
+.source-version-pages select {
+  min-width: 0;
+  max-width: 100%;
+}
+/* The Code tab's branch and version pickers: compact, as wide as the chosen value. */
+.source-toolbar .source-version select {
+  field-sizing: content;
+  min-height: 32px;
+  padding: 5px 8px;
+  font-size: var(--text-md);
+}

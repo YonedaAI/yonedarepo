@@ -149,8 +149,21 @@ describe('route wording', () => {
     expect(sessionBytes(session())).toBe('1.0 KiB read · 2.0 KiB fetched');
     expect(sessionBytes({ read_bytes: 10, fetched_bytes: null })).toBe('10 B read');
     expect(sessionBytes({ read_bytes: null, fetched_bytes: null })).toBeNull();
-    expect(routeSummary(route().totals)).toBe(
+    expect(routeSummary(route().totals, route().sessions)).toBe(
       '2 commits · 1 session · 1.0 KiB read · 1 memory delivered',
+    );
+  });
+
+  it.each([
+    { name: 'all unknown', reads: [null, null], total: 0, expected: '' },
+    { name: 'mixed', reads: [1024, null], total: 1024, expected: '' },
+    { name: 'no records', reads: [], total: 0, expected: '' },
+    { name: 'known zero', reads: [0], total: 0, expected: '0 B read · ' },
+    { name: 'known bytes', reads: [1024, 2048], total: 3072, expected: '3.0 KiB read · ' },
+  ])('summarizes read volume honestly with $name', ({ reads, total, expected }) => {
+    const r = route({ sessions: reads.map((read_bytes) => session({ read_bytes })) });
+    expect(routeSummary({ ...r.totals, read_bytes: total }, r.sessions)).toBe(
+      `2 commits · 1 session · ${expected}1 memory delivered`,
     );
   });
 
@@ -175,6 +188,18 @@ describe('the Route section', () => {
     expect(page).toContain('gotcha: caps at 30s');
     expect(page).toContain('<span class="chip run-bad">fail</span>');
     expect(page).not.toContain('Showing only');
+  });
+
+  it('does not turn missing session byte counters into a zero-byte route', () => {
+    const r = route({
+      sessions: [session({ read_bytes: null, fetched_bytes: null })],
+      totals: { ...route().totals, read_bytes: 0, fetched_bytes: 0 },
+    });
+    state.route = loaded({ data: r });
+    const page = view();
+    expect(page).toContain('2 commits · 1 session · 1 memory delivered');
+    expect(page).not.toContain('0 B read');
+    expect(page).toContain('Added the retry');
   });
 
   it('marks withheld text and names what was cut', () => {

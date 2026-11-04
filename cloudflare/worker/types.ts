@@ -1,21 +1,7 @@
-export type Json = Record<string, any>;
-export type Envelope = {
-  v: 1;
-  repo_id: string;
-  job_id: string;
-  kind: string;
-  workspace?: string;
-  /** An account email job's confirmation token (platform-email-verify.ts); never logged. */
-  token?: string;
-  /** A classify job's pushed commits, parents first (repo-classify.ts). */
-  commits?: string[];
-  /** When an erase job first found the audit log in its way (repo-erase.ts). */
-  blocked_since?: number;
-  /** The Landing a clearance job looks at (repo-land-cleared.ts). */
-  number?: number;
-  /** The request this job descends from (request-scope.ts). Absent on older messages. */
-  request_id?: string;
-};
+import type { Envelope } from './transport-types';
+
+export type { Envelope, Json, Principal } from './transport-types';
+
 export interface Env {
   WORKSPACES: DurableObjectNamespace;
   /** Source platform authority: one SourceRepository per repository. */
@@ -78,6 +64,27 @@ export interface Env {
   /** Durable imports of external Git repositories into the source platform. */
   PLATFORM_IMPORT: Workflow<import('./repo-clone').CloneParams>;
   OBJECTS: R2Bucket;
+  /** Private, epoch-fenced nearby Git read copies; retain the binding after first use. */
+  READ_COPIES?: DurableObjectNamespace;
+  /** Off by default: automatic US/Europe copies and actual-request creation hints. */
+  AUTOMATIC_LOCALITY?: string;
+  /** Off by default: authorized same-cell file walks reuse the existing tree holder. */
+  SHARED_READ_TREES?: string;
+  /** Probe local immutable bytes before the regional read copy; defer bounded fills. */
+  EDGE_FIRST_READS?: string;
+  /** Off by default: status owner/path decoration uses one local joined projection read. */
+  JOINED_REPO_PATH?: string;
+  /** Off by default: one fresh response supplies the full selected Overview. */
+  OVERVIEW_BOOTSTRAP?: string;
+  /** Off by default: optional activity follows admitted core content at the captured revision. */
+  OVERVIEW_DEFER_ACTIVITY?: string;
+  /** Off by default: current ordinary Overview selects its root during fresh admission. */
+  OVERVIEW_ADMITTED_SNAPSHOT?: string;
+  /** `on`: private raster-image HTTP revalidation after the existing authorized read. */
+  REPO_IMAGE_REVALIDATION?: string;
+  /** Off by default: reuse exact-content code matches after fresh authority admission. */
+  SEARCH_CODE_MEMO?: string;
+  RECENT_VERSIONS?: string;
   /** R2's S3 API for Git LFS presigned URLs (repo-lfs.ts): `https://<account>.r2.cloudflarestorage.com`,
    * the OBJECTS bucket's name, and an R2 API token's S3 key pair (secrets). LFS answers 501
    * where any is missing. */
@@ -91,6 +98,7 @@ export interface Env {
   ASSETS: Fetcher;
   /** The platform's own review-model key (model checks); never an agent-layer key. */
   REVIEW_MODEL_KEY?: { get(): Promise<string> };
+  GLOBAL_AUTH_LIMITS?: string;
   AUTH_LIMITER?: RateLimit;
   /** Sign-in with GitHub / Google (oauth.ts): each provider is on only while both of its
    * secrets are set; otherwise its routes answer 404 and the sign-in page hides it. */
@@ -200,6 +208,16 @@ export interface Env {
   /** `on`: requests find their cell, and a Worker forwards what is another's (cells.ts). Unset or
    * anything else: this Worker serves everything it is sent, as ever. */
   CELLS?: string;
+  /** `on`: default HTTP entries select an API execution Worker from trusted client geography. */
+  REGIONAL_API?: string;
+  /** Configured execution identity; separate from the repository authority's CELL. */
+  API_REGION?: string;
+  API_ENAM?: Fetcher;
+  API_WEUR?: Fetcher;
+  API_APAC?: Fetcher;
+  API_OC?: Fetcher;
+  API_SAM?: Fetcher;
+  API_AFR?: Fetcher;
   /** The cell this Worker is; unset: `enam`, today's stack. */
   CELL?: string;
   /** A cell's own object namespaces are restricted to this jurisdiction (cell-env.ts). */
@@ -218,6 +236,8 @@ export interface Env {
   REGION_HINT_TEST?: string;
   /** Cloudflare Web Analytics site token (front Worker); set, public pages carry its beacon. */
   WEB_ANALYTICS_TOKEN?: string;
+  /** Immutable browser cache for fingerprinted public build assets only. */
+  STATIC_ASSET_CACHE?: string;
   /** Site traffic reports (platform Worker, platform-site-traffic.ts): the account and dataset the
    * Analytics Engine SQL API reads, with an Account Analytics Read token; any unset, none. The
    * same token reads Web Analytics for WEB_ORIGIN's host (platform-web-analytics.ts). */
@@ -226,6 +246,9 @@ export interface Env {
   ANALYTICS_READ_TOKEN?: string;
   /** `on` lets search engines index this environment (production only; seo-files.ts). */
   SEO_INDEXING?: string;
+  /** `on` serves a generic noindex repository shell for account-cookie requests without
+   * waiting for optional public metadata. API authorization is unchanged. */
+  FAST_APP_HEAD?: string;
   /** This Worker itself (service binding); the SSH gateway's container reaches the
    * platform through it (platform-ssh-gateway.ts). */
   SELF?: Fetcher;
@@ -261,9 +284,3 @@ export interface Env {
    * page reads them back (shared/service-levels.ts); unset or anything else: nothing. */
   SERVICE_LEVELS?: string;
 }
-export type Principal = {
-  workspace: string;
-  role: 'user' | 'admin';
-  /** Organizations the account joined (hints from its authority; they grant nothing). */
-  orgs?: string[];
-};

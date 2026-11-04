@@ -111,6 +111,9 @@
               "SuperfanLedger"
             ]
           }
+        ],
+        "compatibility_flags": [
+          "global_fetch_strictly_public"
         ]
       }
     },
@@ -126,7 +129,7 @@
         "GITHUB_APP_ID, GITHUB_APP_SLUG and the optional secret GITHUB_APP_PRIVATE_KEY (the App's PEM): the production GitHub App for private repository imports. Setup URL: https://yonedarepo.com/github/connected. Dev uses a separate App and key.",
         "WEB_ORIGIN is where people approve device logins (/device). Secrets, set from stdin:",
         "OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)",
-        "Placed next to the data (aws:us-east-1, R2 and CheckContainer in ENAM), batched landing.",
+        "The global entry dispatches default fetch to regional API aliases; authorities and storage stay in place.",
         "PUSH_BUNDLES=on writes a large push's objects as bundles (one R2 object per batch, indexed by the repository authority); dev measured a 12,000-file push at 4.9 s (489 s without). Turn it off before rolling back below the bundle reader.",
         "ACCOUNT_SEARCH=on keeps a search summary per repository in its owner's directory (search:<owner> instances of WorkspaceAuthority) and serves GET /api/v1/search, the search_repos MCP tool and the CLI's search --all; off writes none and the route answers 404, so the website asks each repository itself as before.",
         "AUDIT_LOG=on keeps organizations' audit logs (audit:<org> instances of WorkspaceAuthority) and people's sign-in events; off writes neither and /orgs/:org/audit answers 404. Set it on this Worker and the front Worker together: sign-ins go through both.",
@@ -168,7 +171,8 @@
         "Admin pages (/api/v1/admin, platform-admin.ts): ADMIN_ACCOUNTS lists the operator accounts (comma separated; empty: only OWNER_TOKEN/Access). The sign-up notice goes to ADMIN_NOTIFY_EMAIL (empty: EMAIL_CONTACT). Credit grants and balances call the managed Worker's /admin/accounts/<account>/credit over MANAGED with MANAGED_ADMIN_TOKEN (optional secret, the managed Worker's own value; unset: grants are refused). MANAGED binds the managed Worker, which binds this one as PLATFORM: a fresh environment deploys this Worker once without MANAGED first.",
         "REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.",
         "SPAN_SAMPLE=<N> keeps the Server-Timing phases of 1 request in N, and of every request over 5 seconds, as a request.spans log line and one SITE_EVENTS point, after the answer (worker/repo-span-sample.ts). off keeps none.",
-        "SERVICE_LEVELS=on writes one SITE_EVENTS point per landing, clone, push and repository create and per 10 API reads, after the answer, for the admin page (shared/service-levels.ts). Set it on this Worker and Superfan together. Budget: docs/observability-plan.md."
+        "SERVICE_LEVELS=on writes one SITE_EVENTS point per landing, clone, push and repository create and per 10 API reads, after the answer, for the admin page (shared/service-levels.ts). Set it on this Worker and Superfan together. Budget: docs/observability-plan.md.",
+        "REPO_ANALYTICS=on records admitted repository usage in the existing SITE_EVENTS point and enables Insights; TRAFFIC_EVENTS and TRAFFIC_REPORT must also be on. No historical usage is backfilled."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -205,10 +209,6 @@
         "observability": {
           "enabled": true
         },
-        "placement": {
-          "mode": "targeted",
-          "region": "aws:us-east-1"
-        },
         "tail_consumers": [
           {
             "service": "{prefix}-superfan"
@@ -227,7 +227,7 @@
           "AUDIT_LOG": "off",
           "TRAFFIC_EVENTS": "on",
           "TRAFFIC_REPORT": "on",
-          "REGION_SIGNALS": "off",
+          "REGION_SIGNALS": "on",
           "PUSH_BUNDLES": "on",
           "WEB_ORIGIN": "{origin}",
           "WORKERS_SUBDOMAIN": "{subdomain}",
@@ -257,7 +257,21 @@
           "REPO_SIZE_GUARD": "on",
           "PACK_CACHE": "on",
           "GITHUB_APP_ID": "5583304",
-          "GITHUB_APP_SLUG": "yonedarepo-import"
+          "GITHUB_APP_SLUG": "yonedarepo-import",
+          "AUTOMATIC_LOCALITY": "on",
+          "CELLS": "on",
+          "GLOBAL_AUTH_LIMITS": "on",
+          "SHARED_READ_TREES": "on",
+          "JOINED_REPO_PATH": "on",
+          "OVERVIEW_BOOTSTRAP": "on",
+          "OVERVIEW_DEFER_ACTIVITY": "on",
+          "OVERVIEW_ADMITTED_SNAPSHOT": "on",
+          "REPO_IMAGE_REVALIDATION": "on",
+          "EDGE_FIRST_READS": "on",
+          "SEARCH_CODE_MEMO": "on",
+          "RECENT_VERSIONS": "on",
+          "REGIONAL_API": "on",
+          "REPO_ANALYTICS": "on"
         },
         "secrets_store_secrets": [
           {
@@ -304,6 +318,10 @@
             {
               "name": "PACK_BUILDERS",
               "class_name": "PackBuilder"
+            },
+            {
+              "name": "READ_COPIES",
+              "class_name": "RepositoryReadCopy"
             }
           ]
         },
@@ -356,6 +374,12 @@
             "tag": "v8",
             "new_sqlite_classes": [
               "ImportContainer"
+            ]
+          },
+          {
+            "tag": "v9",
+            "new_sqlite_classes": [
+              "RepositoryReadCopy"
             ]
           }
         ],
@@ -603,7 +627,8 @@
           "PROMO_CREDIT_USD": "100",
           "REFUND_MAX_USD": "500",
           "REFUND_DAILY_USD": "1000",
-          "REQUEST_IDS": "off"
+          "REQUEST_IDS": "off",
+          "FAST_AGENTS_LIST": "on"
         },
         "secrets_store_secrets": [
           {
@@ -770,10 +795,6 @@
         },
         "workers_dev": true,
         "preview_urls": false,
-        "placement": {
-          "mode": "targeted",
-          "region": "aws:us-east-1"
-        },
         "routes": [
           {
             "pattern": "yonedarepo.com",
@@ -795,19 +816,31 @@
           "directory": "../frontend/dist",
           "binding": "ASSETS",
           "not_found_handling": "single-page-application",
-          "run_worker_first": true
+          "run_worker_first": [
+            "/*",
+            "!/assets/*",
+            "!/brand/*"
+          ]
         },
         "vars": {
           "AUDIT_LOG": "off",
           "TRAFFIC_EVENTS": "on",
           "TRAFFIC_REPORT": "on",
-          "REGION_SIGNALS": "off",
+          "REGION_SIGNALS": "on",
           "PUBLIC_APP_ORIGIN": "{origin}",
           "WEB_ANALYTICS_TOKEN": "fd30d727a0dc4d4c949dee535977d1b2",
           "SEO_INDEXING": "on",
           "ADMIN_ACCOUNTS": "magnetonio",
           "REQUEST_IDS": "off",
-          "CLIENT_ERRORS": "off"
+          "CLIENT_ERRORS": "off",
+          "CELLS": "on",
+          "AUTOMATIC_LOCALITY": "on",
+          "GLOBAL_AUTH_LIMITS": "on",
+          "STATIC_ASSET_CACHE": "on",
+          "FAST_APP_HEAD": "on",
+          "OVERVIEW_MARKDOWN_PRELOAD": "on",
+          "EARLY_READS": "on",
+          "REGIONAL_API": "on"
         },
         "services": [
           {
@@ -943,6 +976,9 @@
               "DeadmanState"
             ]
           }
+        ],
+        "compatibility_flags": [
+          "global_fetch_strictly_public"
         ]
       }
     }
@@ -992,5 +1028,42 @@
     "artifacts": [
       "yoneda-dev"
     ]
-  }
+  },
+  "cells": [
+    {
+      "code": "weur",
+      "containers": "WEUR",
+      "jurisdiction": "eu",
+      "ratelimit": "1003",
+      "public_ratelimit": "1004",
+      "bound": true,
+      "placement": "aws:eu-central-1"
+    }
+  ],
+  "api_regions": [
+    {
+      "code": "enam",
+      "placement": "aws:us-east-1"
+    },
+    {
+      "code": "weur",
+      "placement": "aws:eu-central-1"
+    },
+    {
+      "code": "apac",
+      "placement": "aws:ap-southeast-1"
+    },
+    {
+      "code": "oc",
+      "placement": "aws:ap-southeast-2"
+    },
+    {
+      "code": "sam",
+      "placement": "aws:sa-east-1"
+    },
+    {
+      "code": "afr",
+      "placement": "aws:af-south-1"
+    }
+  ]
 }

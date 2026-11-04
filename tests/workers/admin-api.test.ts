@@ -408,10 +408,10 @@ it('leaves no point for a request by an account that is ours, by token or by Git
 
 it('gives the front Worker the list on the entrypoint, on no HTTP route', async () => {
   forgetInternalAccounts();
-  const boss = await signup('boss');
-  await signup('team_member');
+  const boss = await signupNow('boss');
+  await signupNow('team_member');
   const target = operators();
-  await markInternal('team_member', true, boss, target);
+  expect((await markInternal('team_member', true, boss, target)).status).toBe(200);
   const entry = new PlatformEntrypoint(createExecutionContext(), target);
   expect(await entry.internalAccounts()).toEqual(['team_member']);
 });

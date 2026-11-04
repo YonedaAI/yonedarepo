@@ -4,79 +4,57 @@
 // are workspace sessions (owners) or repository tokens (agents, CI, scripts) — all the
 // same to us.
 
-import { accountMcp } from './account-mcp';
 import { mergeListed, mergeSearch } from './cell-merge';
-import { acrossCells, askCell, forwardTo, homeElsewhere, repoElsewhere } from './cell-route';
-import { error, readJson } from './http';
+import { acrossCells, askCell, repoElsewhere } from './cell-route';
 import { accountActivity, mergeActivity } from './platform-account-activity';
 import { adminRoute } from './platform-admin';
-import { auditExport, auditExportOrg } from './platform-audit-export';
-import { isOwnAvatar, ownAvatar, publicAvatarName, servePublicAvatar } from './platform-avatars';
+import { accountContributions, mergeContributions } from './platform-contributions';
 import { favoritesRoute } from './platform-favorites';
 import { repoHold } from './platform-holds';
 import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
 import { SUPPORT_BODY_LIMIT, supportRoute } from './platform-support';
-import { deviceCode, deviceRoute, deviceToken, tokenRoute } from './platform-tokens';
+import { deviceRoute, tokenRoute } from './platform-tokens';
 import { accountSearch } from './repo-account-search';
 import { deleteRepository, listDeleted, listRepositories } from './repo-admin';
 import { agentRecords } from './repo-agent-records';
-import { answer, failure } from './repo-api-failure';
+import { bodyOf, COMMIT_BODY_LIMIT } from './repo-api-body';
+import { failure } from './repo-api-failure';
+import { handle } from './repo-api-http';
 import { audited } from './repo-audit';
 import { breakGlass } from './repo-break-glass';
 import { changeLogStatus } from './repo-changelog';
 import { changesRoute, setAutoLandings } from './repo-changes';
 import { compactionRead, compactLog } from './repo-compaction';
 import { createRepository, importRepository, tokenSecret } from './repo-create';
-import { credentials } from './repo-credentials';
 
 export { credentials } from './repo-credentials';
 
-import { refreshHead } from './repo-head';
+import { withHeadRefresh } from './repo-access-changes';
 import { hooksRoute } from './repo-hooks';
 import { importProgress } from './repo-import-start';
 import { lfsRoute } from './repo-lfs';
-import { repoMcp } from './repo-mcp';
 import { membersRoute } from './repo-members';
 import { contextRoute, memoriesRoute } from './repo-memories';
-import { downloadBlob } from './repo-object-download';
-import { streamObjects } from './repo-object-fetch';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
-import { pathOf, profile, renameRepository, resolvePath, withPath } from './repo-paths';
+import { activityLogView } from './repo-overview-activity';
+import { browserSummary } from './repo-overview-summary';
+import { renameRepository, withPath } from './repo-paths';
 import { forViewer } from './repo-principal-privacy';
-import {
-  ANONYMOUS,
-  admitAnonymous,
-  anonymousRead,
-  anonymousRepo,
-  capped,
-  exploreCells,
-  isExplore,
-  limitAnonymous,
-  setVisibility,
-} from './repo-public';
+import { capped, setVisibility } from './repo-public';
 import { purgeDeleted } from './repo-purge';
 import { quarantineRoute } from './repo-quarantine';
 import { regionHintTest, whereRepository } from './repo-region-hint';
-import { releaseDownload, releasesRoute } from './repo-releases';
+import { releasesRoute } from './repo-releases';
 import { restoreRepository } from './repo-restore';
 import { SESSION_BODY_LIMIT } from './repo-session-records';
 import { timedAnswer } from './repo-span-sample';
-import { timed } from './repo-timing';
 import { batchRefs, branchesRoute, operations } from './repo-tools';
 import { vacuum } from './repo-vacuum';
+import { recentVersions } from './repo-versions';
 import { humanView } from './repo-views';
 import { ensureScope } from './request-scope';
 import type { Env } from './types';
-
-const COMMIT_BODY_LIMIT = 64 * 1024 * 1024;
-const BLOB = /^\/api\/v1\/repos\/(r[0-9a-f]{20})\/objects\/([0-9a-f]{40})$/;
-const PAGE = /^\/api\/v1\/repos\/(r[0-9a-f]{20})\/objects$/;
-const OBJECTS_BODY_LIMIT = 2 * 1024 * 1024;
-const bodyOf = (req: Request, limit?: number) =>
-  readJson(req, limit).catch((e) => {
-    throw new ApiError('INVALID_INPUT', String(e?.message ?? e));
-  });
 
 /** A REST answer as its caller may see it: a repository's names no account address to a
  * non-member (principal-privacy). The account MCP's management tools come through here too. */
@@ -90,7 +68,18 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   }
   const value = await routed(req, env, url, auth);
   const repo = /^\/api\/v1\/repos\/(r[0-9a-f]{20})(?:\/|$)/.exec(url.pathname)?.[1];
-  return repo ? forViewer(env, value, () => caller(env, repo, auth)({ op: 'repo_status' })) : value;
+  const browserStatus =
+    repo &&
+    req.method === 'GET' &&
+    url.pathname === `/api/v1/repos/${repo}` &&
+    url.searchParams.get('summary') === 'true';
+  return repo
+    ? forViewer(env, value, () =>
+        browserStatus
+          ? Promise.resolve(value) // This answer already contains the freshly checked viewer.
+          : caller(env, repo, auth)({ op: 'repo_status' }),
+      )
+    : value;
 }
 
 async function routed(req: Request, env: Env, url: URL, auth: Credentials): Promise<Json> {
@@ -103,6 +92,18 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return deviceRoute(env, auth, parts[1], req, url, () => bodyOf(req));
   if (parts[0] === 'activity' && parts.length === 1 && req.method === 'GET')
     return acrossCells(env, url.pathname, () => accountActivity(env, auth), mergeActivity);
+  if (
+    parts[0] === 'activity' &&
+    parts[1] === 'contributions' &&
+    parts.length === 2 &&
+    req.method === 'GET'
+  )
+    return acrossCells(
+      env,
+      `${url.pathname}${url.search}`,
+      () => accountContributions(env, auth, url),
+      mergeContributions,
+    );
   if (parts[0] === 'search' && parts.length === 1 && req.method === 'GET')
     return acrossCells(
       env,
@@ -142,6 +143,10 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (resource === 'purge' && !sha && post) return purgeDeleted(env, auth, repo);
   if (resource === 'refs' && sha === 'batch' && !sub && post)
     return batchRefs(ctx, await bodyOf(req));
+  if (!resource && get && url.searchParams.get('summary') === 'true') {
+    // Browser metadata must not wait for storage diagnostics across every shard.
+    return browserSummary(ctx, url.searchParams);
+  }
   if (!resource && get) return withPath(env, repo, await run('git_status', {}));
   if (resource === 'name' && !sha && req.method === 'PUT')
     return renameRepository(ctx, (await bodyOf(req)).name);
@@ -149,8 +154,9 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (resource === 'quarantine')
     return quarantineRoute(ctx, req.method, sha, sub, () => bodyOf(req));
   if (get && resource === 'refs') return run('git_refs', query);
-  if (get && resource === 'log') return run('git_log', query);
+  if (get && resource === 'log') return activityLogView(env, query, await run('git_log', query));
   if (get && resource === 'txlog') return run('git_txlog', query);
+  if (get && resource === 'versions') return recentVersions(ctx, query);
   if (get && resource === 'changelog') return changeLogStatus(ctx);
   if (get && resource === 'merge-base') return run('git_merge_base', query);
   if (get && resource === 'tree') return run('git_ls_tree', query);
@@ -289,126 +295,9 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   throw new ApiError('NOT_FOUND', 'Unknown API path');
 }
 
-/** Runs an access or policy change, then republishes main's head before answering (see
- * `refreshHead`): a token minted or revoked, or runners a commit must queue, hold at once. */
-async function withHeadRefresh(env: Env, repo: string, change: Promise<Json>) {
-  const done = await change;
-  await refreshHead(env, repo, true);
-  return done;
-}
-
 export function repoApi(req: Request, env: Env): Promise<Response> {
   // Failures outside a route (authentication, MCP framing) are mapped like a route's.
   return ensureScope({ env, req }, () =>
-    timedAnswer(env, req, () => handle(req, env).catch(failure)),
+    timedAnswer(env, req, () => handle(req, env, route).catch(failure)),
   );
-}
-
-async function handle(req: Request, env: Env): Promise<Response> {
-  const url = new URL(req.url);
-  // Device login starts and finishes without credentials (the code pair is the secret).
-  if (req.method === 'POST' && url.pathname === '/api/v1/device/code')
-    return answer(() => bodyOf(req).then((body) => deviceCode(req, env, body, url)));
-  if (req.method === 'POST' && url.pathname === '/api/v1/device/token')
-    return answer(() => bodyOf(req).then((body) => deviceToken(req, env, body)));
-  // The public listing answers everyone alike, signed in or not (rate limited without
-  // credentials, like every anonymous read).
-  if (isExplore(url) && req.method === 'GET')
-    return answer(async () => {
-      if (!req.headers.has('cookie') && !req.headers.has('authorization'))
-        await limitAnonymous(env, req, url.pathname);
-      return exploreCells(env, url);
-    });
-  // Profiles are public listings, answered alike to everyone.
-  const profiled = /^\/api\/v1\/profiles\/([^/]+)$/.exec(url.pathname);
-  if (profiled && req.method === 'GET')
-    return answer(async () => {
-      if (!req.headers.has('cookie') && !req.headers.has('authorization'))
-        await limitAnonymous(env, req, url.pathname);
-      return profile(env, decodeURIComponent(profiled[1]), url.pathname);
-    });
-  // Anyone's picture, like the listing: no session check per image.
-  const avatar = publicAvatarName(url);
-  if (avatar !== undefined && req.method === 'GET')
-    return (async () => {
-      if (!req.headers.has('cookie') && !req.headers.has('authorization'))
-        await limitAnonymous(env, req, url.pathname);
-      return servePublicAvatar(env, avatar, req);
-    })().catch(failure);
-  const signed = await timed('auth', () => credentials(req, env));
-  const home = homeElsewhere(env, req, url);
-  if (home) return forwardTo(env, home, req);
-  // A readable path, or the repository one names, for whoever asks (nobody signed in sees
-  // public repositories only); one that may not be read answers as one that is not there.
-  const resolving = /^\/api\/v1\/resolve\/([^/]+)\/([^/]+)$/.exec(url.pathname);
-  const pathing = /^\/api\/v1\/repos\/(r[0-9a-f]{20})\/path$/.exec(url.pathname);
-  if ((resolving || pathing) && req.method === 'GET') {
-    if (!signed && req.headers.has('authorization'))
-      return error('UNAUTHORIZED', 'Sign in or use a repository token', 401);
-    return answer(async () => {
-      if (!signed) await limitAnonymous(env, req, url.pathname);
-      return resolving
-        ? resolvePath(
-            env,
-            signed,
-            decodeURIComponent(resolving[1]),
-            decodeURIComponent(resolving[2]),
-          )
-        : pathOf(env, signed, (pathing as RegExpExecArray)[1]);
-    });
-  }
-  // Without credentials, reads go on as anonymous (public repositories only, rate limited);
-  // a token that is refused (expired, revoked, malformed) never falls back to anonymous.
-  if (!signed && (req.headers.has('authorization') || !anonymousRead(req, url)))
-    return error('UNAUTHORIZED', 'Sign in or use a repository token', 401);
-  if (!signed) {
-    const repo = anonymousRepo(url);
-    const refused = await limitAnonymous(env, req, url.pathname)
-      .then(() => (repo ? admitAnonymous(env, repo) : undefined))
-      .then(() => null, failure);
-    if (refused) return refused;
-  }
-  const auth = signed ?? ANONYMOUS;
-  const mcp = /^\/api\/v1\/repos\/(r[0-9a-f]{20})\/mcp$/.exec(url.pathname);
-  // MCP is the agent surface: it never carries a human marker, so break-glass (which is not
-  // an MCP tool either) stays unreachable through it.
-  const machine: Credentials =
-    '_session' in auth
-      ? {
-          _session: {
-            workspace: auth._session.workspace,
-            principal: auth._session.principal,
-            ...(auth._session.orgs && { orgs: auth._session.orgs }),
-          },
-        }
-      : auth;
-  if (mcp) return repoMcp(req, new RepoContext(env, mcp[1], caller(env, mcp[1], machine)));
-  if (url.pathname === '/api/v1/mcp') return accountMcp(req, env, machine, route);
-  // The signed-in person's picture: its bytes, an upload or a removal.
-  if (isOwnAvatar(url)) return ownAvatar(req, env, auth).catch(failure);
-  // An audit log's export is a file, not a JSON answer.
-  const audited = auditExportOrg(url);
-  if (audited && req.method === 'GET')
-    return auditExport(env, auth, audited, url.searchParams).catch(failure);
-  // An asset download is the asset's bytes, not a JSON answer.
-  const download = releaseDownload(req, env, url, auth);
-  if (download) return download.catch(failure);
-  // So is a large blob's (the stubs `POST /objects` serves with `large`).
-  const blob = BLOB.exec(url.pathname);
-  if (blob && req.method === 'GET')
-    return downloadBlob(
-      new RepoContext(env, blob[1], caller(env, blob[1], auth)),
-      blob[2],
-      url.searchParams,
-      req.headers.get('range'),
-    ).catch(failure);
-  // A page of objects streams as it is read (repo-object-fetch.ts), as REST alone.
-  const page = PAGE.exec(url.pathname);
-  if (page && req.method === 'POST')
-    return bodyOf(req, OBJECTS_BODY_LIMIT)
-      .then((body) =>
-        streamObjects(new RepoContext(env, page[1], caller(env, page[1], auth)), body),
-      )
-      .catch(failure);
-  return answer(() => route(req, env, url, auth));
 }

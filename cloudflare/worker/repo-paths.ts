@@ -13,9 +13,13 @@ import { acrossCells, askCell } from './cell-route';
 import { cellOfRegion, cellOfRepo, cellsOn, FIRST_CELL, indexOf, thisCell } from './cells';
 import { audited } from './repo-audit';
 import { refreshHead } from './repo-head';
-import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
-import { admitAnonymous } from './repo-public';
-import { repoAnalytics } from './repo-usage';
+import { ApiError, type Credentials, type Json, type RepoContext } from './repo-ops';
+import { overviewRequested } from './repo-overview';
+import { overviewSnapshotRequest } from './repo-overview-admission';
+import { resolvedOverview } from './repo-overview-resolve';
+import { missingPath as missing, readableRepository as readable } from './repo-path-admission';
+import { joinedPathHandle, statusWithHandle } from './repo-path-metadata';
+import { timed } from './repo-timing';
 import type { Env } from './types';
 import { workspace } from './workspace';
 
@@ -24,7 +28,6 @@ import { workspace } from './workspace';
 export type HandleOwner = { kind: 'user' | 'org' | 'alias'; account: string; handle: string };
 type Named = { repo: string; name: string; renamed_from: string | null };
 
-const missing = () => new ApiError('NOT_FOUND', 'No such repository');
 const notFound = (e: any) => e?.code === 'NOT_FOUND';
 /** An authority's refusal as the API's error. */
 const api = (e: any): never => {
@@ -149,17 +152,6 @@ export async function releaseNames(env: Env, owner: string, repo: string) {
   });
 }
 
-/** Whether `auth` may read `repo` (the same NOT_FOUND as for none when not). */
-async function readable(env: Env, auth: Credentials | null, repo: string) {
-  try {
-    if (!auth) await admitAnonymous(env, repo);
-    return await caller(env, repo, auth ?? { _anonymous: true })({ op: 'repo_status' });
-  } catch (e: any) {
-    if (['NOT_FOUND', 'FORBIDDEN', 'UNAUTHORIZED', 'GONE'].includes(e?.code)) throw missing();
-    throw e;
-  }
-}
-
 /** The repository `/<handle>/<name>` names (no access decided), or null. */
 export async function repoAt(env: Env, handle: string, name: string) {
   const owner = await ownerOf(env, handle);
@@ -180,6 +172,7 @@ export async function resolvePath(
   auth: Credentials | null,
   handle: string,
   name: string,
+  query?: URLSearchParams,
 ): Promise<Json> {
   const owner = await ownerOf(env, handle);
   const found = owner && (await named(env, owner.account, name.replace(/\.git$/, '')));
@@ -187,15 +180,22 @@ export async function resolvePath(
   // Answered where the repository is: only that cell can say who may read it.
   const cell = cellOfRepo(found.repo);
   if (cellsOn(env) && cell !== thisCell(env))
-    return askCell(env, cell, `/api/v1/resolve/${handle}/${encodeURIComponent(name)}`);
-  await readable(env, auth, found.repo);
-  return {
+    return askCell(
+      env,
+      cell,
+      `/api/v1/resolve/${handle}/${encodeURIComponent(name)}${query?.size ? `?${query}` : ''}`,
+    );
+  const status = await readable(env, auth, found.repo, overviewSnapshotRequest(env, query));
+  const resolved = {
     id: found.repo,
     handle: owner.handle,
     name: found.name,
     path: `/${owner.handle}/${found.name}`,
     ...(found.renamed_from ? { renamed_from: found.renamed_from } : {}),
   };
+  return overviewRequested(env, query)
+    ? resolvedOverview(env, auth, resolved, status, query as URLSearchParams)
+    : resolved;
 }
 
 /** `GET /repos/<id>/path`: a repository's readable path, for `auth`; NOT_FOUND alike for
@@ -287,17 +287,16 @@ export async function renameRepository(ctx: RepoContext, name: unknown): Promise
   };
 }
 
-/** A repository's status with its owner's handle and readable path (from the listing). */
-export async function withPath(env: Env, repo: string, status: Json): Promise<Json> {
+async function pathHandle(env: Env, repo: string) {
+  if (env.JOINED_REPO_PATH === 'on') return joinedPathHandle(env, repo);
   const row = await env.INDEX.prepare('SELECT workspace FROM platform_repos WHERE id=?')
     .bind(repo)
     .first<{ workspace: string }>();
-  const handle = row ? await handleOf(env, row.workspace) : null;
-  const named = {
-    ...status,
-    owner_handle: handle,
-    path: handle ? `/${handle}/${status.name}` : null,
-    ...regionOf(env, repo),
-  };
-  return repoAnalytics(env) ? { ...named, insights: true } : named;
+  return row ? handleOf(env, row.workspace) : null;
+}
+
+/** A repository's status with its owner's handle and readable path (from the listing). */
+export async function withPath(env: Env, repo: string, status: Json): Promise<Json> {
+  const handle = await timed('path.metadata', () => pathHandle(env, repo));
+  return statusWithHandle(env, repo, status, handle);
 }

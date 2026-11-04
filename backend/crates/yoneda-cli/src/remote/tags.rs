@@ -77,7 +77,7 @@ pub async fn create_tag(
         Err(e) => return Err(e.message),
     }
     match session.api.post("/tags", &body).await {
-        Ok(_) => Ok(()),
+        Ok(created) => super::list::observe_write(session, &created),
         Err(f) if f.code == "ALREADY_EXISTS" => {
             Err("tags are immutable: this tag already exists".into())
         }

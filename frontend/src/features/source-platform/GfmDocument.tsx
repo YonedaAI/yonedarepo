@@ -8,7 +8,7 @@ import GithubSlugger from 'github-slugger';
 import type { Element, ElementContent, Root } from 'hast';
 import { toJsxRuntime } from 'hast-util-to-jsx-runtime';
 import type { Root as Mdast, Paragraph } from 'mdast';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import { Fragment, jsx, jsxs } from 'react/jsx-runtime';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
@@ -176,6 +176,16 @@ const Checkbox = ({ checked }: { checked?: boolean }) => (
   <input type="checkbox" checked={Boolean(checked)} disabled readOnly />
 );
 
+const ImageResolverContext = createContext<ImageResolver | undefined>(undefined);
+
+/** Stable component identity keeps an unchanged repository image mounted on parent renders. */
+function Picture({ src = '', alt = '' }: { src?: string; alt?: string }) {
+  const image = useContext(ImageResolverContext);
+  const shown = src ? image?.(src, alt, src) : undefined;
+  if (shown !== undefined && shown !== null) return <>{shown}</>;
+  return alt ? <span className="md-chip">{alt}</span> : null;
+}
+
 export function GfmDocument({
   source,
   shift = 1,
@@ -194,18 +204,15 @@ export function GfmDocument({
     placeHeadings(parsed, shift, anchors);
     return parsed;
   }, [source, shift, anchors]);
-  let images = 0;
-  const Picture = ({ src = '', alt = '' }: { src?: string; alt?: string }) => {
-    const key = `image${images++}`;
-    const shown = src ? image?.(src, alt, key) : undefined;
-    if (shown !== undefined && shown !== null) return <>{shown}</>;
-    return alt ? <span className="md-chip">{alt}</span> : null;
-  };
-  return toJsxRuntime(tree, {
-    Fragment,
-    jsx,
-    jsxs,
-    passNode: true,
-    components: { a: Anchor, img: Picture, pre: Fence, table: Table, input: Checkbox },
-  });
+  return (
+    <ImageResolverContext.Provider value={image}>
+      {toJsxRuntime(tree, {
+        Fragment,
+        jsx,
+        jsxs,
+        passNode: true,
+        components: { a: Anchor, img: Picture, pre: Fence, table: Table, input: Checkbox },
+      })}
+    </ImageResolverContext.Provider>
+  );
 }
