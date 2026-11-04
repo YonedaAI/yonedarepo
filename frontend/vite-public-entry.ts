@@ -14,3 +14,9 @@ export function publicEntryTemplates(template: string, script: string, styles: s
     site: template.replace('</head>', `${links}</head>`),
   };
 }
+
+/** Reuse the early admission guard; this link fetches only immutable renderer code. */
+export function overviewEntryTemplate(template: string, script: string, reserved: readonly string[], matcher: string) {
+  const head = `<script data-yoneda-overview-code>if((${matcher})(location,${JSON.stringify(reserved)})){const l=document.createElement('link');l.rel='modulepreload';l.href=${JSON.stringify(`/${script}`)};l.crossOrigin='';document.head.append(l)}</script>`;
+  return template.replace('</head>', `${head}</head>`);
+}

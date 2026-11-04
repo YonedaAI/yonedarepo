@@ -51,3 +51,32 @@ A later quiet dev baseline measured cold core around 1,008 ms median, with the
 rich parser adding about 300 ms in two fresh samples. That is separate from this
 payload reduction; its head preload is deferred to a focused follow-up. No live
 latency gain is claimed by the local served route tests.
+
+## Plain named Overview renderer preload
+
+The newer f87 trace showed plain README text at 681/692 ms in two fresh loads,
+but the rich renderer at 974/1,008 ms. Its 109.8 KB wire chunk started only after
+the app bundle (627/642 ms), ending at 936/969 ms. This is a measured serial code
+request, separate from the authority's selected repository data.
+
+Under the existing `VITE_OVERVIEW_MARKDOWN_PRELOAD` switch only, add a build-known
+immutable renderer modulepreload in the document head. Use the exact initial
+named Overview guard shared with early admission: valid nonreserved owner/name,
+no subroute, query or fragment. Off and other routes issue no head renderer
+request; their existing on-demand Markdown behavior is unchanged. No API read,
+authorization, data cache, selected revision or retry contract changes. The
+initial JavaScript dependency closure does not grow by the renderer; its already
+needed request moves earlier. Validate controlled main-bundle delay, normal
+cache reuse, correct README and failed renderer retry in the actual served app.
+
+Local verification reproduced the missing head request before the change. The
+production build with the switch on then started renderer code before a held
+main response in wide/375px light/dark contexts; the exact rich README rendered
+and a normal reload made no additional renderer HTTP request. Seven unsupported
+routes had no head renderer request. A separate switch-off build preserved the
+normal lazy render with no head request. With early API reads off and renderer
+preload on, renderer code still started early while zero API calls started before
+the app. A missing renderer chunk reached the existing Reload action and rendered
+the correct README after retry. Public-site preload/navigation tests also passed.
+These controlled local checks establish ordering and correctness, not a live
+performance result.

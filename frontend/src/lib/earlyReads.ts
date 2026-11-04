@@ -1,3 +1,5 @@
+import { plainNamedOverview } from './overviewEntryRoute';
+
 type EarlyRead = { response: Promise<Response>; release: () => void };
 type EarlyHandoff = {
   version: 2;
@@ -11,8 +13,12 @@ declare global {
   }
 }
 
-/** Serialized into the document head by Vite; keep every runtime dependency inside it. */
-export function beginEarlyReads(target: Window, reservedRoots: readonly string[]) {
+/** Serialized by Vite with the route matcher supplied explicitly, not a free binding. */
+export function beginEarlyReads(
+  target: Window,
+  reservedRoots: readonly string[],
+  namedOverview = plainNamedOverview,
+) {
   target.__yonedaEarlyReads?.clear();
   const locationKey = () =>
     target.location.pathname + target.location.search + target.location.hash;
@@ -89,15 +95,10 @@ export function beginEarlyReads(target: Window, reservedRoots: readonly string[]
   start('/api/auth/session?summary=true');
   // Restrict the head request to the plain named Overview contract. Other routes use
   // their normal parser; a future route cannot accidentally opt into private prefetch.
-  const match = /^\/([a-z][a-z0-9_]{2,31})\/((?!\.)[A-Za-z0-9._-]{1,100})\/?$/.exec(
-    target.location.pathname,
-  );
-  const reserved = new Set(reservedRoots);
-  const owner = match?.[1];
-  const name = match?.[2];
-  if (owner && name && !reserved.has(owner) && !target.location.search && !target.location.hash)
+  const named = namedOverview(target.location, reservedRoots);
+  if (named)
     start(
-      `/api/v1/resolve/${owner}/${encodeURIComponent(name)}?summary=true&overview=true&ref=main`,
+      `/api/v1/resolve/${named.owner}/${encodeURIComponent(named.name)}?summary=true&overview=true&ref=main`,
     );
 }
 
