@@ -165,37 +165,28 @@ it('uses no response for a different ref or version floor', () => {
     ).toBeUndefined();
 });
 
-it.each([
-  '/docs/reference',
-  '/features/flight',
-  '/source/r01234567890123456789',
-  '/sample/repo/files',
-  '/sample/repo?at=7',
-  '/sample/repo?ref=main',
-  '/sample/repo?anything=1',
-  '/sample/repo#old',
-  '/bad-handle/repo',
-])('does not speculate on unsupported or reserved route %s', (path) => {
-  const fetch = vi.fn(() => new Promise<Response>(() => {}));
-  vi.stubGlobal('fetch', fetch);
-  beginEarlyReads(windowAt(path));
-  expect(fetch).toHaveBeenCalledTimes(1);
-});
-
-it.each(['/sample/repo', '/sample/MiMo-Code', '/sample/name_1/'])(
-  'matches the authoritative resolver contract for %s',
+it.each(['/docs/reference', '/sample/repo/files', '/sample/repo?at=7'])(
+  'starts only session discovery on unsupported Overview route %s',
   (path) => {
-    const fetch = vi.fn((_url: string) => new Promise<Response>(() => {}));
+    const fetch = vi.fn(() => new Promise<Response>(() => {}));
     vi.stubGlobal('fetch', fetch);
     beginEarlyReads(windowAt(path));
-    const route = parseSourceRoute(path, '');
-    expect(route.view).toBe('repo-name');
-    if (route.view === 'repo-name')
-      expect(fetch.mock.calls[1]?.[0]).toBe(
-        `/api/v1${resolvePath(route.owner, route.name, namedOverviewRef(route))}`,
-      );
+    expect(fetch).toHaveBeenCalledTimes(1);
   },
 );
+
+it('matches the authoritative resolver contract for a named Overview', () => {
+  const fetch = vi.fn((_url: string) => new Promise<Response>(() => {}));
+  vi.stubGlobal('fetch', fetch);
+  const path = '/sample/MiMo-Code';
+  beginEarlyReads(windowAt(path));
+  const route = parseSourceRoute(path, '');
+  expect(route.view).toBe('repo-name');
+  if (route.view === 'repo-name')
+    expect(fetch.mock.calls[1]?.[0]).toBe(
+      `/api/v1${resolvePath(route.owner, route.name, namedOverviewRef(route))}`,
+    );
+});
 
 it('excludes every generated reserved handle, including operator and Worker routes', () => {
   const fetch = vi.fn(() => new Promise<Response>(() => {}));

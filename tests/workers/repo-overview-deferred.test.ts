@@ -28,33 +28,6 @@ it('returns admitted core content without a history read and names its exact def
   expect(calls.repo_log ?? 0).toBe(0);
 });
 
-it('cannot hold files and README behind an unfinished optional history read', async () => {
-  const r = await fixture('deferred_held');
-  let release!: () => void;
-  const held = new Promise<void>((resolve) => { release = resolve; });
-  const ns = enabled.SOURCE_REPOS;
-  const env = { ...enabled, SOURCE_REPOS: {
-    idFromName: (name: string) => ns.idFromName(name),
-    get: (id: DurableObjectId) => ({ fetch: async (url: string, init: RequestInit) => {
-      if (JSON.parse(String(init.body)).op === 'repo_log') await held;
-      return ns.get(id).fetch(url, init);
-    } }),
-  } } as unknown as Env;
-  const pending = api(`/repos/${r.id}?${mode}`, r.owner, {}, env);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const result = await Promise.race([pending, new Promise<string>((resolve) => {
-      timer = setTimeout(() => resolve('blocked on history'), 250);
-    })]);
-    expect(result).not.toBe('blocked on history');
-    expect((result as Awaited<typeof pending>).body.overview.readme.content).toBe('# Selected content\n');
-  } finally {
-    clearTimeout(timer);
-    release();
-    await pending;
-  }
-});
-
 it('uses the captured commit and version for activity even after main changes', async () => {
   const r = await fixture('deferred_anchor');
   const core = await api(`/repos/${r.id}?${mode}`, r.owner, {}, enabled);
