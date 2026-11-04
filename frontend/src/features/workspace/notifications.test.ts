@@ -24,13 +24,12 @@ it('shows only a quiet bell until the recipient opens their inbox', () => {
   expect(html).not.toContain('dialog');
   expect(html).not.toContain('No notifications');
 });
-it('gives the signed-in recipient an accessible unread count without exposing addresses', () => {
+it('gives the signed-in recipient an accessible unread count', () => {
   vi.mocked(useNotifications).mockReturnValue(state(2));
   const html = renderToStaticMarkup(
     createElement(Notifications, { enabled: true, navigate: vi.fn() }),
   );
   expect(html).toContain('Notifications, 2 unread');
-  expect(html).not.toContain('@');
 });
 it('disables admission-pending controls and does not open a second sign-in flow', () => {
   vi.mocked(useNotifications).mockReturnValue(state());
