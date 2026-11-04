@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
+import { runInNewContext } from 'node:vm';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const WORKFLOWS = join(ROOT, '.github/workflows');
@@ -66,7 +67,7 @@ test('CI owns secret-free fast and full release validation with a final Ship gat
   assert.match(ci.suites, /pnpm test:storage-full/);
 });
 
-test('the full lane retains all suites, four fail-closed shards and the conditional runtime image', () => {
+test('release CI runs partitioned functional coverage, four fail-closed shards and the conditional runtime image', () => {
   const ci = jobs(read('ci.yml'));
   for (const id of ['wasm', 'image']) {
     assert.match(ci[id], /needs: \[scope, ship-tree\]/);
@@ -78,9 +79,11 @@ test('the full lane retains all suites, four fail-closed shards and the conditio
   }
   assert.match(ci.workers, /shard: \[1, 2, 3, 4\]/);
   assert.match(ci.workers, /fail-fast: false/);
+  assert.match(ci.workers, /node tools\/ci\/workers\.mjs platform --shard=/);
+  assert.doesNotMatch(ci.suites, /pnpm test:platform/);
   assert.match(ci['workers-total'], /if: always\(\) && needs\.scope\.outputs\.full == 'true'/);
   assert.match(ci['workers-total'], /\$\{#files\[@\]\}.*-ne 4/);
-  for (const command of ['pnpm test:platform', 'pnpm test:storage-full', 'pnpm test:superfan', 'pnpm test:managed', 'pnpm --dir frontend build'])
+  for (const command of ['node tools/ci/workers.mjs main', 'pnpm test:storage-full', 'pnpm test:superfan', 'pnpm test:managed'])
     assert.ok(ci.suites.includes(command), command);
   assert.match(ci.wasm, /worker-build --release/);
   assert.match(ci.image, /git diff --quiet origin\/main\.\.\.HEAD -- cloudflare\/containers backend\/crates\/yoneda-runtime/);
@@ -149,7 +152,7 @@ test('prod deploys on push to main in ship mode, keeps a manual re-run and the o
   assert.match(job.deploy, /needs\.gate\.outputs\.ship == 'true'/);
   assert.match(job.deploy, /flags=\(--confirm --ship-head "\$PR_HEAD"\)/);
   assert.match(job.deploy, /GH_TOKEN: \$\{\{ github\.token \}\}/);
-  assert.match(job.deploy, /statuses: read/);
+  assert.doesNotMatch(job.deploy, /statuses: read/);
   for (const id of ['deploy', 'downloads', 'smoke', 'monitor']) assert.match(job[id], /^ {4}environment: production$/m, id);
   assert.match(job.smoke, /cargo xtask infra smoke --env prod/);
   assert.doesNotMatch(job.smoke, /playwright|cloudflared/);
@@ -186,4 +189,31 @@ test('the env file is written 0600 outside the tree, masked by value', () => {
   assert.match(envFile, /::add-mask::\$value/);
   assert.match(envFile, /YONEDA_ENV_FILE is not set/);
   for (const name of ['deploy-prod.yml', 'deploy-dev.yml']) assert.match(read(name), /rm -rf ~\/\.config\/yonedarepo/, name);
+});
+
+// Full validation shares one Wasm artifact and the Check frontend build.
+test('Check shares full-lane Wasm, but fails closed unless fast Wasm was intentionally skipped', () => {
+  const ci = jobs(read('ci.yml'));
+  assert.match(ci.check, /needs: \[scope, wasm\]/);
+  assert.match(ci.check, /!cancelled\(\)/);
+  assert.match(ci.check, /needs\.wasm\.result == 'success'/);
+  assert.match(ci.check, /needs\.scope\.outputs\.full != 'true' && needs\.wasm\.result == 'skipped'/);
+  assert.match(ci.check, /download-artifact/);
+  assert.match(ci.check, /if: needs\.scope\.outputs\.full != 'true'/);
+  assert.match(ci.check, /if: needs\.scope\.outputs\.full == 'true'/);
+  assert.match(ci.check, /pnpm --dir frontend build/);
+  assert.doesNotMatch(ci.suites, /pnpm --dir frontend build/);
+  const condition = ci.check.match(/^ {4}if: \$\{\{ (.*) \}\}$/m)?.[1];
+  assert.ok(condition);
+  const allowed = (full, wasm, check = 'true', cancelled = false) => runInNewContext(condition, {
+    needs: { scope: { outputs: { full, check } }, wasm: { result: wasm } }, cancelled: () => cancelled,
+  }, { timeout: 50 });
+  for (const full of ['true', 'false']) {
+    assert.equal(allowed(full, 'success'), true);
+    for (const result of ['failure', 'cancelled', undefined]) assert.equal(allowed(full, result), false);
+    assert.equal(allowed(full, 'success', 'false'), false);
+    assert.equal(allowed(full, 'success', 'true', true), false);
+  }
+  assert.equal(allowed('true', 'skipped'), false, 'full release cannot use a missing artifact');
+  assert.equal(allowed('false', 'skipped'), true, 'fast checks build their own Wasm');
 });

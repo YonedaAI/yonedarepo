@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Deploy prod's first step: is the commit on main a merged ship PR, and what was its head? Any
-// other push deploys nothing. xtask then requires the head's statuses (xtask/src/deploy_ship.rs),
+// other push deploys nothing. xtask then requires the head's successful release CI (xtask/src/deploy_ship.rs),
 // so a wrong answer here can only stop a deploy, never allow one.
 // Writes `ship` and `pr_head` to $GITHUB_OUTPUT.
 import { appendFileSync } from 'node:fs';
