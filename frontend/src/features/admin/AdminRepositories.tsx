@@ -1,12 +1,16 @@
 // One globally searchable operator listing. Ordering and pagination belong to the server;
 // live database details remain an explicit read, never a per-row startup fanout.
 import { Fragment, useState } from 'react';
-import type { RepositoryOrder, RepositorySort } from '../../../../shared/admin-repositories';
+import type {
+  RepositoryFilters,
+  RepositoryOrder,
+  RepositorySort,
+} from '../../../../shared/admin-repositories';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { PublicBadge } from '../source-platform/PublicBadge';
 import { Failure } from '../source-platform/SourceStatus';
 import { PagedStatus, SearchBox } from './AdminParts';
-import { RepoUsage } from './AdminRepoUsage';
+import { RepositoryFiltersForm } from './AdminRepositoryFilters';
 import { LiveStorage } from './AdminStorage';
 import { dbSize, storageAlert, when } from './adminModel';
 import { useRepositoryPages } from './useRepositoryPages';
@@ -18,26 +22,35 @@ const COLUMNS: { key: RepositorySort; label: string; number?: boolean }[] = [
   { key: 'created', label: 'Created' },
   { key: 'database', label: 'Database', number: true },
 ];
-export function repositoryListPath(q: string, order: RepositoryOrder, cursor?: string) {
+export function repositoryListPath(
+  q: string,
+  order: RepositoryOrder,
+  cursor?: string,
+  filters?: RepositoryFilters,
+) {
   const query = new URLSearchParams({ sort: order.sort, direction: order.direction });
   if (q.trim()) query.set('q', q.trim());
   if (cursor) query.set('cursor', cursor);
+  if (filters?.owner.trim()) query.set('owner', filters.owner.trim());
+  if (filters?.visibility) query.set('visibility', filters.visibility);
   return `/admin/repos?${query}`;
 }
 
 function RepositoryTable({
   q,
   order,
+  filters,
   onSort,
   navigate,
 }: {
   q: string;
   order: RepositoryOrder;
+  filters: RepositoryFilters;
   onSort: (key: RepositorySort) => void;
   navigate: Navigate;
 }) {
-  const paged = useRepositoryPages(repositoryListPath(q, order), (cursor) =>
-    repositoryListPath(q, order, cursor),
+  const paged = useRepositoryPages(repositoryListPath(q, order, undefined, filters), (cursor) =>
+    repositoryListPath(q, order, cursor, filters),
   );
   const [open, setOpen] = useState<string | null>(null);
   return (
@@ -154,7 +167,13 @@ function RepositoryTable({
       <PagedStatus
         paged={{ ...paged, next: paged.partial ? null : paged.next }}
         what="repositories"
-        empty={paged.partial ? '' : q ? 'No repository matches.' : 'No repositories yet.'}
+        empty={
+          paged.partial
+            ? ''
+            : q || filters.owner || filters.visibility
+              ? 'No repository matches.'
+              : 'No repositories yet.'
+        }
       />
     </>
   );
@@ -162,6 +181,7 @@ function RepositoryTable({
 
 export function AdminRepos({ navigate }: { navigate: Navigate }) {
   const [q, setQ] = useState('');
+  const [filters, setFilters] = useState<RepositoryFilters>({ owner: '', visibility: '' });
   const [order, setOrder] = useState<RepositoryOrder>({ sort: 'database', direction: 'desc' });
   const sort = (key: RepositorySort) =>
     setOrder((previous) => ({
@@ -177,9 +197,11 @@ export function AdminRepos({ navigate }: { navigate: Navigate }) {
     }));
   return (
     <>
-      <SearchBox label="Search names and owners" value={q} onSearch={setQ} />
-      <RepositoryTable q={q} order={order} onSort={sort} navigate={navigate} />
-      <RepoUsage navigate={navigate} />
+      <div className="admin-repository-tools">
+        <SearchBox label="Search names and owners" value={q} onSearch={setQ} />
+        <RepositoryFiltersForm filters={filters} onApply={setFilters} />
+      </div>
+      <RepositoryTable q={q} order={order} filters={filters} onSort={sort} navigate={navigate} />
     </>
   );
 }

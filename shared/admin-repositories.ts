@@ -2,6 +2,7 @@
 export type RepositorySort = 'name' | 'owner' | 'visibility' | 'created' | 'database';
 export type SortDirection = 'asc' | 'desc';
 export type RepositoryOrder = { sort: RepositorySort; direction: SortDirection };
+export type RepositoryFilters = { owner: string; visibility: '' | 'public' | 'private' };
 export type RepositoryListing = {
   id: string;
   name: string;
