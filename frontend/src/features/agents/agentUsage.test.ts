@@ -167,7 +167,7 @@ it('ignores malformed missing usage fields instead of printing NaN or inferred t
   expect(totals).toMatchObject({ reported: 0, timed: 0, priced: 0, calls: 0, input: 0, output: 0 });
 });
 
-it('shows current cumulative run usage once rather than adding prior retry snapshots', () => {
+it('shows earlier failed attempts while keeping current cumulative usage separate', () => {
   const r = run();
   answers.byPath.set(`/workspaces/ada/runs/${r.repo}/${r.id}`, {
     data: {
@@ -176,7 +176,19 @@ it('shows current cumulative run usage once rather than adding prior retry snaps
       transcript: null,
       cost: [],
       previous_attempts: [
-        { attempt: 1, run: run({ input_tokens: 999999, cost_usd: 999 }), findings: [] },
+        {
+          attempt: 1,
+          run: run({
+            input_tokens: 999999,
+            cost_usd: 0.01,
+            status: 'failed',
+            value: null,
+            model: 'previous-model',
+            error: 'The harness container stopped before it reported',
+            finished_at: 61000,
+          }),
+          findings: [],
+        },
       ],
     },
   });
@@ -192,19 +204,26 @@ it('shows current cumulative run usage once rather than adding prior retry snaps
   expect(html).toContain('This run');
   expect(html).toContain('1,200');
   expect(html).toContain('$0.03');
-  expect(html).not.toContain('$999.00');
+  const currentUsage = html.match(
+    /<section[^>]*aria-label="Agent usage"[^>]*>([\s\S]*?)<\/section>/,
+  )?.[1];
+  expect(currentUsage).toBeDefined();
+  expect(currentUsage).toContain('$0.03');
+  expect(currentUsage).not.toContain('$0.04');
+  expect(html).toContain('Earlier attempts');
+  expect(html).toContain('Attempt 1');
+  expect(html).toContain('Failed');
+  expect(html).toContain('previous-model');
+  expect(html).toContain('The harness container stopped before it reported');
+  expect(html).toContain('Finished');
+  expect(html).toContain(new Date(61000).toLocaleString());
+  expect(html).toContain('Cost so far');
+  expect(html).toContain('$0.01');
+  expect(html).toContain('Costs include earlier attempts.');
   expect(html).not.toContain('999,999');
   expect(html).not.toContain('Nothing was charged for this run.');
   expect(html).toContain('Cost breakdown is unavailable.');
-  answers.byPath.set(`/workspaces/ada/runs/${r.repo}/${r.id}`, {
-    data: {
-      run: run({ cost_usd: 0 }),
-      findings: [],
-      transcript: null,
-      cost: [],
-    },
-  });
-  expect(
+  const noHistory = () =>
     renderToStaticMarkup(
       createElement(AgentRunDetail, {
         workspace: 'ada',
@@ -213,6 +232,18 @@ it('shows current cumulative run usage once rather than adding prior retry snaps
         space: {},
         navigate: () => {},
       }),
-    ),
-  ).toContain('Nothing was charged for this run.');
+    );
+  for (const history of [undefined, []]) {
+    answers.byPath.set(`/workspaces/ada/runs/${r.repo}/${r.id}`, {
+      data: {
+        run: run({ cost_usd: 0 }),
+        findings: [],
+        transcript: null,
+        cost: [],
+        previous_attempts: history,
+      },
+    });
+    expect(noHistory()).toContain('Nothing was charged for this run.');
+    expect(noHistory()).not.toContain('Earlier attempts');
+  }
 });
