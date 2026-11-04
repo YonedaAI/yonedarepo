@@ -1514,6 +1514,7 @@ fn contract_records_bind_to_commit_and_digest_and_respect_grants() {
 
 mod access_gates;
 mod account_access;
+mod acid;
 mod activity;
 mod agent_reads;
 mod audit_outbox;

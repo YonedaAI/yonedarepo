@@ -45,7 +45,9 @@ Declared reads are agent claims. The 2026-10-31 memory run found recorded reads 
 Each step starts with a failing test, puts new behavior behind a branch-policy switch, and keeps every Git object unchanged.
 
 1. **Contract tests for what holds today.** In the differential suite (`repo_store/tests/differential`, oracle `yoneda-refmodel`, checked against real Git), add one scenario per anomaly: dirty write (G0), lost update, stale read with declared reads, write skew within a batch. These should pass now; they pin the claims.
+   Built 2026-11-04: `yoneda-platform/src/repo_store/tests/acid.rs` (G0, multi-ref batch atomicity, lost update both ways, stale read); batch write skew was already pinned in `tests/changesets.rs`. The refmodel's commits read only the path they write, so these sit beside the differential suite.
 2. **Write skew test for explicit landings.** Two changes from the same base: A reads `x`, writes `y`; B reads `y`, writes `x`; neither declares reads. Expect both to land today. This test documents the gap before step 4 closes it.
+   Built 2026-11-04: `write_skew_without_declared_reads_lands_today` in `tests/acid.rs`.
 3. **Atomic mixed push.** `git push --atomic` moving `main` and a working branch where the `main` landing is refused: expect no ref moved. Fix in `repo-git-receive.ts` if it fails.
 4. **Strict isolation switch.** Policy `isolation: "serializable"` makes an explicit landing with no declared reads count its writes as reads, as batches already do. Default stays as today until measured.
 5. **Checks before main moves.** Policy `merged_checks: "before"`: a platform merge commit is held, the required checks run on the merged tree, then it lands with `expected_head`; a moved head rebuilds the merge. Measure the added landing time with the 1,000-writer burst before turning it on anywhere.
