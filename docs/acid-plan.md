@@ -54,6 +54,7 @@ Each step starts with a failing test, puts new behavior behind a branch-policy s
 6. **Read coverage.** Record reads from `claude-bash` for `cat`, `head`, `tail`, `sed -n`, `grep` and `rg` paths. Measure coverage on the memory run's tasks.
 7. **Failure model and durability tests.** Name the failures covered: isolate crash mid-request, Durable Object restart, R2 write failure, acknowledgment loss. Add a test per failure where one is missing (start with acknowledgment loss: a retried push gives the same outcome and one log entry).
 8. **Publish the contract.** A guarantees section in `README.md` stating boundary, isolation level per path and the failure model, with links to the tests. Only claims with a passing test go in.
+9. **Verify merge content, not just its shape.** `merging::verify` checks a platform merge commit's parents, principal and touched paths, but not that its tree is the three-way merge of base, head and the landed work: a merge keeping one side would land. Recompute the merge in the authority's verify step (Rust compute, no I/O in the transaction) and refuse a tree that differs. Test first: a hand-built `platform:merge` commit that drops one side is refused. Independent of steps 3–8; do it next.
 
 ## Wording until step 8 lands
 
