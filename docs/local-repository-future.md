@@ -1,7 +1,8 @@
 # Future feature: local Rust repository service
 
-Status: proposed, 2026-11-03. Documentation only; implementation is not authorized.
-This is separate from the current loading, release and demo work.
+Status: in progress, 2026-11-04 (owner: "we need our model locally and in the cloud";
+"each local repo has a yonedarepo"). Work lands on `claude/yoneda-local`, not `dev`,
+until the owner says so.
 
 ## Intended outcome
 
@@ -86,6 +87,44 @@ service, recovery system or offline cloud synchronization.
    publication shown without implying that local work is already published?
 6. Which existing check and policy capabilities are available locally, and which
    require a cloud service? Missing capabilities must remain explicit.
+
+## Design answers (2026-11-04)
+
+The service is `yoneda-local`, a loopback Git smart-HTTP server whose push path
+is the cloud's Rust push path (`ReceiveSession`, `repo_record_pushed`, landing).
+
+1. **Mode and identity.** `yoneda local init` in a clone creates
+   `.git/yoneda/local/` (shared by its worktrees): a bare object store
+   `store.git`, the authority `authority.sqlite`, `sync.sqlite`, a token and a
+   fixed port. It adds the remote `local` at
+   `http://127.0.0.1:<port>/git/<repo-id>.git`; the repository id is the paired
+   cloud repository's. Pairing: the clone's yoneda remote, or else a new cloud
+   repository with `main`'s history pushed to it.
+2. **One owner, durability.** `yoneda local serve` takes an exclusive lock;
+   a second instance refuses. One thread owns the SQLite authority (WAL,
+   `synchronous=FULL`) and runs every command through `execute_migrated`.
+   Pushed objects are written to `store.git` and fsynced
+   (`core.fsync=objects,reference`) before the authority records them; a push
+   is answered only after its transaction commits. Retries are content-addressed
+   and `repo_land` answers `already`.
+3. **Refs.** The authority is the truth. After each commit, refs in `store.git`
+   are moved with `git update-ref <ref> <new> <old>`. On start the service drains
+   pending objects and reconciles refs, and refuses to overwrite a ref changed
+   outside it.
+4. **Transport and callers.** Loopback HTTP, so stock Git, worktrees on the host
+   and clones in the Docker sandbox all use it. Callers need a token, given to
+   Git by a credential helper, never in arguments or URLs. Principals:
+   `local:<user>` on the host, `local-agent:<name>` in the sandbox.
+5. **Sync.** Automatic. Up after each local landing on `main`: a smart-HTTP push
+   of the tip with the union of the unsynced landings' read sets, so commit ids
+   stay the same. Down every 30 s: cloud `main` is fetched and landed locally
+   (fast-forward or a local platform merge). States shown by
+   `yoneda local status`: `synced`, `pending`, `conflict`, `diverged`,
+   `refused`, `offline`. Local acceptance and cloud publication are shown
+   separately; a local landing is never rolled back.
+6. **Capabilities.** Locally: landing, OCC, declared reads, merges, the log and
+   reads at a version. The local policy has no required checks or approvals.
+   Cloud policy, checks and approvals apply when the work lands in the cloud.
 
 The service coordinates repository state. Agents remain external clients; this
 proposal does not add planners, model execution or agent scheduling to the
