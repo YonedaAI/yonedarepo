@@ -815,8 +815,8 @@ fn search_code_memo_has_dev_prod_and_cell_parity() {
 }
 
 #[test]
-fn overview_admitted_snapshot_has_an_explicit_dev_experiment_and_prod_hold() {
-    for ((_, workers), expected) in [(dev(), "on"), (prod(), "off")] {
+fn overview_admitted_snapshot_has_dev_prod_and_cell_parity() {
+    for ((_, workers), expected) in [(dev(), "on"), (prod(), "on")] {
         for worker in workers
             .iter()
             .filter(|w| w.role.starts_with("platform") || w.role.starts_with("api-"))
