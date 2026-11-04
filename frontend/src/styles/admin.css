@@ -670,3 +670,36 @@
     left: 16px;
   }
 }
+
+.admin-sort {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.admin-sort:hover {
+  color: var(--link);
+}
+.admin-sort:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+.admin-repositories-wrap {
+  max-width: 100%;
+}
+.admin-repositories {
+  min-width: 780px;
+}
+
+.admin-repositories .admin-storage-detail {
+  position: sticky;
+  left: 0;
+  width: max-content;
+  max-width: min(420px, calc(100vw - 64px));
+  white-space: normal;
+}

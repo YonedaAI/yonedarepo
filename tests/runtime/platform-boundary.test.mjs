@@ -79,6 +79,8 @@ const neutral = new Set([
   // The admin Operations, Infrastructure, Visitors and Agents tabs' wire shapes and the clients
   // an agent can name; imports only types.
   '../../shared/platform-reports',
+  // Type-only operator repository listing/order transport, with no product policy or SDK.
+  '../../shared/admin-repositories',
   // Token scope names, generated from Rust; types only.
   '../../shared/contracts/pat-scopes',
   // Rust-generated repository status/snapshot wire types; no agent-layer policy.

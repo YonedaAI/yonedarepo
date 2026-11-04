@@ -19,7 +19,6 @@ import {
   dbSize,
   providerLabel,
   readSeen,
-  reposPath,
   saveSeen,
   signupsPath,
   storageAlert,
@@ -79,7 +78,6 @@ describe('admin model', () => {
   it('builds the API paths with search and paging', () => {
     expect(accountsPath('', undefined)).toBe('/admin/accounts');
     expect(accountsPath(' ad a ', 123)).toBe('/admin/accounts?q=ad+a&before=123');
-    expect(reposPath('x', undefined)).toBe('/admin/repos?q=x');
     expect(signupsPath(0)).toBe('/admin/signups?since=0');
   });
 
