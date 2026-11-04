@@ -432,9 +432,10 @@ describe('latency alert actions', () => {
       signals: { signals: [{ name: 'p95_wall_ms', value: 2189, baseline: 117, anomalous: true }] },
     });
     const mail = renderNotice({ ...DEV, env: 'prod' }, [finding]);
-    expect(mail.subject).toBe('[prod] Website calls slowed to 2.2 s');
-    expect(mail.text).toContain('They usually take about 117 ms.');
-    expect(mail.text).toContain("First: Find the slowest requests and routes in this Worker's logs.");
+    expect(mail.subject).toBe('[prod] Website execution time rose');
+    expect(mail.text).toContain('Estimated 95th percentile: 2.2 s; usual estimate 117 ms.');
+    expect(mail.text).toContain('Includes background work.');
+    expect(mail.text).toContain("First: Inspect request timings and upstream calls in this Worker's logs.");
     expect(mail.text).not.toContain('A burst on dev explains most.');
   });
 });
