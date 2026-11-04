@@ -37,8 +37,7 @@ import { lfsRoute } from './repo-lfs';
 import { membersRoute } from './repo-members';
 import { contextRoute, memoriesRoute } from './repo-memories';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
-import { overview, overviewRequested } from './repo-overview';
-import { admittedOverviewSnapshot, overviewSnapshotRequest } from './repo-overview-admission';
+import { browserSummary } from './repo-overview-summary';
 import { renameRepository, withPath } from './repo-paths';
 import { forViewer } from './repo-principal-privacy';
 import { capped, setVisibility } from './repo-public';
@@ -145,16 +144,7 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return batchRefs(ctx, await bodyOf(req));
   if (!resource && get && url.searchParams.get('summary') === 'true') {
     // Browser metadata must not wait for storage diagnostics across every shard.
-    const requested = overviewSnapshotRequest(env, url.searchParams);
-    const status = requested
-      ? await ctx.call({ op: 'repo_status', snapshot: requested })
-      : await ctx.status();
-    const admitted = admittedOverviewSnapshot(env, status, url.searchParams);
-    const { objects: _objects, snapshot: _snapshot, ...summary } = status;
-    const decorated = await withPath(env, repo, summary);
-    return overviewRequested(env, url.searchParams)
-      ? { ...decorated, overview: await overview(ctx, summary, url.searchParams, admitted) }
-      : decorated;
+    return browserSummary(ctx, url.searchParams);
   }
   if (!resource && get) return withPath(env, repo, await run('git_status', {}));
   if (resource === 'name' && !sha && req.method === 'PUT')

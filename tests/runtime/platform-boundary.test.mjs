@@ -81,6 +81,8 @@ const neutral = new Set([
   '../../shared/platform-reports',
   // Token scope names, generated from Rust; types only.
   '../../shared/contracts/pat-scopes',
+  // Rust-generated repository status/snapshot wire types; no agent-layer policy.
+  '../../shared/contracts/repo-status',
   // Account identifier rules (yoneda-core::account's transport counterpart); imports nothing.
   '../../shared/account',
   // The Flight log's address rule, shared with the /updates form; imports only shared/account.
