@@ -27,12 +27,12 @@ it('the bounded head script executes alone before React or application modules',
   expect(fetch).toHaveBeenCalledTimes(2);
   fetch.mockClear();
   target.location.pathname = '/agents';
-  Object.assign(target, { localStorage: { getItem: (key: string) => key === 'yoneda-personal-workspace' ? 'person@example.test' : null } });
+  Object.defineProperty(target, 'localStorage', { get() { throw new Error('Blocked'); } });
   new Script(tag.children).runInNewContext({
     window: target, fetch, AbortController, DOMException,
     setTimeout: () => 1, clearTimeout: () => {},
   });
   expect(fetch.mock.calls.map((call) => call[0])).toEqual([
-    '/api/auth/session?summary=true', '/api/managed/workspaces/person%40example.test',
+    '/api/auth/session?summary=true', '/api/managed/self',
   ]);
 });

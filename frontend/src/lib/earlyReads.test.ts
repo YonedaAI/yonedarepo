@@ -110,9 +110,9 @@ it('does not cancel an adopted session when the resolver finishes navigation fir
   vi.stubGlobal(
     'fetch',
     vi.fn(
-      () =>
+      (url: string) =>
         new Promise<Response>((resolve) => {
-          done = resolve;
+          if (url.includes('auth/session')) done = resolve;
         }),
     ),
   );
@@ -199,59 +199,64 @@ it('excludes every generated reserved handle, including operator and Worker rout
   }
 });
 
-it('adopts the returning personal Agents read without a second collection request', async () => {
+it('starts and adopts the first personal Agents read without storage or a second request', async () => {
   const fetch = vi.fn(async (_url: string) => Response.json({ agents: ['fresh'] }));
   vi.stubGlobal('fetch', fetch);
   const target = windowAt('/agents');
-  Object.assign(target, { localStorage: { getItem: () => 'person@example.test' } });
+  Object.defineProperty(target, 'localStorage', {
+    get() {
+      throw new Error('Blocked');
+    },
+  });
   beginEarlyReads(target);
   expect(fetch.mock.calls.map((call) => call[0])).toEqual([
     '/api/auth/session?summary=true',
-    '/api/managed/workspaces/person%40example.test',
+    '/api/managed/self',
   ]);
-  await expect(managedApi('/workspaces/person%40example.test')).resolves.toEqual({
-    agents: ['fresh'],
-  });
+  await expect(managedApi('/self')).resolves.toEqual({ agents: ['fresh'] });
   expect(fetch).toHaveBeenCalledTimes(2);
 });
 
-it('never adopts a different account hint or bypasses its server denial', async () => {
+it('retains self denial and does not donate it to another workspace or document', async () => {
   const fetch = vi.fn(async () => Response.json({ error: { code: 'FORBIDDEN' } }, { status: 403 }));
   vi.stubGlobal('fetch', fetch);
   const target = windowAt('/agents');
-  Object.assign(target, { localStorage: { getItem: () => 'wrong' } });
   beginEarlyReads(target);
   expect(takeEarlyResponse('/api/managed/workspaces/current')).toBeUndefined();
-  await expect(managedApi('/workspaces/wrong')).rejects.toMatchObject({ status: 403 });
+  await expect(managedApi('/self')).rejects.toMatchObject({ status: 403 });
   expect(fetch).toHaveBeenCalledTimes(2);
+  beginEarlyReads(target);
+  target.location.pathname = '/agents/settings';
+  expect(takeEarlyResponse('/api/managed/self')).toBeUndefined();
 });
 
-it('keeps first visits, blocked storage and nonplain Agents routes on normal discovery', () => {
+it('keeps nonplain Agents routes on normal discovery', () => {
   const fetch = vi.fn(() => new Promise<Response>(() => {}));
   vi.stubGlobal('fetch', fetch);
-  for (const path of ['/agents', '/agents?workspace=other', '/agents#other', '/agents/settings']) {
-    const target = windowAt(path);
-    Object.assign(target, {
-      localStorage: { getItem: () => (path === '/agents' ? null : 'sample') },
-    });
+  for (const path of ['/agents?workspace=other', '/agents#other', '/agents/settings']) {
     fetch.mockClear();
-    beginEarlyReads(target);
+    beginEarlyReads(windowAt(path));
     expect(fetch).toHaveBeenCalledTimes(1);
   }
-  const target = windowAt('/agents');
-  Object.defineProperty(target, 'localStorage', {
-    get: () => {
-      throw new Error('blocked');
-    },
-  });
-  fetch.mockClear();
-  beginEarlyReads(target);
-  expect(fetch).toHaveBeenCalledTimes(1);
-  for (const hint of ['..', '../other', 'x'.repeat(255), 'a@@b.test', 'name@domain']) {
-    const target = windowAt('/agents');
-    Object.assign(target, { localStorage: { getItem: () => hint } });
-    fetch.mockClear();
-    beginEarlyReads(target);
-    expect(fetch).toHaveBeenCalledTimes(1);
-  }
+});
+
+it('transfers self cancellation without cancelling an adopted session', async () => {
+  const fetch = vi.fn((url: string, init?: RequestInit) =>
+    url.endsWith('/self')
+      ? new Promise<Response>((_, reject) =>
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason)),
+        )
+      : Promise.resolve(Response.json({ authenticated: true, username: 'sample' })),
+  );
+  vi.stubGlobal('fetch', fetch);
+  beginEarlyReads(windowAt('/agents'));
+  const scope = new AbortController();
+  const session = api('auth/session?summary=true');
+  const pending = managedApi('/self', { signal: scope.signal });
+  clearEarlyReads();
+  scope.abort();
+  await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  expect(fetch.mock.calls[1]?.[1]?.signal?.aborted).toBe(true);
+  await expect(session).resolves.toMatchObject({ username: 'sample' });
+  expect(fetch).toHaveBeenCalledTimes(2);
 });
