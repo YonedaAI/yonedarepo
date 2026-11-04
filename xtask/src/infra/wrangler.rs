@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 
 const WRANGLER: &str = "node_modules/.bin/wrangler";
 
-fn command(account_id: &str, args: &[&str]) -> Command {
+pub(crate) fn command(account_id: &str, args: &[&str]) -> Command {
     let mut command = Command::new(WRANGLER);
     command.args(args).env("CLOUDFLARE_ACCOUNT_ID", account_id);
     crate::deploy_credentials::apply(&mut command);

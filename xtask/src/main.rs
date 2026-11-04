@@ -26,6 +26,7 @@ mod deploy_secrets;
 mod deploy_ship;
 mod deploy_source;
 mod deploy_timings;
+mod deploy_wrangler;
 mod dev;
 mod downloads;
 mod erase_backfill;
