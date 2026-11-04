@@ -25,7 +25,9 @@ vi.mock('../source-platform/useSource', () => ({
     reload() {},
   }),
 }));
-vi.mock('./AdminRepoUsage', () => ({ RepoUsage: () => null }));
+vi.mock('./AdminRepoUsage', () => ({
+  RepoUsage: () => createElement('section', { 'aria-label': 'Repository use' }, 'Use, last 30 days'),
+}));
 it('shows one searchable repository table with accessible server sort controls and unknown sampled storage', () => {
   const html = renderToStaticMarkup(createElement(AdminRepos, { navigate: () => {} }));
   expect(html.match(/<table /g)).toHaveLength(1);
@@ -49,4 +51,14 @@ it('encodes the server order and opaque cursor with search rather than sorting l
   expect(query.get('direction')).toBe('asc');
   expect(query.get('q')).toBe('displayed');
   expect(query.get('cursor')).toBe('{"id":"cursor"}');
+});
+
+it('puts the usage summary before search and the complete repository listing', () => {
+  const html = renderToStaticMarkup(createElement(AdminRepos, { navigate: () => {} }));
+  const usage = html.indexOf('aria-label="Repository use"');
+  const search = html.indexOf('aria-label="Search names and owners"');
+  const listing = html.indexOf('aria-label="Repository list"');
+  expect(usage).toBeGreaterThanOrEqual(0);
+  expect(search).toBeGreaterThan(usage);
+  expect(listing).toBeGreaterThan(search);
 });
