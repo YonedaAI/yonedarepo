@@ -23,6 +23,52 @@ pub(crate) struct ShipFacts {
     pub tree: Option<String>,
     /// Release CI pull-request runs at the PR head.
     pub runs: Vec<Value>,
+    /// Completed final gates bound to one run and its latest attempt.
+    pub gates: Vec<ReleaseGate>,
+}
+
+/// Stable release proof after GitHub drops the merged PR from a run's associations.
+#[derive(Clone, Debug)]
+pub(crate) struct ReleaseGate {
+    run_id: u64,
+    attempt: u64,
+    head: String,
+}
+
+fn identity(run: &Value) -> Option<(u64, u64)> {
+    Some((
+        run["id"].as_u64().filter(|id| *id > 0)?,
+        run["run_attempt"].as_u64().filter(|n| *n > 0)?,
+    ))
+}
+
+/// A complete, unpaginated latest-attempt page must contain exactly one successful final gate.
+fn final_gate(run: &Value, page: &Value, paginated: bool) -> Option<ReleaseGate> {
+    if paginated {
+        return None;
+    }
+    let (run_id, attempt) = identity(run)?;
+    let jobs = page["jobs"].as_array()?;
+    let total = page["total_count"].as_u64()?;
+    if total == 0 || total > 100 || usize::try_from(total).ok()? != jobs.len() {
+        return None;
+    }
+    let mut gates = jobs.iter().filter(|job| job["name"] == "Ship gate");
+    let gate = gates.next()?;
+    if gates.next().is_some()
+        || gate["status"] != "completed"
+        || gate["conclusion"] != "success"
+        || gate["run_id"].as_u64() != Some(run_id)
+        || gate["run_attempt"].as_u64() != Some(attempt)
+        || gate["head_sha"] != run["head_sha"]
+    {
+        return None;
+    }
+    Some(ReleaseGate {
+        run_id,
+        attempt,
+        head: gate["head_sha"].as_str()?.into(),
+    })
 }
 
 /// `--ship-head <sha>`.
@@ -67,21 +113,21 @@ pub(crate) fn passes(facts: &Facts) -> Result<()> {
 
 /// A successful release CI run of this repository's dev at the PR head. A fork's run counts for
 /// nothing: `pull_request` runs of forks live in this repository too.
-fn ship_run(run: &Value, ship: &ShipFacts) -> bool {
+fn ci_run(run: &Value, ship: &ShipFacts) -> bool {
     let path = run["path"].as_str().unwrap_or_default();
     run["event"] == "pull_request"
         && run["conclusion"] == "success"
         && run["head_sha"] == ship.pr_head.as_str()
         && run["head_branch"] == "dev"
         && run["head_repository"]["full_name"] == ship.repo.as_str()
-        && run["pull_requests"].as_array().is_some_and(|pulls| {
-            pulls.iter().any(|pull| {
-                pull["base"]["ref"] == "main"
-                    && pull["head"]["ref"] == "dev"
-                    && pull["head"]["sha"] == ship.pr_head.as_str()
-            })
-        })
         && (path == CI_WORKFLOW || path.starts_with(&format!("{CI_WORKFLOW}@")))
+}
+
+fn ship_run(run: &Value, ship: &ShipFacts) -> bool {
+    ci_run(run, ship)
+        && ship.gates.iter().any(|gate| {
+            identity(run) == Some((gate.run_id, gate.attempt)) && run["head_sha"] == gate.head
+        })
 }
 
 /// Reads release CI runs; needs GITHUB_REPOSITORY and GH_TOKEN on a runner or workstation.
@@ -95,7 +141,7 @@ pub(crate) async fn gather(pr_head: &str) -> Result<ShipFacts> {
         .timeout(Duration::from_secs(30))
         .user_agent("yonedarepo-xtask")
         .build()?;
-    let get = async |path: String| -> Result<Value> {
+    let get = async |path: String| -> Result<(Value, bool)> {
         let answer = client
             .get(format!("https://api.github.com/repos/{repo}/{path}"))
             .bearer_auth(&token)
@@ -106,19 +152,36 @@ pub(crate) async fn gather(pr_head: &str) -> Result<ShipFacts> {
         if !status.is_success() {
             return Err(format!("GitHub answered {status} for {path}").into());
         }
-        Ok(answer.json().await?)
+        let paginated = answer.headers().contains_key(reqwest::header::LINK);
+        Ok((answer.json().await?, paginated))
     };
-    let runs = get(format!(
+    let (runs, _) = get(format!(
         "actions/workflows/ci.yml/runs?head_sha={pr_head}&event=pull_request&status=success&per_page=20"
     ))
     .await?;
     let list = |value: &Value| value.as_array().cloned().unwrap_or_default();
-    Ok(ShipFacts {
+    let mut ship = ShipFacts {
         pr_head: pr_head.to_owned(),
         tree: guard::tree_of(pr_head),
         runs: list(&runs["workflow_runs"]),
-        repo,
-    })
+        gates: Vec::new(),
+        repo: repo.clone(),
+    };
+    for run in &ship.runs {
+        if !ci_run(run, &ship) {
+            continue;
+        }
+        let Some((id, _)) = identity(run) else {
+            continue;
+        };
+        let (page, paginated) =
+            get(format!("actions/runs/{id}/jobs?filter=latest&per_page=100")).await?;
+        if let Some(gate) = final_gate(run, &page, paginated) {
+            ship.gates.push(gate);
+            break;
+        }
+    }
+    Ok(ship)
 }
 
 fn status_args(sha: &str, tree: &str) -> Vec<String> {
