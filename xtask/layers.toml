@@ -19,6 +19,8 @@ yoneda-worker = ["yoneda-core", "yoneda-cloudflare", "yoneda-platform"]
 yoneda-runtime = ["yoneda-core"]
 # The CLI and Git remote helper are API clients.
 yoneda-cli = ["yoneda-core"]
+# The local repository service: the platform engine on native SQLite and a local Git store.
+yoneda-local = ["yoneda-core", "yoneda-store", "yoneda-platform"]
 # Its own workspace: the gateway image builds from its directory alone.
 yoneda-ssh-gateway = []
 # Its own workspace too: the PackBuilder image builds from its directory alone.

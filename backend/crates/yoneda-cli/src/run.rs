@@ -161,6 +161,7 @@ async fn run(command: Command) -> Result<()> {
         Command::Sync(mode) => sync_checkout(mode).await,
         Command::Reads(command) => declared_reads::run(command),
         Command::Push(args) => session_cmd::push(args),
+        Command::Local(args) => crate::local_cmd::run(&args),
         Command::Session { target, command } => session_cmd::session(&target, command).await,
         Command::Change { target, command } => {
             change_cmd::run(&target::resolve(&target)?, command).await

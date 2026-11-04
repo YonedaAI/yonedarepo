@@ -33,6 +33,7 @@ mod git;
 mod go_around;
 mod http;
 pub mod import;
+mod local_cmd;
 pub mod login;
 mod memory_cmd;
 mod opencode_hook;
