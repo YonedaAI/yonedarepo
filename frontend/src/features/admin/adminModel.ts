@@ -72,13 +72,11 @@ export type AdminRepo = {
   visibility: 'public' | 'private';
   created_at: number;
 };
-/** A repository with the database size last sampled and the alert level it reached. */
-export type LargeRepo = AdminRepo & { db_bytes: number; level: number | null };
 /** A repository's database now (null when it could not be read). */
 export type RepoDetail = AdminRepo & {
   storage: { db_bytes: number; table_rows: Record<string, number> } | null;
 };
-export type Page<T> = { items: T[]; next: number | null };
+export type Page<T, Cursor = number> = { items: T[]; next: Cursor | null; partial?: boolean };
 export type Credit = {
   balance: { granted: number; used: number; balance: number };
   entries: { id: number; at: number; kind: string; amount: number; note: string | null }[];
@@ -151,9 +149,6 @@ export function withQuery(path: string, params: Record<string, string | number |
 }
 export const accountsPath = (q: string, before?: number) =>
   withQuery('/admin/accounts', { q: q.trim(), before });
-export const reposPath = (q: string, before?: number) =>
-  withQuery('/admin/repos', { q: q.trim(), before });
-export const LARGEST_PATH = '/admin/repos/largest';
 export const repoPath = (repo: string) => `/admin/repos/${repo}`;
 export const signupsPath = (since: number) => `/admin/signups?since=${since}`;
 export const auditPath = (filters: AuditFilters, before?: number) =>

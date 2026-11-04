@@ -1,20 +1,15 @@
-// Admin listings: users and repositories (search and paging), the sign-up feed (new since
-// this browser last looked), and the audit log of operator actions.
+// Account listings and the sign-up feed (new since this browser last looked).
+// The repository listing lives in AdminRepositories.
 import { useEffect, useState } from 'react';
 import { linkTo, type Navigate } from '../shell/useRoute';
-import { PublicBadge } from '../source-platform/PublicBadge';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import type { Loaded } from '../source-platform/useSource';
 import { PagedStatus, SearchBox, usePaged } from './AdminParts';
-import { RepoUsage } from './AdminRepoUsage';
-import { LargestRepos } from './AdminStorage';
 import {
   type AdminAccount,
-  type AdminRepo,
   accountsPath,
   nameOf,
   providerLabel,
-  reposPath,
   type Signups,
   when,
 } from './adminModel';
@@ -101,60 +96,7 @@ export function AdminUsers({ navigate }: { navigate: Navigate }) {
   );
 }
 
-function ReposTable({ q, navigate }: { q: string; navigate: Navigate }) {
-  const paged = usePaged<AdminRepo>((before) => reposPath(q, before));
-  return (
-    <>
-      {paged.items.length > 0 && (
-        <div className="source-table-wrap">
-          <table className="source-table admin-table">
-            <caption className="sr-only">Repositories, newest first</caption>
-            <thead>
-              <tr>
-                <th>Repository</th>
-                <th>Owner</th>
-                <th>Visibility</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paged.items.map((r) => (
-                <tr key={r.id}>
-                  <td>
-                    <a {...linkTo({ view: 'overview', repo: r.id }, navigate)}>{r.name}</a>
-                    <small className="admin-sub">{r.id}</small>
-                  </td>
-                  <td>
-                    <UserLink a={{ account: r.owner, handle: r.handle }} navigate={navigate} />
-                  </td>
-                  <td>{r.visibility === 'public' ? <PublicBadge /> : 'Private'}</td>
-                  <td>{when(r.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <PagedStatus
-        paged={paged}
-        what="repositories"
-        empty={q ? 'No repository matches.' : 'No repositories yet.'}
-      />
-    </>
-  );
-}
-
-export function AdminRepos({ navigate }: { navigate: Navigate }) {
-  const [q, setQ] = useState('');
-  return (
-    <>
-      <RepoUsage navigate={navigate} />
-      <LargestRepos navigate={navigate} />
-      <SearchBox label="Search names and owners" value={q} onSearch={setQ} />
-      <ReposTable key={q} q={q} navigate={navigate} />
-    </>
-  );
-}
+export { AdminRepos } from './AdminRepositories';
 
 /** The newest sign-ups; those after this browser's last look are marked new, and opening the
  * feed counts as looking (`onSeen`, with the newest one's time). */

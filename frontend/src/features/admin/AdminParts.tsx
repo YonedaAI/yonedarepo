@@ -9,10 +9,10 @@ import { useSource } from '../source-platform/useSource';
 import type { Page } from './adminModel';
 import { figure, RANGE_LABELS } from './trafficModel';
 
-/** The listing `pathOf(before)` pages through, newest first. */
-export function usePaged<T>(pathOf: (before?: number) => string) {
-  const first = useSource<Page<T>>(pathOf());
-  const [later, setLater] = useState<Page<T>[]>([]);
+/** The server listing `pathOf(cursor)` pages through, in its requested order. */
+export function usePaged<T, Cursor = number>(pathOf: (before?: Cursor) => string) {
+  const first = useSource<Page<T, Cursor>>(pathOf());
+  const [later, setLater] = useState<Page<T, Cursor>[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const pages = first.data ? [first.data, ...later] : [];
@@ -22,7 +22,7 @@ export function usePaged<T>(pathOf: (before?: number) => string) {
     setBusy(true);
     setError('');
     try {
-      const page = await sourceApi<Page<T>>(pathOf(next));
+      const page = await sourceApi<Page<T, Cursor>>(pathOf(next));
       setLater((loaded) => [...loaded, page]);
     } catch (e) {
       setError((e as Error).message);
@@ -45,12 +45,12 @@ export function usePaged<T>(pathOf: (before?: number) => string) {
 }
 
 /** Loading, failure, empty text and "Load more" around a paged table. */
-export function PagedStatus({
+export function PagedStatus<Cursor = number>({
   paged,
   what,
   empty,
 }: {
-  paged: ReturnType<typeof usePaged<unknown>>;
+  paged: ReturnType<typeof usePaged<unknown, Cursor>>;
   what: string;
   empty: string;
 }) {
@@ -60,7 +60,9 @@ export function PagedStatus({
       {paged.first.error && (
         <Failure error={paged.first.error} what={what} onRetry={paged.reload} />
       )}
-      {paged.first.data && paged.items.length === 0 && <p className="source-empty">{empty}</p>}
+      {paged.first.data && paged.items.length === 0 && empty && (
+        <p className="source-empty">{empty}</p>
+      )}
       {paged.error && <Failure error={paged.error} what={what} onRetry={paged.more} />}
       {paged.next !== null && (
         <button

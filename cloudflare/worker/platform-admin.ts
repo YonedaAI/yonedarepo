@@ -35,6 +35,11 @@ import {
   repoRowOf,
   signups,
 } from './platform-admin-queries';
+import {
+  mergeRepositoryPages,
+  repositoryQuery,
+  sortedRepositories,
+} from './platform-admin-repositories';
 import { rebuildRollup, revenue } from './platform-admin-revenue';
 import { agentView } from './platform-agent-report';
 import { setAsideAuditRow } from './platform-audit-set-aside';
@@ -175,6 +180,15 @@ async function operatorRoute(
   }
   if (section === 'orgs' && id && hold) return operatorOrgHold(env, actor, orgArg(id), method);
   if (section === 'imports' && !id && get) return importAudit(env, query.get('after'));
+  if (section === 'repos' && !id && get && query.has('sort')) {
+    const order = repositoryQuery(query);
+    return everyCell(
+      env,
+      `/api/v1/admin/repos?${query}`,
+      () => sortedRepositories(env, order),
+      (parts) => mergeRepositoryPages(parts, order),
+    );
+  }
   if (section === 'repos' && !id && get)
     return everyCell(
       env,
