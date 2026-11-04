@@ -13,7 +13,7 @@ import { api, bindings, file, scoped, signup, usePlatformFixture } from './repo-
 
 usePlatformFixture();
 
-const local = { ...scoped, RECENT_VERSIONS: 'on' } as unknown as Env;
+const local = { ...scoped, RECENT_VERSIONS: 'on', OVERVIEW_DEFER_ACTIVITY: 'on' } as unknown as Env;
 const EMAIL = 'grace.hopper@example.com';
 // Git identities carry an address of their own (exempt); never the account's.
 const author = { name: 'Grace', email: 'commits@git.example' };
@@ -67,6 +67,7 @@ async function crawl(id: string, main: string, head: string, auth: { cookie?: st
     repo, `${repo}/refs`, `${repo}/log?ref=main`, `${repo}/log?ref=fix`, `${repo}/txlog`, `${repo}/versions`, `${repo}/versions?compact=true`, `${repo}/changelog`,
     `${repo}/commits/${main}`, `${repo}/commits/${head}`, `${repo}/commits/${main}/sessions`, `${repo}/sessions`,
     `${repo}/changes`, `${repo}/changes/1`, `${repo}/changes/1/route`, `${repo}/releases`, `${repo}/releases/v1`, `${repo}/tags/v1`,
+    `${repo}/log?view=overview&from=${main}&at=1&limit=200`,
     `${repo}/tree`, `${repo}/blob?path=a.txt`, `${repo}/blame?path=a.txt`, `${repo}/diff?head=${head}`,
     `${repo}/history?path=a.txt`, `${repo}/activity`, `/explore`,
   ];

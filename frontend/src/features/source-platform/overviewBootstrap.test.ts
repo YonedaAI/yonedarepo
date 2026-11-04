@@ -231,6 +231,7 @@ it('anchors deferred activity to the captured commit and version rather than mov
   expect(url.searchParams.get('from')).toBe(commit);
   expect(url.searchParams.get('at')).toBe('7');
   expect(url.searchParams.get('limit')).toBe('200');
+  expect(url.searchParams.get('view')).toBe('overview');
   expect(overviewActivityPath('r0123456789abcdef0123', 'main')).toBe(
     '/repos/r0123456789abcdef0123/log?ref=main&limit=200',
   );

@@ -93,6 +93,7 @@ export function overviewActivityPath(
     query.set('ref', request.ref);
     query.set('from', request.from);
     query.set('at', String(request.at));
+    query.set('view', 'overview');
   }
   return `/repos/${repo}/log?${query}`;
 }
