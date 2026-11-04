@@ -70,6 +70,37 @@ it('old/off endpoints keep their existing cheap compatible responses', async () 
   expect(named.body).toEqual({ id: r.id, handle: 'overview_off', name: 'project', path: '/overview_off/project' });
 });
 
+it('reads a selected tag snapshot and activity after main moves without widening access', async () => {
+  const r = await setup('overview_tag');
+  const tagged = await api(`/repos/${r.id}/tags`, r.owner, { body: { name: 'v1', commit: r.commit } }, on);
+  expect(tagged.status).toBe(200);
+  const changed = await api(`/repos/${r.id}/commits`, r.owner, { body: { ref: 'main', changes: [file('README.md', '# After\n')], message: 'after tag', author } }, on);
+  expect(changed.status).toBe(200);
+  expect((await api(`/repos/${r.id}/land`, r.owner, { body: { ref: 'main', commit: changed.body.commit } }, on)).status).toBe(200);
+  const ref = 'refs/tags/v1';
+  for (const deferred of ['off', 'on']) {
+    const env = { ...on, OVERVIEW_DEFER_ACTIVITY: deferred };
+    const shown = await api(`/repos/${r.id}?${mode}&ref=${ref}`, r.owner, {}, env);
+    expect(shown.body.overview.errors).toBeUndefined();
+    expect(shown.body.overview).toMatchObject({ ref, tree: { commit: r.commit }, latest: { commit: r.commit }, readme: { commit: r.commit, content: '# Before\n' } });
+    const activity = deferred === 'off' ? shown.body.overview.activity : (await api(`/repos/${r.id}/log?ref=${ref}&from=${r.commit}&at=${shown.body.overview.activity_request.at}&limit=200&view=overview`, r.owner, {}, env)).body;
+    expect(activity.commits.map((c: any) => c.commit)).toEqual([r.commit]);
+  }
+  const off = { ...on, OVERVIEW_BOOTSTRAP: 'off' };
+  expect((await api(`/repos/${r.id}/tree?ref=${ref}`, r.owner, {}, off)).body.commit).toBe(r.commit);
+  expect((await api(`/repos/${r.id}/blob?ref=${ref}&path=README.md`, r.owner, {}, off)).body.content).toBe('# Before\n');
+  expect((await api(`/repos/${r.id}/commits/${r.commit}?ref=${ref}`, r.owner, {}, off)).body.commit).toBe(r.commit);
+  const token = await api(`/repos/${r.id}/tokens`, r.owner, { body: { name: 'tag_reader', scopes: ['read'], paths: ['src/'] } }, on);
+  const reader = { token: token.body.token };
+  const limited = await api(`/repos/${r.id}?${mode}&ref=${ref}`, reader, {}, on);
+  expect(limited.body.overview.tree.entries.map((e: any) => e.name)).toEqual(['src']);
+  expect(limited.body.overview.readme).toBeNull();
+  expect(JSON.stringify(limited.body)).not.toContain('# Before');
+  expect((await api(`/repos/${r.id}?${mode}&ref=${ref}`, {}, {}, on)).status).toBe(404);
+  expect((await api(`/repos/${r.id}/tokens/tag_reader`, r.owner, { method: 'DELETE' }, on)).status).toBe(200);
+  expect((await api(`/repos/${r.id}?${mode}&ref=${ref}`, reader, {}, on)).status).toBe(401);
+});
+
 it('keeps empty repositories and missing README content explicit', async () => {
   const r = await setup('overview_empty', []);
   const empty = await api(`/repos/${r.id}?${mode}`, r.owner, {}, on);

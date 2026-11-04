@@ -102,3 +102,48 @@ fn a_batch_creates_a_tag_and_moves_a_branch_together() {
     assert_eq!(refs["refs/tags/v2"], json!(root));
     assert_eq!(refs["refs/heads/release-prep"], json!(root));
 }
+
+#[test]
+fn tag_reads_select_the_recorded_snapshot_and_verify_past_versions() {
+    let (h, root) = seeded();
+    let made = tag(&h, OWNER, "v1", &root).unwrap();
+    let version = made["version"].as_u64().unwrap();
+    for at in [None, Some(version)] {
+        let mut snapshot = json!({"op":"repo_snapshot","ref":"refs/tags/v1"});
+        if let Some(at) = at {
+            snapshot["at"] = json!(at);
+        }
+        let shown = h.ok(AGENT, snapshot);
+        assert_eq!(shown["commit"], root);
+        let mut log = json!({"op":"repo_log","ref":"refs/tags/v1","limit":200});
+        if let Some(at) = at {
+            log["at"] = json!(at);
+        }
+        assert_eq!(h.ok(AGENT, log)["commits"][0]["commit"], root);
+    }
+    assert_eq!(
+        h.ok(
+            AGENT,
+            json!({"op":"repo_commit","commit":root,"ref":"refs/tags/v1"})
+        )["commit"],
+        root
+    );
+    assert_eq!(
+        code(h.run(
+            AGENT,
+            json!({"op":"repo_snapshot","ref":"refs/tags/v1","at":version-1})
+        )),
+        "NOT_FOUND"
+    );
+    for name in [
+        "refs/tags/bad..name",
+        "refs/tags/",
+        "refs/remotes/origin/main",
+        "refs/notes/test",
+    ] {
+        assert_eq!(
+            code(h.run(AGENT, json!({"op":"repo_snapshot","ref":name}))),
+            "INVALID_INPUT"
+        );
+    }
+}
