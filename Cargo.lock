@@ -3024,6 +3024,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "yoneda-local"
+version = "0.3.3"
+dependencies = [
+ "axum",
+ "base64",
+ "getrandom 0.4.3",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "yoneda-core",
+ "yoneda-platform",
+ "yoneda-store",
+]
+
+[[package]]
 name = "yoneda-platform"
 version = "0.3.3"
 dependencies = [

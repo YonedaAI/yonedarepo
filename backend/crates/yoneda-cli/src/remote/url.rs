@@ -154,6 +154,10 @@ mod tests {
         assert!(is_platform(&format!(
             "yoneda::https://api.dev.yonedarepo.com/{REPO}"
         )));
+        // A local repository service's remote (`yoneda local`), so `yoneda push` declares reads.
+        assert!(is_platform(&format!(
+            "http://127.0.0.1:8787/git/{REPO}.git"
+        )));
         assert!(!is_platform("https://github.com/git/example.git"));
         assert!(!is_platform(&format!(
             "https://api.dev.yonedarepo.com/{REPO}"

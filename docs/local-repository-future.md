@@ -126,6 +126,26 @@ is the cloud's Rust push path (`ReceiveSession`, `repo_record_pushed`, landing).
    reads at a version. The local policy has no required checks or approvals.
    Cloud policy, checks and approvals apply when the work lands in the cloud.
 
+Built so far (2026-11-04, `backend/crates/yoneda-local`, answers 1–4 and 6):
+`init`, `serve`, `status`, the credential helper, the receive path, landing and
+ref projection; `cargo test -p yoneda-local` covers disjoint and conflicting
+pushes, a stale declared read, a crash before the answer and before the ref
+update, the single-instance lock and a refused token. Where it differs from the
+plan above:
+
+- A landing that needs a merge is merged and landed directly (`repo_merge_plan`,
+  then `repo_land` with `merge`), not queued for a combiner; both are the
+  engine's paths and the authority verifies the merge either way. The host holds
+  a lock across those steps so no other landing moves the head in between.
+- Nothing is staged in the authority: pushed packs are verified, then written to
+  the store before they are recorded, and the platform's own merge commits reach
+  the store as a receive-pack request (under a hidden ref the store does not
+  advertise), so the object outbox stays empty.
+- Fetch is Git's own `git http-backend` over the store.
+- The token is an engine repository token (`token:local`, read, write and land),
+  so the engine authenticates every request; per-agent tokens are the same
+  mechanism. Sync (answer 5) is next.
+
 The service coordinates repository state. Agents remain external clients; this
 proposal does not add planners, model execution or agent scheduling to the
 platform. Local coordination, durability and Git compatibility need acceptance

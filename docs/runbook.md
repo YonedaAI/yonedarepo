@@ -59,6 +59,17 @@ then `git clone ssh://git@ssh.yonedarepo.com/<repo-id>.git`.
 
 Secrets: `SSH_GATEWAY_SECRET` (32+ random characters), `SSH_HOST_ED25519_KEY` / `SSH_HOST_ECDSA_KEY` (`ssh-keygen -t ed25519 -N '' -f k && base64 < k`, generated once and kept: new host keys break every client's `known_hosts`), `SSH_TUNNEL_TOKEN`. Locally, `node tests/ssh/e2e.mjs [--direct] [--docker]` runs the kit's flow against `wrangler dev` and the gateway (native or its image for this machine): by default through the platform's tunnel `ssh_config` with `nc` standing in for cloudflared; kit item 26 (`--ssh`) uses the real cloudflared against the live tunnel.
 
+## Local repository (`yoneda local`)
+
+One service per clone runs the platform engine on SQLite, with a bare Git store, so the clone's worktrees (and their agents) land on one local `main` under the same rules as the cloud. Design: [docs/local-repository-future.md](local-repository-future.md).
+
+1. Set up once, in the clone: `yoneda local init`. It creates `.git/yoneda/local/` (store, authority, token, fixed loopback port), imports `main`'s history and adds the remote `local` with a credential helper. The token is never in a URL or in Git's config.
+2. Run it: `yoneda local serve` (a second one refuses while it runs). It moves the store's refs to the authority's on start, so a crash between a landing and its ref update heals there.
+3. From any worktree: `git push local HEAD:main` lands (a fast-forward, a server merge, or a refusal naming the conflict or stale read); `git fetch local` reads. `yoneda push local HEAD:main` adds the recorded declared reads.
+4. Check: `yoneda local status` (`--json` for scripts).
+
+Tests: `cargo test -p yoneda-local` (real Git, linked worktrees, crash and lock cases). Crash tests stop the service at `YONEDA_LOCAL_PAUSE` points; nothing else sets them. Cloud sync is not built yet.
+
 ## Model checks
 
 A policy runner `{"kind": "model", "rubric": "...", "model": "glm-5.3-flash", "allow_truncated": false}` (model and truncation optional) makes the platform grade each recorded commit with one model call: the diff against its first parent (as `GET /diff?patch=1`), the commit message as the stated intent, and the rubric. The call has no tools and no loop. The answer must be the JSON `{verdict, score, findings}`, and is recorded as the runner's check result with the findings, tokens and cost as evidence; list the runner in `required_checks` to gate landing. A diff over 60,000 characters, or with a file whose patch is unavailable, fails with "diff too large for model review" unless `allow_truncated` is set. A malformed answer, HTTP error or 45 s timeout is retried once and then errors: the run records no result, so the check stays missing and landing stays blocked (re-request it with `POST /commits/<sha>/check-runs`). Only the platform's own run may post a runner's check.

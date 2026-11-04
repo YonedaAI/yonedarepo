@@ -305,6 +305,8 @@ pub enum Command {
     Reads(ReadsCommand),
     /// `git push` with the recorded reads declared; the arguments go to Git unchanged.
     Push(Vec<String>),
+    /// The clone's local repository service (`yoneda-local`); the arguments go to it unchanged.
+    Local(Vec<String>),
     Session {
         target: Target,
         command: SessionCommand,

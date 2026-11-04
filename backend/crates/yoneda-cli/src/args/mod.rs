@@ -189,6 +189,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "sync" => sub::sync(rest)?,
         "reads" => sub::declared_reads(rest)?,
         "push" => Command::Push(rest.to_vec()),
+        "local" => Command::Local(rest.to_vec()),
         "session" => sub::session(rest)?,
         "change" => change::change(rest)?,
         "release" => release::release(rest)?,
@@ -293,6 +294,10 @@ mod tests {
                 "origin".into(),
                 "main".into()
             ]))
+        );
+        assert_eq!(
+            parsed("local status --json").ok(),
+            Some(Command::Local(vec!["status".into(), "--json".into()]))
         );
         assert_eq!(
             parsed("reads add src/a.rs docs/").ok(),
