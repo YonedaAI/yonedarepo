@@ -13,12 +13,12 @@ import { acrossCells, askCell } from './cell-route';
 import { cellOfRegion, cellOfRepo, cellsOn, FIRST_CELL, indexOf, thisCell } from './cells';
 import { audited } from './repo-audit';
 import { refreshHead } from './repo-head';
-import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
+import { ApiError, type Credentials, type Json, type RepoContext } from './repo-ops';
 import { overviewRequested } from './repo-overview';
-import { overviewSnapshotRequest, type SnapshotRequest } from './repo-overview-admission';
+import { overviewSnapshotRequest } from './repo-overview-admission';
 import { resolvedOverview } from './repo-overview-resolve';
+import { missingPath as missing, readableRepository as readable } from './repo-path-admission';
 import { joinedPathHandle, statusWithHandle } from './repo-path-metadata';
-import { admitAnonymous } from './repo-public';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 import { workspace } from './workspace';
@@ -28,7 +28,6 @@ import { workspace } from './workspace';
 export type HandleOwner = { kind: 'user' | 'org' | 'alias'; account: string; handle: string };
 type Named = { repo: string; name: string; renamed_from: string | null };
 
-const missing = () => new ApiError('NOT_FOUND', 'No such repository');
 const notFound = (e: any) => e?.code === 'NOT_FOUND';
 /** An authority's refusal as the API's error. */
 const api = (e: any): never => {
@@ -151,29 +150,6 @@ export async function releaseNames(env: Env, owner: string, repo: string) {
   await workspace(env, owner, { op: 'owned_repo_release', repo }).catch((e) => {
     if (!notFound(e)) throw e;
   });
-}
-
-/** Whether `auth` may read `repo` (the same NOT_FOUND as for none when not). */
-async function readable(
-  env: Env,
-  auth: Credentials | null,
-  repo: string,
-  snapshot?: SnapshotRequest,
-) {
-  try {
-    if (!auth) await admitAnonymous(env, repo);
-    return await caller(
-      env,
-      repo,
-      auth ?? { _anonymous: true },
-    )({
-      op: 'repo_status',
-      ...(snapshot && { snapshot }),
-    });
-  } catch (e: any) {
-    if (['NOT_FOUND', 'FORBIDDEN', 'UNAUTHORIZED', 'GONE'].includes(e?.code)) throw missing();
-    throw e;
-  }
 }
 
 /** The repository `/<handle>/<name>` names (no access decided), or null. */
