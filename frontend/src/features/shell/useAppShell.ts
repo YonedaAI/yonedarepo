@@ -151,6 +151,7 @@ export function useAppShell() {
   }, [session.sessionEnded]);
   useEffect(() => {
     if (session.sessionEnded) {
+      signedInHint(false);
       personalWorkspaceHint(null);
       return;
     }
