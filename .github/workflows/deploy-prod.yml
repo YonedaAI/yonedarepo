@@ -6,7 +6,7 @@ name: Deploy prod
 # instance after the busy-container check stopped a deploy.
 #
 # `--ship-head` makes xtask require, for the PR head: HEAD's tree, the owner's live-tests status
-# for that tree, and a successful Ship run (Check and Full suite). HEAD must be the tip of main
+# for that tree, and a successful CI release-PR run (Check and full suite). HEAD must be the tip of main
 # and no container instance busy (a rollout kills runs). `allow_active` exists only on the manual
 # form and is never the default. Nothing here rolls back: a repository that ran a migration
 # refuses older binaries (SCHEMA_TOO_NEW); the docs have the manual steps.

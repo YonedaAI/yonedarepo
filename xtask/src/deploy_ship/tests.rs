@@ -27,7 +27,8 @@ fn status(state: &str, creator: &str, tree: &str) -> Value {
 fn run() -> Value {
     json!({
         "event": "pull_request", "conclusion": "success", "head_sha": PR_HEAD, "head_branch": "dev",
-        "head_repository": {"full_name": REPO}, "path": ".github/workflows/ship.yml"
+        "head_repository": {"full_name": REPO}, "path": ".github/workflows/ci.yml",
+        "pull_requests": [{"head":{"sha":PR_HEAD,"ref":"dev"},"base":{"ref":"main"}}]
     })
 }
 fn ship() -> ShipFacts {
@@ -157,36 +158,55 @@ fn check_and_full_count_only_from_a_successful_ship_run_of_this_repository() {
             runs: vec![],
             ..ship()
         },
-        "no successful Ship run",
+        "no successful release CI run",
     );
     refused(
         with(&|r| r["head_repository"]["full_name"] = json!("someone/yonedarepo")),
-        "no successful Ship run",
+        "no successful release CI run",
     );
     refused(
         with(&|r| r["head_branch"] = json!("patch")),
-        "no successful Ship run",
+        "no successful release CI run",
     );
     refused(
         with(&|r| r["path"] = json!(".github/workflows/evil.yml")),
-        "no successful Ship run",
+        "no successful release CI run",
     );
     refused(
         with(&|r| r["conclusion"] = json!("failure")),
-        "no successful Ship run",
+        "no successful release CI run",
     );
     refused(
         with(&|r| r["event"] = json!("push")),
-        "no successful Ship run",
+        "no successful release CI run",
     );
     refused(
         with(&|r| r["head_sha"] = json!(MERGE)),
-        "no successful Ship run",
+        "no successful release CI run",
+    );
+    for forged in [
+        json!([]),
+        json!([{"head":{"sha":PR_HEAD,"ref":"dev"},"base":{"ref":"other"}}]),
+        json!([{"head":{"sha":MERGE,"ref":"dev"},"base":{"ref":"main"}}]),
+        json!([{"head":{"sha":PR_HEAD,"ref":"patch"},"base":{"ref":"main"}}]),
+    ] {
+        refused(
+            with(&|r| r["pull_requests"] = forged.clone()),
+            "no successful release CI run",
+        );
+    }
+    refused(
+        with(&|r| r["event"] = json!("workflow_dispatch")),
+        "no successful release CI run",
+    );
+    refused(
+        with(&|r| r["path"] = json!(".github/workflows/deploy-prod.yml")),
+        "no successful release CI run",
     );
     let at_ref = ShipFacts {
         runs: vec![{
             let mut r = run();
-            r["path"] = json!(".github/workflows/ship.yml@refs/pull/9/merge");
+            r["path"] = json!(".github/workflows/ci.yml@refs/pull/9/merge");
             r
         }],
         ..ship()

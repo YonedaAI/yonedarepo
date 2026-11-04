@@ -1,4 +1,4 @@
-//! Test results over time. GitHub keeps `full.yml`'s for a day, so the record lives on the Mac:
+//! Test results over time. GitHub keeps `ci.yml`'s full-lane results for a day, so the record lives on the Mac:
 //! `cargo xtask check` saves each vitest suite to `.local/health/tests/`, and any other run's
 //! JSON can be added with `cargo xtask health tests <file>`. Flags a test that failed and then
 //! passed, and a test that slowed down. Only names and timings are kept, never failure text.

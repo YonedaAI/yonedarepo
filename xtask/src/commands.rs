@@ -34,9 +34,9 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
         }
         "layers" => crate::layers::check(),
         "health" => crate::health::execute(&args),
-        // The complete local gate. On GitHub it is split in two (keep both in step with
-        // this arm): "Check" (.github/workflows/ci.yml) runs the fast half on every PR and
-        // push to main; "Full suite" (full.yml) runs the rest by hand before a prod ship.
+        // The complete local gate. CI keeps both lanes in step with this arm: Check runs the
+        // fast half on ordinary PRs/main; release PRs and manual full validation also
+        // run the workerd suites and runtime image before the final Ship gate.
         "check" => {
             crate::layers::check()?;
             crate::health::check_lines(None)?;
