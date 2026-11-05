@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { RESERVED_HANDLES } from '../../../shared/account';
-import { earlyReads as earlyReadsPlugin } from '../../vite-early-reads';
+import { earlyReadScript } from '../../vite-early-reads';
 import { namedOverviewRef } from '../features/source-platform/overviewBootstrap';
 import { resolvePath } from '../features/source-platform/RepoByName';
 import { managedApi, sourceApi } from '../features/source-platform/sourceApi';
@@ -283,13 +283,7 @@ it('starts exact Admin reports with session discovery without fetching unrelated
 it('runs the emitted head script with all dependencies serialized', async () => {
   const fetch = vi.fn((_url: string) => new Promise<Response>(() => {}));
   vi.stubGlobal('fetch', fetch);
-  const hook = earlyReadsPlugin(true).transformIndexHtml;
-  if (!hook || typeof hook !== 'object' || !('handler' in hook))
-    throw new Error('Missing head transform');
-  const tags = await hook.handler('', { path: '/', filename: 'index.html' });
-  if (!Array.isArray(tags)) throw new Error('Missing script tags');
-  const script = tags.find((tag) => tag.tag === 'script')?.children;
-  if (typeof script !== 'string') throw new Error('Missing inline script');
+  const script = earlyReadScript();
   expect(() => new Function('window', script)(windowAt('/admin/users'))).not.toThrow();
   expect(fetch.mock.calls.map((args) => args[0])).toContain('/api/v1/admin/accounts');
 });
