@@ -16,6 +16,8 @@ export type Envelope = {
   number?: number;
   /** The request this job descends from (request-scope.ts). Absent on older messages. */
   request_id?: string;
+  /** Intentional producer delay; monitoring subtracts it from enqueue age. */
+  queue_delay_ms?: number;
 };
 export type Principal = {
   workspace: string;

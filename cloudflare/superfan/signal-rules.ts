@@ -80,7 +80,6 @@ const MIN_BASELINE_SAMPLES = 3;
 const MAX_EXCEPTIONS = 3;
 const MAX_ERROR_LOGS = 5;
 const MAX_BACKLOG = 50;
-const MAX_LAG_MS = 120_000;
 const MAX_RETRIES = 1;
 
 export const baselineKey = (component: Component, signal: string) => `${component}/${signal}`;
@@ -201,7 +200,13 @@ export function queueSignals(a: Pick<Analytics, 'queue'>): Signal[] {
   return [
     ...backlogSignals(q),
     threshold('dead_letter_backlog', q.deadLetterBacklog, 'messages', 0),
-    threshold('lag_ms', q.lagMs, 'ms', MAX_LAG_MS),
+    {
+      name: 'lag_ms',
+      value: q.lagMs,
+      unit: 'ms',
+      anomalous: false,
+      rule: 'Age since enqueue includes intentional delays; ready-time evidence required',
+    },
     threshold('retries_per_message', q.retries, 'avg', MAX_RETRIES),
   ];
 }

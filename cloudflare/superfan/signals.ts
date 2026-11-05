@@ -97,6 +97,7 @@ function platformReports(s: Snapshot, baselines: Baselines, wide: boolean): Comp
     report('derived_jobs', s, [
       ...invocationSignals('derived_jobs', s, baselines),
       marked(s, 'compaction_stalls'),
+      marked(s, 'queue_late'),
       named(s, 'audit_event_corrupt'),
       named(s, 'audit_erase_blocked'),
       ...(a ? queueSignals(a) : []),

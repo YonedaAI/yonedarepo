@@ -244,7 +244,7 @@ const fakeQueue = () => {
 const scopeOn = { env: { REQUEST_IDS: 'on' }, req: new Request('https://x', { headers: { 'cf-ray': '8f1c2d3e4a5b6c7d-SJC' } }) };
 const body = { v: 1, kind: 'platform_objects', repo_id: REPO, job_id: 'objects' } as Envelope;
 
-it('stamps a queue message only while REQUEST_IDS is on, sends and batches alike', async () => {
+it('carries queue delay independently of request ids, sends and batches alike', async () => {
   const queue = fakeQueue();
   const typed = queue as unknown as Queue<Envelope>;
   await inScope({ env: {} }, () => carriedQueue(typed).send(body));
@@ -252,7 +252,15 @@ it('stamps a queue message only while REQUEST_IDS is on, sends and batches alike
     await carriedQueue(typed).send(body);
     await carriedQueue(typed).sendBatch([{ body }]);
   });
-  expect(queue.sent).toEqual([body, { ...body, request_id: '8f1c2d3e4a5b6c7d-SJC' }, { ...body, request_id: '8f1c2d3e4a5b6c7d-SJC' }]);
+  expect(queue.sent).toEqual([{ ...body, queue_delay_ms: 0 }, { ...body, queue_delay_ms: 0, request_id: '8f1c2d3e4a5b6c7d-SJC' }, { ...body, queue_delay_ms: 0, request_id: '8f1c2d3e4a5b6c7d-SJC' }]);
+});
+
+it('carries send and per-message batch delays with Cloudflare precedence', async () => {
+  const queue = fakeQueue();
+  const carried = carriedQueue(queue as unknown as Queue<Envelope>);
+  await carried.send(body, { delaySeconds: 43200 });
+  await carried.sendBatch([{ body }, { body, delaySeconds: 5 }], { delaySeconds: 10 });
+  expect(queue.sent.map((b: any) => b.queue_delay_ms)).toEqual([43200000, 10000, 5000]);
 });
 
 const failingJob = (message: object) => {

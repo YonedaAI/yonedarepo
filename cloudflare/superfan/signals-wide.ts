@@ -56,6 +56,14 @@ export function wideReports(s: Snapshot, baselines: Baselines): ComponentReport[
     objectReport('workspace_authority', s, baselines),
     objectReport('pack_builder', s, baselines),
     objectReport('ssh_gateway', s, baselines),
+    // Background alarms have no user-request denominator. Retain each error and sample;
+    // the existing >=3 exceptions / >5 error logs / any resource kill rules still apply.
+    report('ssh_maintenance', s, [
+      ...invocationSignals('ssh_maintenance', s, baselines).filter(
+        (signal) => signal.name === 'exceptions' || signal.name === 'error_logs',
+      ),
+      threshold('resource_kills', s.tail.ssh_maintenance?.resourceKills ?? 0, 'count', 0),
+    ]),
     report('cron', s, [
       threshold(
         'failed_crons',

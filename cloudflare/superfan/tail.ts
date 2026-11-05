@@ -1,3 +1,4 @@
+import { classify } from './tail-classify';
 // Turns the watched Workers' tail events (one per invocation: outcome, logs, exceptions,
 // CPU and wall time) into per-minute, per-component counters, and counts the few log events
 // that mean something alone. No API token is involved: Cloudflare delivers these because each
@@ -15,6 +16,7 @@ export type TailComponent =
   | 'commit_shards'
   | 'pack_builder'
   | 'ssh_gateway'
+  | 'ssh_maintenance'
   | 'workspace_authority'
   | 'cron'
   | 'front_worker'
@@ -45,16 +47,6 @@ export interface TailStats extends TailCounts {
   samples: TailSample[];
 }
 
-/** Durable Object classes of the platform Worker, by tail `entrypoint`. */
-const OBJECT_CLASSES: Record<string, TailComponent> = {
-  SourceRepository: 'source_repository',
-  CheckContainer: 'check_runs',
-  LandCombiner: 'land_queue',
-  CommitShard: 'commit_shards',
-  PackBuilder: 'pack_builder',
-  SshGateway: 'ssh_gateway',
-  WorkspaceAuthority: 'workspace_authority',
-};
 const RESOURCE_KILLS = new Set(['exceededCpu', 'exceededMemory']);
 /** Every deploy restarts Durable Objects, and calls in flight then throw this: it isn't a fault. */
 const DEPLOY_RESET = /Durable Object reset because its code was updated/;
@@ -78,6 +70,7 @@ const MARKS = new Map([
   // What nightlyReconcile (platform-admin-billing.ts) logs when the managed Worker refuses it.
   ['billing.reconcile', 'cron_failures'],
   ['ssh.keepalive_failed', 'cron_failures'],
+  ['queue.late', 'queue_late'],
   ['land.batch_failed', 'land_failures'],
   ['land.submitted_batch_failed', 'land_failures'],
   ['land.step_failed', 'land_failures'],
@@ -182,15 +175,6 @@ function markOf(message: unknown): string | null {
   if (typeof event !== 'string') return null;
   const naming = NAMING.get(event);
   return naming ? namedMark(naming, repo, seq) : (MARKS.get(event) ?? null);
-}
-
-function classify(item: TraceItem): TailComponent | null {
-  if (item.executionModel === 'durableObject') return OBJECT_CLASSES[item.entrypoint ?? ''] ?? null;
-  const event = item.event as Record<string, unknown> | null;
-  if (event && 'cron' in event) return 'cron';
-  if (event && 'queue' in event) return 'derived_jobs';
-  if (event && 'request' in event) return 'api_worker';
-  return null;
 }
 
 /** The scripts read: the platform Worker (null: classified per event), and on the wide watch its

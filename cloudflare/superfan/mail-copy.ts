@@ -5,16 +5,7 @@ import { LATENCY_COPY } from './mail-copy-latency';
 // the watcher can raise needs a line here; a test holds that, and these lines to the UI rules.
 
 import { PROBE_COPY, RELEASE_COPY } from './mail-copy-release';
-import {
-  type Copy,
-  capital,
-  count,
-  duration,
-  type Facts,
-  type Link,
-  number,
-  plural,
-} from './mail-words';
+import { type Copy, capital, count, type Facts, type Link, number, plural } from './mail-words';
 
 export type { Copy, Facts, Link } from './mail-words';
 export { capital, number } from './mail-words';
@@ -33,6 +24,7 @@ export const WORD: Record<string, string> = {
   commit_shards: 'commit',
   pack_builder: 'clone pack',
   ssh_gateway: 'SSH gateway',
+  ssh_maintenance: 'SSH maintenance',
   workspace_authority: 'account',
   cron: 'scheduled task',
   synthetic: 'site check',
@@ -207,9 +199,15 @@ export const COPY: Copy[] = [
   },
   {
     signals: ['lag_ms'],
-    title: (f) => `${capital(f.noun)}s waited ${duration(count(f, 'lag_ms'))} to start`,
-    means: 'Work is queueing longer than it should.',
-    first: 'Find job.failed in the platform logs. A slow job is the usual cause.',
+    title: () => 'Queue message age needs review',
+    means: 'Age includes scheduled delays; it does not prove work started late.',
+    first: 'Check queue.late and delivery timings before treating this as a fault.',
+  },
+  {
+    signals: ['queue_late'],
+    title: (f) => `${plural(count(f, 'queue_late'), 'job')} started late`,
+    means: 'Jobs started over two minutes after their scheduled delivery time.',
+    first: 'Find queue.late in the platform logs and inspect delivery timings.',
   },
   {
     signals: ['retries_per_message'],
