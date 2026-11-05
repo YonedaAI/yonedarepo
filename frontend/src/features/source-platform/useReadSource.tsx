@@ -15,7 +15,9 @@ export function ReadScope({
 }) {
   const store = useRef<ReadSnapshotStore | null>(null);
   store.current ??= new ReadSnapshotStore();
-  useEffect(() => onSourceWrite(() => store.current?.clear()), []);
+  useEffect(() => {
+    return onSourceWrite(() => store.current?.clear());
+  }, []);
   return <Reports value={enabled ? store.current : null}>{children}</Reports>;
 }
 

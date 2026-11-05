@@ -192,7 +192,7 @@ it('welcomes a provider-verified account without a link', async () => {
   });
   await (target.PLATFORM as unknown as PlatformEntrypoint).accountCreated('octo');
   expect(queued).toEqual([
-    { v: 1, kind: 'account_welcome', repo_id: '', job_id: 'welcome', workspace: 'octo' },
+    { v: 1, kind: 'account_welcome', repo_id: '', job_id: 'welcome', workspace: 'octo', queue_delay_ms: 0 },
   ]);
   const sent = await deliver(target, queued[0]);
   expect(sent?.to).toEqual(['octo@example.com']);

@@ -141,6 +141,7 @@ it('enqueues exactly one welcome job when an account is created, and none otherw
       kind: 'account_welcome',
       repo_id: '',
       job_id: 'welcome',
+      queue_delay_ms: 0,
       workspace: 'ada',
       token: expect.stringMatching(/^[0-9a-f]{64}$/),
     },
