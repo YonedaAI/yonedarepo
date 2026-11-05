@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { AdminReadCache, memoizedAdminRead } from '../../cloudflare/worker/admin-read-cache';
+import { AdminReadCache, memoizedAdminRead } from '../../cloudflare/worker/platform-admin-read-cache';
 
 it('expires snapshots and isolates keys and mutable answers', async () => {
   let now = 100; const cache = new AdminReadCache(() => now);
