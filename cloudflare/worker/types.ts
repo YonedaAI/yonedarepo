@@ -274,6 +274,8 @@ export interface Env {
   /** The hostname clients use for Git over SSH (`ssh.yonedarepo.com`). */
   SSH_HOST?: string;
   BUILD_REVISION?: string;
+  /** Response-ready timing, separate from invocation lifetime. */
+  RESPONSE_LATENCY?: string;
   /** `on`: the request id goes on every response and travels with each hop (request-scope.ts;
    * unset or anything else: failure lines still carry it, nothing else changes). */
   REQUEST_IDS?: string;

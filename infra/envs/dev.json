@@ -81,6 +81,7 @@
           "WATCH_SCRIPT": "{prefix}-platform",
           "WATCH_URL": "https://api.dev.yonedarepo.com",
           "WATCH_WIDE": "on",
+          "RESPONSE_LATENCY": "on",
           "WATCH_FRONT_URL": "https://dev.yonedarepo.com",
           "DEADMAN_URL": "https://{prefix}-deadman.{subdomain}.workers.dev",
           "RELEASE_COMPARE": "off",
@@ -929,6 +930,7 @@
           ]
         },
         "vars": {
+          "RESPONSE_LATENCY": "on",
           "AUDIT_LOG": "off",
           "TRAFFIC_EVENTS": "on",
           "TRAFFIC_REPORT": "on",
