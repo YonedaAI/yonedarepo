@@ -10,6 +10,7 @@ import type {
 import { TRAFFIC_RANGES, type TrafficRange } from '../../../../shared/site-traffic';
 import { byteSize, duration } from '../source-platform/insightsModel';
 import { Failure, Loading } from '../source-platform/SourceStatus';
+import { useReadSource } from '../source-platform/useReadSource';
 import { useSource } from '../source-platform/useSource';
 import { RangePicker } from './AdminParts';
 import { CLIENTS } from './AdminTrafficCheck';
@@ -67,7 +68,7 @@ function OperationsTable({ rows }: { rows: OperationRow[] }) {
 
 export function AdminOperations() {
   const [range, setRange] = useState<TrafficRange>('7d');
-  const answer = useSource<OperationsResult>(`/admin/operations?range=${range}`);
+  const answer = useReadSource<OperationsResult>(`/admin/operations?range=${range}`);
   const body = () => {
     if (answer.loading && !answer.data) return <Loading what="operations" />;
     if (answer.error || !answer.data)

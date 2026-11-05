@@ -12,6 +12,7 @@ import { WorkspaceContent } from './features/shell/WorkspaceContent';
 import { SiteEntry } from './features/site/SiteEntry';
 import { DevicePage } from './features/source-platform/DevicePage';
 import { repoNameOf } from './features/source-platform/repoNames';
+import { ReadScope } from './features/source-platform/useReadSource';
 import { breadcrumbs } from './features/workspace/breadcrumbs';
 import { HandlePrompt } from './features/workspace/HandlePicker';
 import { WorkspaceHeader } from './features/workspace/WorkspaceHeader';
@@ -169,7 +170,12 @@ export function App() {
           onError={session.setError}
           onRefresh={refresh}
         />
-        <WorkspaceContent shell={shell} />
+        <ReadScope
+          key={`${shell.overviewViewerKey}:${shell.tick}`}
+          enabled={import.meta.env.VITE_EARLY_READS === 'on'}
+        >
+          <WorkspaceContent shell={shell} />
+        </ReadScope>
       </main>
       <WorkspacePanels
         panel={panel}

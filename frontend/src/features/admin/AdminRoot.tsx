@@ -2,6 +2,7 @@
 // Audit log, Traffic and, where they exist, Visitors, Agents, Operations and Infrastructure, under one bar. The sidebar shows the entry only to
 // operators; the API refuses everyone else whatever this page shows.
 import { linkTo, type Navigate } from '../shell/useRoute';
+import { ReadScope } from '../source-platform/useReadSource';
 import type { Loaded } from '../source-platform/useSource';
 import { AdminAgents } from './AdminAgents';
 import { AdminAudit } from './AdminAudit';
@@ -19,7 +20,6 @@ import {
   shownSections,
   unreadLabel,
 } from './adminModel';
-import { AdminReadScope } from './useAdminSource';
 
 export function AdminRoot({
   section,
@@ -42,7 +42,7 @@ export function AdminRoot({
 }) {
   const unread = signups.data?.unread ?? 0;
   return (
-    <AdminReadScope key={self ?? ''}>
+    <ReadScope key={self ?? ''} enabled={import.meta.env.VITE_EARLY_READS === 'on'}>
       <section className="admin" aria-labelledby="admin-heading">
         <div className="page-heading">
           <h1 id="admin-heading">Admin</h1>
@@ -90,6 +90,6 @@ export function AdminRoot({
           </>
         )}
       </section>
-    </AdminReadScope>
+    </ReadScope>
   );
 }

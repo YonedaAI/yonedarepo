@@ -1,6 +1,6 @@
-// Short-lived report DTOs live only inside one mounted, signed-in Admin scope.
+// Short-lived report DTOs live only inside one mounted viewer scope.
 // No storage, credentials, shared globals or expiry extension when a value is reused.
-export class AdminReadStore {
+export class ReadSnapshotStore {
   private entries = new Map<string, { data: unknown; until: number }>();
   private epoch = 0;
   get generation() {

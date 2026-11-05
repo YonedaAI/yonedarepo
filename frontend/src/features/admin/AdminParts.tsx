@@ -5,13 +5,13 @@ import { type FormEvent, useState } from 'react';
 import type { TrafficRange } from '../../../../shared/site-traffic';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { sourceApi } from '../source-platform/sourceApi';
-import { useSource } from '../source-platform/useSource';
+import { useReadSource } from '../source-platform/useReadSource';
 import type { Page } from './adminModel';
 import { figure, RANGE_LABELS } from './trafficModel';
 
 /** The server listing `pathOf(cursor)` pages through, in its requested order. */
 export function usePaged<T, Cursor = number>(pathOf: (before?: Cursor) => string) {
-  const first = useSource<Page<T, Cursor>>(pathOf());
+  const first = useReadSource<Page<T, Cursor>>(pathOf());
   const [later, setLater] = useState<Page<T, Cursor>[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
