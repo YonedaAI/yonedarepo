@@ -364,6 +364,8 @@ describe('ledger schema', () => {
       sql.exec('DROP TABLE queue_gaps');
       sql.exec('DROP TABLE queue_consumers');
       sql.exec('DROP TABLE probe_results');
+      sql.exec('DROP TABLE http_latency_minutes');
+      sql.exec('DROP TABLE latency_windows');
       sql.exec('UPDATE schema_version SET version = 5');
       expect(migrate(sql)).toBe(MIGRATIONS.length);
       expect(sql.exec('SELECT COUNT(*) AS n FROM probe_results').one().n).toBe(0);

@@ -141,6 +141,16 @@ export const MIGRATIONS: string[] = [
   `UPDATE findings SET status = 'resolved', resolved_at = last_seen
      WHERE status = 'open' AND component = 'object_push_queue';
    DELETE FROM baselines WHERE key LIKE 'object_push_queue/%';`,
+  // Separate HTTP timing data. Existing execution baselines are deliberately not reused.
+  `CREATE TABLE http_latency_minutes (
+     minute INTEGER NOT NULL, traffic TEXT NOT NULL, metric TEXT NOT NULL, hist TEXT NOT NULL,
+     PRIMARY KEY(minute,traffic,metric)
+   );
+   CREATE TABLE latency_windows (
+     traffic TEXT NOT NULL, metric TEXT NOT NULL, window_end INTEGER NOT NULL,
+     requests INTEGER NOT NULL, p95_ms INTEGER, bad INTEGER NOT NULL,
+     PRIMARY KEY(traffic,metric,window_end)
+   );`,
 ];
 
 /** Applies pending migrations; safe to call on every Durable Object start. */

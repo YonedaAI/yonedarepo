@@ -87,6 +87,7 @@
     "PROBES": "off",
     "PROBE_LANDING": "off",
     "RELEASE_COMPARE": "off",
+    "RESPONSE_LATENCY": "on",
     "SERVICE_LEVELS": "on",
     "SUPERFAN_MODEL": "mimo-v2.6-flash",
     "TELEMETRY_SOURCE": "cloudflare",

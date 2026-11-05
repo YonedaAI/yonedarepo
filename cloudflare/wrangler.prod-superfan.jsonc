@@ -81,6 +81,7 @@
     "MIMO_TOKEN_PLAN_REGION": "sgp",
     "PROBES": "off",
     "RELEASE_COMPARE": "off",
+    "RESPONSE_LATENCY": "on",
     "SERVICE_LEVELS": "on",
     "SUPERFAN_MODEL": "mimo-v2.6-flash",
     "TELEMETRY_SOURCE": "cloudflare",

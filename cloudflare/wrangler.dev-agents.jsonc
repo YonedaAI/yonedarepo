@@ -189,6 +189,7 @@
     "REGIONAL_API": "on",
     "REGION_SIGNALS": "on",
     "REQUEST_IDS": "off",
+    "RESPONSE_LATENCY": "on",
     "STATIC_ASSET_CACHE": "on",
     "TRAFFIC_EVENTS": "on",
     "TRAFFIC_REPORT": "on",
