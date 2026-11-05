@@ -1,3 +1,4 @@
+import { LATENCY_COPY } from './mail-copy-latency';
 // The words of an alert mail: what each signal means to a person and what to do first, condensed
 // from docs/incidents.md. Each entry is one cause, so signals of one cause on one component become
 // one block (mail-render.ts). In order, worst first: the first item names the mail. Every signal
@@ -228,53 +229,7 @@ export const COPY: Copy[] = [
     means: 'Checks can fail once the disk fills.',
     first: 'Look at the check image and workspace sizes.',
   },
-  {
-    signals: ['page_response_p95_ms'],
-    title: () => 'Page response-ready time rose',
-    means: (f) =>
-      `Estimated p95: ${duration(count(f, 'page_response_p95_ms'))}; reference median ${duration(f.baseline ?? 0)}. Excludes background work and body transfer.`,
-    reason: true,
-    first: 'Inspect timings for this request class and compare upstream calls.',
-  },
-  {
-    signals: ['page_execution_p95_ms'],
-    title: () => 'Page execution lifetime rose',
-    means: (f) =>
-      `Estimated p95: ${duration(count(f, 'page_execution_p95_ms'))}; reference median ${duration(f.baseline ?? 0)}. Includes I/O and background work; separate from response timing.`,
-    reason: true,
-    first: 'Inspect timings for this request class and compare upstream calls.',
-  },
-  {
-    signals: ['api_response_p95_ms'],
-    title: () => 'API response-ready time rose',
-    means: (f) =>
-      `Estimated p95: ${duration(count(f, 'api_response_p95_ms'))}; reference median ${duration(f.baseline ?? 0)}. Excludes background work and body transfer.`,
-    reason: true,
-    first: 'Inspect timings for this request class and compare upstream calls.',
-  },
-  {
-    signals: ['api_execution_p95_ms'],
-    title: () => 'API execution lifetime rose',
-    means: (f) =>
-      `Estimated p95: ${duration(count(f, 'api_execution_p95_ms'))}; reference median ${duration(f.baseline ?? 0)}. Includes I/O and background work; separate from response timing.`,
-    reason: true,
-    first: 'Inspect timings for this request class and compare upstream calls.',
-  },
-  {
-    signals: ['p95_execution_ms'],
-    title: (f) => `${capital(f.word)} invocation lifetime rose`,
-    means: (f) =>
-      `Estimated p95: ${duration(count(f, 'p95_execution_ms'))}; reference median ${duration(f.baseline ?? 0)}. Includes I/O and background work.`,
-    reason: true,
-    first: 'Inspect invocation timings for this component and upstream calls.',
-  },
-  {
-    signals: ['p95_wall_ms'],
-    title: (f) => `${capital(f.word)} execution time rose`,
-    means: (f) =>
-      `Estimated 95th percentile: ${duration(count(f, 'p95_wall_ms'))}${f.baseline ? `; usual estimate ${duration(f.baseline)}` : ''}. Includes background work.`,
-    first: "Inspect request timings and upstream calls in this Worker's logs.",
-  },
+  ...LATENCY_COPY,
   {
     signals: ['deadman_stale'],
     title: () => 'Dead-man check has stopped',
