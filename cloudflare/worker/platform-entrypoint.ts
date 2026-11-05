@@ -26,6 +26,7 @@ import { signupNoticeJob } from './platform-signup-notice';
 import { sshFrontDoor, sshKeepAlive } from './platform-ssh-gateway';
 import { visitorSalt } from './platform-visitor-salt';
 import { welcomeJob } from './platform-welcome-email';
+import { QUEUE_WAIT_BUDGET_MS, readyWait } from './queue-timing';
 import { ERASE, purgeJob } from './repo-admin';
 import { executeCheckRun } from './repo-checks';
 import { CLASSIFY, classifyJob } from './repo-classify';
@@ -206,9 +207,14 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
     const oneAtATime = oneAtATimeInBatch();
     await Promise.all(
       batch.messages.map((message) =>
-        inScope({ env: this.env, job: message.body }, () =>
-          platformJob(this.env, message, oneAtATime).catch((e) => settleFailedJob(message, e)),
-        ),
+        inScope({ env: this.env, job: message.body }, () => {
+          const waited = readyWait(message);
+          if (waited !== null && waited > QUEUE_WAIT_BUDGET_MS)
+            log.warn('queue.late', { ms: waited });
+          return platformJob(this.env, message, oneAtATime).catch((e) =>
+            settleFailedJob(message, e),
+          );
+        }),
       ),
     );
   }
