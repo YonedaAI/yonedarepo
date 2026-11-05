@@ -19,6 +19,7 @@ import {
   shownSections,
   unreadLabel,
 } from './adminModel';
+import { AdminReadScope } from './useAdminSource';
 
 export function AdminRoot({
   section,
@@ -41,52 +42,54 @@ export function AdminRoot({
 }) {
   const unread = signups.data?.unread ?? 0;
   return (
-    <section className="admin" aria-labelledby="admin-heading">
-      <div className="page-heading">
-        <h1 id="admin-heading">Admin</h1>
-      </div>
-      <nav className="admin-tabs" aria-label="Admin sections">
-        {shownSections(signups.data?.reports).map((id) => (
-          // biome-ignore lint/a11y/useAriaPropsSupportedByRole: linkTo spreads the href, so this is a link.
-          <a
-            key={id}
-            {...(id === section ? { 'aria-current': 'page' as const, className: 'active' } : {})}
-            aria-label={
-              id === 'signups' && unread > 0 ? `${SECTION_LABEL[id]}, ${unread} new` : undefined
-            }
-            {...linkTo({ view: 'admin', section: id }, navigate)}
-          >
-            {SECTION_LABEL[id]}
-            {id === 'signups' && unread > 0 && (
-              <small className="side-badge" aria-hidden="true">
-                {unreadLabel(unread)}
-              </small>
-            )}
-          </a>
-        ))}
-      </nav>
-      {section === 'overview' && <AdminOverview navigate={navigate} />}
-      {section === 'users' &&
-        (account ? (
-          <AdminUser key={account} account={account} self={self} navigate={navigate} />
-        ) : (
-          <AdminUsers navigate={navigate} />
-        ))}
-      {section === 'signups' && (
-        <AdminSignups signups={signups} seen={seen} onSeen={onSeen} navigate={navigate} />
-      )}
-      {section === 'repos' && <AdminRepos navigate={navigate} />}
-      {section === 'audit' && <AdminAudit />}
-      {section === 'traffic' && <AdminTraffic />}
-      {section === 'visitors' && <AdminVisitors />}
-      {section === 'agents' && <AdminAgents />}
-      {section === 'operations' && <AdminOperations />}
-      {section === 'infrastructure' && (
-        <>
-          <AdminInfrastructure />
-          <AdminServiceLevels />
-        </>
-      )}
-    </section>
+    <AdminReadScope key={self ?? ''}>
+      <section className="admin" aria-labelledby="admin-heading">
+        <div className="page-heading">
+          <h1 id="admin-heading">Admin</h1>
+        </div>
+        <nav className="admin-tabs" aria-label="Admin sections">
+          {shownSections(signups.data?.reports).map((id) => (
+            // biome-ignore lint/a11y/useAriaPropsSupportedByRole: linkTo spreads the href, so this is a link.
+            <a
+              key={id}
+              {...(id === section ? { 'aria-current': 'page' as const, className: 'active' } : {})}
+              aria-label={
+                id === 'signups' && unread > 0 ? `${SECTION_LABEL[id]}, ${unread} new` : undefined
+              }
+              {...linkTo({ view: 'admin', section: id }, navigate)}
+            >
+              {SECTION_LABEL[id]}
+              {id === 'signups' && unread > 0 && (
+                <small className="side-badge" aria-hidden="true">
+                  {unreadLabel(unread)}
+                </small>
+              )}
+            </a>
+          ))}
+        </nav>
+        {section === 'overview' && <AdminOverview navigate={navigate} />}
+        {section === 'users' &&
+          (account ? (
+            <AdminUser key={account} account={account} self={self} navigate={navigate} />
+          ) : (
+            <AdminUsers navigate={navigate} />
+          ))}
+        {section === 'signups' && (
+          <AdminSignups signups={signups} seen={seen} onSeen={onSeen} navigate={navigate} />
+        )}
+        {section === 'repos' && <AdminRepos navigate={navigate} />}
+        {section === 'audit' && <AdminAudit />}
+        {section === 'traffic' && <AdminTraffic />}
+        {section === 'visitors' && <AdminVisitors />}
+        {section === 'agents' && <AdminAgents />}
+        {section === 'operations' && <AdminOperations />}
+        {section === 'infrastructure' && (
+          <>
+            <AdminInfrastructure />
+            <AdminServiceLevels />
+          </>
+        )}
+      </section>
+    </AdminReadScope>
   );
 }
