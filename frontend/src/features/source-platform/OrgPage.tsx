@@ -12,6 +12,7 @@ import type { Org } from './orgModel';
 import { type Deleted, RecentlyDeleted } from './RecentlyDeleted';
 import { Failure, Loading } from './SourceStatus';
 import { when } from './sourceApi';
+import { useReadSource } from './useReadSource';
 import { type Loaded, useSource } from './useSource';
 
 type OrgRepo = { id: string; name: string; created_at: number; owner: string };
@@ -92,7 +93,7 @@ export function OrgPage({
   onDeleted?: () => void;
 }) {
   const loaded = useSource<Org>(`/orgs/${org}`);
-  const repos = useSource<{ repos: OrgRepo[] }>(`/orgs/${org}/repos`);
+  const repos = useReadSource<{ repos: OrgRepo[] }>(`/orgs/${org}/repos`);
   const holds = useSource<OrgHolds>(`/orgs/${org}/hold`);
   // Its owners': the only people who can restore them.
   const owner = loaded.data?.role === 'owner';

@@ -445,3 +445,19 @@ it('keeps the report when Web Analytics cannot be read, and says why', async () 
   expect(JSON.stringify(errors.mock.calls)).not.toContain('test-read-token');
   errors.mockRestore();
 });
+
+it('starts the Web Analytics witness before slower report sections finish', async () => {
+  let release!: () => void;
+  const slow = new Promise<void>(resolve => { release = resolve; });
+  let witness = false;
+  const fetcher = vi.fn(async (url: any, init?: RequestInit) => {
+    if (String(url) === GRAPHQL) { witness = true; return loads(1, 1); }
+    if (!String(init?.body).includes('MIN(timestamp)')) await slow;
+    return sqlRows(String(init?.body));
+  }) as unknown as typeof fetch;
+  const pending = siteTraffic(report, '7d', 'humans', fetcher, NOW);
+  try {
+    for (let i = 0; i < 20 && !witness; i++) await new Promise(resolve => setTimeout(resolve, 0));
+    expect(witness).toBe(true);
+  } finally { release(); await pending; }
+});

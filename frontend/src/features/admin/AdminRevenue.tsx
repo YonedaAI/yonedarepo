@@ -3,7 +3,7 @@ import { type FormEvent, useState } from 'react';
 import type { AdminRevenue } from '../../../../shared/admin-revenue';
 import type { Navigate } from '../shell/useRoute';
 import { Failure, Loading } from '../source-platform/SourceStatus';
-import { useSource } from '../source-platform/useSource';
+import { useReadSource } from '../source-platform/useReadSource';
 import { RevenueReport } from './AdminRevenueReport';
 import { defaultRange, type RevenueRange, rangeProblem, revenuePath } from './adminRevenueModel';
 
@@ -60,7 +60,7 @@ function RangeForm({
 
 export function AdminRevenueSection({ navigate }: { navigate: Navigate }) {
   const [range, setRange] = useState(defaultRange);
-  const loaded = useSource<AdminRevenue>(revenuePath(range));
+  const loaded = useReadSource<AdminRevenue>(revenuePath(range));
   return (
     <section className="home-section admin-revenue" aria-labelledby="admin-revenue">
       <header className="admin-revenue-head">

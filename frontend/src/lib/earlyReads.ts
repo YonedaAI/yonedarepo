@@ -1,3 +1,5 @@
+import { SIGNUPS_SEEN_KEY } from '../features/admin/adminSeen';
+import { earlyPageReads } from './earlyPageReads';
 import { plainNamedOverview } from './overviewEntryRoute';
 
 type EarlyRead = { response: Promise<Response>; release: () => void };
@@ -19,6 +21,8 @@ export function beginEarlyReads(
   target: Window,
   reservedRoots: readonly string[],
   namedOverview = plainNamedOverview,
+  pageReads = earlyPageReads,
+  signupsSeenKey = SIGNUPS_SEEN_KEY,
 ) {
   target.__yonedaEarlyReads?.clear();
   const locationKey = () =>
@@ -93,6 +97,14 @@ export function beginEarlyReads(
   target.addEventListener('pagehide', clear, { once: true });
   start('/api/auth/session?summary=true');
   if (documentKey === '/agents') start('/api/managed/self');
+  let seen = 0;
+  try {
+    const value = Number(target.localStorage?.getItem(signupsSeenKey));
+    if (Number.isSafeInteger(value) && value > 0) seen = value;
+  } catch {
+    /* Blocked storage means the sign-up feed starts at zero. */
+  }
+  for (const path of pageReads(documentKey, seen)) start(path);
   const named = namedOverview(target.location, reservedRoots);
   if (named)
     start(

@@ -274,7 +274,8 @@
           "SEARCH_CODE_MEMO": "on",
           "RECENT_VERSIONS": "on",
           "REGIONAL_API": "on",
-          "REPO_ANALYTICS": "on"
+          "REPO_ANALYTICS": "on",
+          "ADMIN_READ_CACHE": "on"
         },
         "secrets_store_secrets": [
           {

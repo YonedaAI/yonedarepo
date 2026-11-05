@@ -8,6 +8,7 @@
 // a service binding that forwards the same Request; a Durable Object call, a queue message, an
 // RPC call and a container request all start with no ray of their own (docs/logging.md).
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { queueDelay } from './queue-timing';
 import type { Envelope } from './types';
 
 /** The header that carries the id between Workers, Durable Objects and containers, and back
@@ -76,21 +77,29 @@ export function carriedRequest(req: Request): Request {
   return forwarded;
 }
 
-/** `queue`, stamping what it sends with this request's id (REQUEST_IDS). The field is optional
+/** `queue`, carrying its deliberate delay and this request's id (REQUEST_IDS). Fields are optional
  * and consumers read fields by name, so old and new messages and Workers mix freely during a
  * deploy; a consumer without an id in its message mints one. */
 export function carriedQueue<T extends Queue<Envelope>>(queue: T): T {
   const scope = scopes.getStore();
-  if (!carrying(scope)) return queue;
-  const stamp = (body: Envelope) => ({ ...body, request_id: requestId(scope) });
+  const stamp = (body: Envelope, options?: { delaySeconds?: number }) => ({
+    ...body,
+    queue_delay_ms: queueDelay(options),
+    ...(carrying(scope) ? { request_id: requestId(scope) } : {}),
+  });
   return {
-    send: (body: Envelope, options?: QueueSendOptions) => queue.send(stamp(body), options),
+    send: (body: Envelope, options?: QueueSendOptions) => queue.send(stamp(body, options), options),
     sendBatch: (
       messages: Iterable<MessageSendRequest<Envelope>>,
       options?: QueueSendBatchOptions,
     ) =>
       queue.sendBatch(
-        [...messages].map((message) => ({ ...message, body: stamp(message.body) })),
+        [...messages].map((message) => ({
+          ...message,
+          body: stamp(message.body, {
+            delaySeconds: message.delaySeconds ?? options?.delaySeconds,
+          }),
+        })),
         options,
       ),
   } as unknown as T;

@@ -355,3 +355,18 @@ Other invocation-lifetime alarms also start fresh: 100 successful executions
 per independent closed UTC hour, with 24 qualifying hours spanning 24 hours.
 Their band comes from the observed hourly distribution, not the old three-run
 moving average. Error, exception, resource and health checks are unchanged.
+
+## Queue and SSH idle traffic
+
+Queue age is diagnostic, since producer delays can deliberately span 12 hours.
+Platform producers carry `queue_delay_ms` on sends and batches. First delivery
+measures time since Cloudflare enqueue minus that delay; `queue.late` records
+waits over the existing two-minute budget. Older messages are unknown and retry
+failures keep their existing rules. This adds no network requests or ledger
+tables: at most one warning per overdue first delivery, using existing tail marks.
+
+SSH alarms and explicitly identified keep-alive RPCs have separate maintenance
+counters, samples and count-based failure rules. They cannot seed the SSH request
+error denominator or execution baseline. Unidentified events keep the request
+rules. Failed cron keep-alives retain their existing failure alarm. This uses
+the existing per-minute tail rows and adds no API requests.

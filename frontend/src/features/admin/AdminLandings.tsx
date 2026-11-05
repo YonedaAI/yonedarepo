@@ -5,11 +5,11 @@ import type { LandingReportResult } from '../../../../shared/repo-insights';
 import type { TrafficRange } from '../../../../shared/site-traffic';
 import { duration, percent, reasonLabel } from '../source-platform/insightsModel';
 import { Failure, Loading } from '../source-platform/SourceStatus';
-import { useSource } from '../source-platform/useSource';
+import { useReadSource } from '../source-platform/useReadSource';
 import { figure, RANGE_LABELS } from './trafficModel';
 
 export function AdminLandings({ range }: { range: TrafficRange }) {
-  const answer = useSource<LandingReportResult>(`/admin/traffic/landings?range=${range}`);
+  const answer = useReadSource<LandingReportResult>(`/admin/traffic/landings?range=${range}`);
   const heading = (
     <h2 id="admin-landings" className="home-label">
       Landings, last {RANGE_LABELS[range]}

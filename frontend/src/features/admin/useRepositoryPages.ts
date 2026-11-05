@@ -3,10 +3,10 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RepositoryPage } from '../../../../shared/admin-repositories';
 import { sourceApi } from '../source-platform/sourceApi';
-import { useSource } from '../source-platform/useSource';
+import { useReadSource } from '../source-platform/useReadSource';
 
 export function useRepositoryPages(path: string, pathOf: (cursor: string) => string) {
-  const first = useSource<RepositoryPage>(path);
+  const first = useReadSource<RepositoryPage>(path);
   const [generation, setGeneration] = useState(0);
   const request = useMemo(() => ({ path, generation }), [path, generation]);
   const active = useRef<typeof request | null>(request);

@@ -8,13 +8,13 @@ import { PublicBadge } from '../source-platform/PublicBadge';
 import { rememberRepoName } from '../source-platform/repoNames';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { sourceApi } from '../source-platform/sourceApi';
-import { useSource } from '../source-platform/useSource';
+import { useReadSource } from '../source-platform/useReadSource';
 import { createdOn, type ExploreRepo, exploreList, explorePath, ownerName } from './exploreModel';
 
 type Page = { repos: ExploreRepo[] };
 
 export function ExplorePage({ navigate }: { navigate: Navigate }) {
-  const first = useSource<Page>(explorePath());
+  const first = useReadSource<Page>(explorePath());
   const [later, setLater] = useState<ExploreRepo[][]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');

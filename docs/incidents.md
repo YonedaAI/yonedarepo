@@ -66,7 +66,7 @@ Counted log events stay open for 20 hours after the last one, because some are l
 | Landing batches failed (`land_queue land_failures`) | Over 5 land batches failed in 20 hours | Platform logs, `land.batch_failed`, `land.submitted_batch_failed`, `land.step_failed`: `repo` and `error` | Lost compare-and-swaps aren't counted, so these are real |
 | Landings waited over 20 seconds (`land_queue land_timeouts`) | Over 10 landers waited 20 seconds with no answer in 20 hours | Platform logs, `event = land.timed_out`. Expected in a 1,000-writer burst on dev | Landers retry until 2 minutes; a repository with many needs a look |
 | Jobs or runs waiting (`derived_jobs`, `check_runs`, `managed_worker` `backlog`, `backlog_growth`) | Over 50 messages waiting, or more than doubled | Is the consumer running? Observability on that Worker | Usually a stuck or slow job |
-| Jobs waited to start, or keep retrying (`derived_jobs lag_ms`, `retries_per_message`) | Jobs waited over 2 minutes, or retry more than once on average | `event = job.failed` | As above |
+| Jobs delivered late, or keep retrying (`derived_jobs queue_late`, `retries_per_message`) | First deliveries arrived over 2 minutes after their intentional delay, or retry more than once on average | `event = queue.late` and `event = job.failed` | Inspect queue delivery and the failing job |
 | Commits refused and retried (`source_repository push_retries`) | The object store refused over 5 commits | Platform logs, `event = object.push_retry` | Each is sent again up to 5 times, so a burst may clear itself |
 | Check containers at high disk (`check_runs container_disk_percent`) | A check container passed 85% disk | Check container metrics | Check image and workspace size |
 | Dead-man check has stopped (`deadman deadman_stale`) | The dead-man hasn't checked in 20 minutes, or can't be read. If Superfan stops now, nobody is told | `GET /health` on the dead-man; its Cron Triggers | Redeploy the dead-man |
@@ -107,13 +107,23 @@ Checked 2026-10-31. [Standalone Health Checks](https://developers.cloudflare.com
 
 ## SSH gateway checks
 
-The SSH gateway alert counts supervisor invocations: keep-alive calls and
-housekeeping alarms. It is not a count of Git clone, fetch or push failures.
+SSH requests and background maintenance have separate counters. Alarms and explicitly
+identified `keepAlive` calls count as `ssh_maintenance`; unknown events retain the
+request failure rules. Maintenance keeps every exception and sample, and alerts on the
+existing count rules (3 exceptions/hour, over 5 error logs, or any resource kill),
+without dividing failures by a mixed set of calls. Failed keep-alives also retain the
+independent scheduled-task failure alarm.
 
-Check the event type and stack in Workers Logs before choosing a repair. An
-`alarm` exception saying the instance is no longer active identifies a failed
-supervisor callback; it does not establish why the instance was replaced or
-whether a Git transfer failed. Keep the exception and its alert visible.
+An `alarm` exception saying the instance is no longer active identifies a failed
+supervisor callback. It does not establish why the instance was replaced or whether
+a Git transfer failed. A passing SSH check does not repair that callback.
+
+Queue `lag_ms` remains diagnostic: Cloudflare measures age since enqueue, including
+intentional delays and time through deletion. It cannot establish late execution.
+New platform envelopes carry their producer delay; first delivery subtracts that
+from Cloudflare's enqueue timestamp and records `queue.late` above 2 minutes.
+Old messages without metadata remain unknown; retries keep their own failure rules.
+Backlog, dead-letter, failure and delivery-gap checks remain independent.
 
 Run the small production SSH check from the Mac:
 
@@ -125,4 +135,5 @@ It uses new test fixtures and checks clone, push, access refusals and key
 revocation. A passing check proves that path works now; it does not prove the
 intermittent supervisor fault is repaired. Inspect later alarm and keep-alive
 outcomes to confirm recovery. Do not roll back a healthy release solely from a
-rate that mixes these different operations.
+rate that mixes these different operations. After deployment, old mixed SSH samples
+can remain in the rolling hour until they age out; findings retain their history.
