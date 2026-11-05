@@ -93,6 +93,9 @@ export function beginEarlyReads(
   target.addEventListener('pagehide', clear, { once: true });
   start('/api/auth/session?summary=true');
   if (documentKey === '/agents') start('/api/managed/self');
+  if (documentKey === '/admin' || documentKey === '/admin/overview')
+    start('/api/v1/admin/overview');
+  if (documentKey === '/admin/traffic') start('/api/v1/admin/traffic?range=7d&class=humans');
   const named = namedOverview(target.location, reservedRoots);
   if (named)
     start(
