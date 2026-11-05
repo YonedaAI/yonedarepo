@@ -84,3 +84,9 @@ queries but starts the Web Analytics witness as soon as its counting-start
 query finishes. Warm snapshots make neither query set. `EARLY_READS` starts
 the exact document's Admin read alongside session discovery and hands that
 response to the existing authorized API parser once. No IndexedDB is needed.
+
+Admin tab revisits also reuse a fresh report for at most 15 seconds within one
+mounted Admin scope. Switching viewer or leaving Admin discards it. Browser mutations clear its snapshots. Cache reuse
+does not extend expiry; explicit reload still uses the normal API authorization.
+No browser persistence is used. Overview/Traffic tab revisits within the budget
+need no new main report request; secondary sections retain their existing reads.

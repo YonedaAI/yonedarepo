@@ -15,6 +15,15 @@ export class SourceApiError extends Error {
   }
 }
 
+const writeListeners = new Set<() => void>();
+/** A report scope invalidates snapshots when this browser sends a mutation. */
+export function onSourceWrite(listener: () => void) {
+  writeListeners.add(listener);
+  return () => {
+    writeListeners.delete(listener);
+  };
+}
+
 type GoneListener = (repo: string) => void;
 const goneListeners = new Set<GoneListener>();
 const REPO_PATH = /^\/repos\/(r[0-9a-f]{20})(?:[/?]|$)/;
@@ -69,7 +78,10 @@ export type ApiInit = {
 export async function sourceApi<T = any>(path: string, init: ApiInit = {}): Promise<T> {
   const base = init.base ?? '/api/v1';
   const method = init.method ?? (init.body === undefined ? 'GET' : 'POST');
-  if (method !== 'GET') clearEarlyReads();
+  if (method !== 'GET') {
+    clearEarlyReads();
+    for (const listener of writeListeners) listener();
+  }
   const retries = method === 'GET' && !init.once ? RETRY_DELAYS_MS.length : 0;
   const url = method === 'GET' ? atLatestLanding(path) : path;
   for (let attempt = 0; ; attempt++) {
