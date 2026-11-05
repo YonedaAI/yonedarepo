@@ -205,8 +205,8 @@ export const COPY: Copy[] = [
   },
   {
     signals: ['queue_late'],
-    title: (f) => `${plural(count(f, 'queue_late'), 'job')} started late`,
-    means: 'Jobs started over two minutes after their scheduled delivery time.',
+    title: (f) => `${plural(count(f, 'queue_late'), 'job')} delivered late`,
+    means: 'Messages arrived over two minutes after their scheduled delivery time.',
     first: 'Find queue.late in the platform logs and inspect delivery timings.',
   },
   {

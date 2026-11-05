@@ -10,7 +10,7 @@ import { TRAFFIC_RANGES, type TrafficRange } from '../../../../shared/site-traff
 import { EmptyState } from '../../components/EmptyState';
 import { activityBars, percent } from '../source-platform/insightsModel';
 import { Failure, Loading } from '../source-platform/SourceStatus';
-import { useSource } from '../source-platform/useSource';
+import { useReadSource } from '../source-platform/useReadSource';
 import { RangePicker } from './AdminParts';
 import { TimeChart } from './TimeChart';
 import { figure, RANGE_LABELS } from './trafficModel';
@@ -107,7 +107,7 @@ function Report({ r }: { r: AgentReport }) {
 
 export function AdminAgents() {
   const [range, setRange] = useState<TrafficRange>('7d');
-  const answer = useSource<AgentResult>(`/admin/agents?range=${range}`);
+  const answer = useReadSource<AgentResult>(`/admin/agents?range=${range}`);
   const body = () => {
     if (answer.loading && !answer.data) return <Loading what="agents" />;
     if (answer.error || !answer.data)

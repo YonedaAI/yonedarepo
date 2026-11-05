@@ -19,7 +19,7 @@ import {
 import { PageToolbar } from './PageToolbar';
 import { Person } from './Person';
 import { Failure, Loading } from './SourceStatus';
-import { useSource } from './useSource';
+import { useReadSource } from './useReadSource';
 
 function Contributors({ rows, more }: { rows: RepoContributor[]; more: boolean }) {
   return (
@@ -121,7 +121,7 @@ function Report({ data, reload }: { data: Insights; reload: () => void }) {
 
 export function RepoInsights({ repo }: { repo: string }) {
   const [range, setRange] = useState<TrafficRange>('30d');
-  const insights = useSource<Insights>(insightsPath(repo, range));
+  const insights = useReadSource<Insights>(insightsPath(repo, range));
   const { data, reload } = insights;
   return (
     <section aria-labelledby="insights-heading" className="insights" aria-busy={insights.loading}>

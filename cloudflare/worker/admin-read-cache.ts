@@ -71,3 +71,21 @@ export async function adminRead<T extends Json>(
   });
   return value;
 }
+
+/** Only read-only lists and aggregate reports; never balances, credentials, repairs or detail. */
+export function memoizedAdminRead(section: string, id?: string) {
+  return (
+    (!id &&
+      [
+        'accounts',
+        'repos',
+        'signups',
+        'audit',
+        'visitors',
+        'agents',
+        'operations',
+        'revenue',
+      ].includes(section)) ||
+    (section === 'traffic' && id === 'landings')
+  );
+}

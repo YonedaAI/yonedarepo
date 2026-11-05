@@ -3,14 +3,14 @@
 // is on.
 import type { Navigate } from '../shell/useRoute';
 import { Failure, Loading } from '../source-platform/SourceStatus';
+import { useReadSource } from '../source-platform/useReadSource';
 import { AdminRevenueSection } from './AdminRevenue';
 import type { Overview } from './adminModel';
 import { TimeChart } from './TimeChart';
 import { dayBars } from './trafficModel';
-import { useAdminSource } from './useAdminSource';
 
 export function AdminOverview({ navigate }: { navigate: Navigate }) {
-  const overview = useAdminSource<Overview>('/admin/overview');
+  const overview = useReadSource<Overview>('/admin/overview');
   if (overview.loading && !overview.data) return <Loading what="the overview" />;
   if (overview.error || !overview.data)
     return <Failure error={overview.error ?? ''} what="the overview" onRetry={overview.reload} />;

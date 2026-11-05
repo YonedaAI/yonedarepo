@@ -1,3 +1,5 @@
+export { readSeen, saveSeen } from './adminSeen';
+
 // The admin pages' model (operators only; every answer comes from `/api/v1/admin`, which
 // checks for itself): the sections, the API's shapes and paths, the sign-ups unread marker
 // this browser keeps, and the labels the pages show.
@@ -183,32 +185,6 @@ export const usd = (micro: number) => `$${(micro / 1_000_000).toFixed(2)}`;
 /** The sidebar badge's text: empty for none, capped at 99+. */
 export const unreadLabel = (unread: number) =>
   unread <= 0 ? '' : unread > 99 ? '99+' : `${unread}`;
-
-type Store = Pick<Storage, 'getItem' | 'setItem'>;
-const SEEN_KEY = 'yoneda.admin.signups-seen';
-const browserStore = (): Store | undefined => {
-  try {
-    return typeof localStorage === 'undefined' ? undefined : localStorage;
-  } catch {
-    return undefined;
-  }
-};
-/** When this browser last looked at the sign-ups (0: never); storage may be blocked. */
-export function readSeen(store: Store | undefined = browserStore()) {
-  try {
-    const n = Number(store?.getItem(SEEN_KEY));
-    return Number.isSafeInteger(n) && n > 0 ? n : 0;
-  } catch {
-    return 0;
-  }
-}
-export function saveSeen(at: number, store: Store | undefined = browserStore()) {
-  try {
-    store?.setItem(SEEN_KEY, String(at));
-  } catch {
-    // Blocked storage only means the badge counts from the start again.
-  }
-}
 
 /** A country's name from its ISO code, else the code (unknown or unsupported). */
 export function countryName(code: string) {

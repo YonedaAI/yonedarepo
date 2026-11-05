@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { AdminReadCache } from '../../cloudflare/worker/admin-read-cache';
+import { AdminReadCache, memoizedAdminRead } from '../../cloudflare/worker/admin-read-cache';
 
 it('expires snapshots and isolates keys and mutable answers', async () => {
   let now = 100; const cache = new AdminReadCache(() => now);
@@ -17,4 +17,10 @@ it('does not cache failures or revive a read cleared during a mutation', async (
   const first = cache.read('late', () => new Promise(resolve => { release = resolve; }));
   await Promise.resolve(); cache.clear(); release({ count: 1 }); await first;
   const load = vi.fn(async () => ({ count: 2 })); expect(await cache.read('late', load)).toEqual({ count: 2 }); expect(load).toHaveBeenCalledTimes(1);
+});
+
+it('limits memoization to read-only lists and aggregate reports', () => {
+  for (const section of ['accounts', 'repos', 'signups', 'audit', 'visitors', 'agents', 'operations', 'revenue']) expect(memoizedAdminRead(section)).toBe(true);
+  for (const section of ['accounts', 'repos', 'billing', 'tokens', 'ssh-keys', 'infrastructure']) expect(memoizedAdminRead(section, 'detail')).toBe(false);
+  expect(memoizedAdminRead('infrastructure')).toBe(false);
 });

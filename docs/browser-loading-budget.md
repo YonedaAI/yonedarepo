@@ -90,3 +90,14 @@ mounted Admin scope. Switching viewer or leaving Admin discards it. Browser muta
 does not extend expiry; explicit reload still uses the normal API authorization.
 No browser persistence is used. Overview/Traffic tab revisits within the budget
 need no new main report request; secondary sections retain their existing reads.
+
+The same scoped snapshot primitive is shared by Admin's list/report tabs, Explore,
+organization repository lists/audit pages and repository Insights. Each viewer's
+workspace scope is discarded on identity changes and explicit refresh; Admin has
+its own nested scope, discarded on exit. Mutations fence in-flight old snapshots.
+Live account details, balances, keys, storage diagnostics, permissions, Git refs
+and transaction leases still use fresh reads. The shell already retains its
+repository directory and sign-up feed across tab changes. Exact initial Users,
+Repositories, Audit and report routes now adopt early reads; direct repository
+and Explore directories do too. At most one main default and the existing
+sign-up feed start early on Admin documents, without bulk tab prefetch.
