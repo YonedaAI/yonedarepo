@@ -324,9 +324,10 @@ O1 and O5 can start now. The analytics plan's Phase 7 reads from O1 to O4.
 Request budget: with `RESPONSE_LATENCY=on`, the front Worker writes one bounded
 structured timing line per invocation. No extra foreground network call, SQL
 statement, response-body buffering or awaited background work is introduced.
-Tail ingestion uses its existing ledger RPC. The five-minute watch adds one
-ledger RPC; it does not add an analytics query or model call. Existing email
-caps apply. Timing minute rows last 48 hours; calibration windows last 7 days.
+Tail ingestion uses its existing ledger RPC. Each five-minute HTTP pass adds
+one calibration RPC and one resolution RPC, plus one observation RPC per
+active series. Notification claims use the existing bounded send path. There
+is no additional analytics query or model call. Existing email caps apply. Timing minute rows last 48 hours; calibration windows last 7 days.
 
 Response-ready time runs until the handler supplies a Response. It excludes
 background work and response-body transfer; it is not browser page-load time.
