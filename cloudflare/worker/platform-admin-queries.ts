@@ -27,8 +27,6 @@ const count = async (env: Env, sql: string, ...binds: unknown[]) =>
       .first<{ n: number }>()
   )?.n ?? 0;
 
-const ACCOUNTS = 'SELECT COUNT(*) AS n FROM platform_accounts WHERE';
-
 /** `GET overview`, leaving out accounts that are ours with TRAFFIC_REPORT on. */
 export async function overview(env: Env, now = Date.now()) {
   const since = (days: number) => now - days * DAY_MS;
@@ -37,13 +35,24 @@ export async function overview(env: Env, now = Date.now()) {
   const theirRepos = counted
     ? 'WHERE workspace NOT IN (SELECT account FROM platform_accounts WHERE internal=1)'
     : '';
-  const [accounts, day, week, month, active, suspended, repos, perDay] = await Promise.all([
-    count(env, `${ACCOUNTS} ${theirs}`),
-    count(env, `${ACCOUNTS} ${theirs} AND created_at>=?`, since(1)),
-    count(env, `${ACCOUNTS} ${theirs} AND created_at>=?`, since(7)),
-    count(env, `${ACCOUNTS} ${theirs} AND created_at>=?`, since(30)),
-    count(env, `${ACCOUNTS} ${theirs} AND last_seen_at>=?`, since(7)),
-    count(env, `${ACCOUNTS} ${theirs} AND suspended_at IS NOT NULL`),
+  // One scan/round trip for account totals instead of six independent count reads.
+  const [totals, repos, perDay] = await Promise.all([
+    env.INDEX.prepare(`SELECT COUNT(*) AS total,
+      COALESCE(SUM(created_at>=?),0) AS day,
+      COALESCE(SUM(created_at>=?),0) AS week,
+      COALESCE(SUM(created_at>=?),0) AS month,
+      COALESCE(SUM(last_seen_at>=?),0) AS active,
+      COALESCE(SUM(suspended_at IS NOT NULL),0) AS suspended
+      FROM platform_accounts WHERE ${theirs}`)
+      .bind(since(1), since(7), since(30), since(7))
+      .first<{
+        total: number;
+        day: number;
+        week: number;
+        month: number;
+        active: number;
+        suspended: number;
+      }>(),
     env.INDEX.prepare(
       `SELECT visibility,COUNT(*) AS n FROM platform_repos ${theirRepos} GROUP BY visibility`,
     ).all<{ visibility: string; n: number }>(),
@@ -59,8 +68,14 @@ export async function overview(env: Env, now = Date.now()) {
   const today = Math.floor(now / DAY_MS);
   const visible = (v: string) => repos.results.find((r) => r.visibility === v)?.n ?? 0;
   return {
-    accounts: { total: accounts, new_24h: day, new_7d: week, new_30d: month, active_7d: active },
-    suspended,
+    accounts: {
+      total: totals?.total ?? 0,
+      new_24h: totals?.day ?? 0,
+      new_7d: totals?.week ?? 0,
+      new_30d: totals?.month ?? 0,
+      active_7d: totals?.active ?? 0,
+    },
+    suspended: totals?.suspended ?? 0,
     repos: { public: visible('public'), private: visible('private') },
     signups_per_day: Array.from({ length: 30 }, (_, i) => {
       const at = today - 29 + i;

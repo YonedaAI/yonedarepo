@@ -176,6 +176,7 @@
     "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
     "ADMIN_BILLING": "on",
     "ADMIN_NOTIFY_EMAIL": "",
+    "ADMIN_READ_CACHE": "on",
     "AGENT_SIGNUP": "on",
     "API_REGION": "enam",
     "AUDIT_LOG": "off",

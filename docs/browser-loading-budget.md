@@ -68,3 +68,19 @@ Native asset serving uses build-generated exact `_headers` entries for existing 
 files. The deployment passes `STATIC_ASSET_CACHE` into `VITE_STATIC_ASSET_CACHE` for the build.
 There is no wildcard rule that could cache a missing chunk’s HTML fallback. Dev and prod
 serve assets directly; Worker response headers remain a fallback for proxied asset reads.
+
+### Admin Overview and Traffic
+
+Behind `ADMIN_READ_CACHE`: authenticate every request, reuse completed JSON
+snapshots for at most 15 seconds, scoped to environment, cell, operator, query
+and relevant report flags. Keep at most 32 entries per isolate; no in-flight
+I/O is shared between invocations. Cold isolates still perform the full read.
+Successful operator mutations clear local snapshots; failures and partial
+responses never warm them. HTTP responses remain `no-store`.
+
+A cold Overview uses three D1 reads per cell instead of eight, with the
+newsletter count parallel to cell totals. Traffic keeps its ten analytics SQL
+queries but starts the Web Analytics witness as soon as its counting-start
+query finishes. Warm snapshots make neither query set. `EARLY_READS` starts
+the exact document's Admin read alongside session discovery and hands that
+response to the existing authorized API parser once. No IndexedDB is needed.

@@ -415,3 +415,12 @@ it('gives the front Worker the list on the entrypoint, on no HTTP route', async 
   const entry = new PlatformEntrypoint(createExecutionContext(), target);
   expect(await entry.internalAccounts()).toEqual(['team_member']);
 });
+
+
+it('still authorizes each dashboard request after an operator snapshot is warm', async () => {
+  const boss = await signup('boss'), visitor = await signup('dashboard_visitor');
+  const target = operators({ ADMIN_READ_CACHE: 'on' });
+  expect((await api('/admin/overview', { cookie: boss }, {}, target)).status).toBe(200);
+  expect((await api('/admin/overview', { cookie: visitor }, {}, target)).status).toBe(403);
+  expect((await api('/admin/overview', { token: 'wrong' }, {}, target)).status).not.toBe(200);
+});

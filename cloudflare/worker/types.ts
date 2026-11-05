@@ -208,6 +208,8 @@ export interface Env {
   VISITORS?: string;
   /** `on` records a new account's region and samples where writes come from (region.ts). */
   REGION_SIGNALS?: string;
+  /** Short authenticated snapshots of the read-only operator dashboards. */
+  ADMIN_READ_CACHE?: string;
   /** `on`: requests find their cell, and a Worker forwards what is another's (cells.ts). Unset or
    * anything else: this Worker serves everything it is sent, as ever. */
   CELLS?: string;
