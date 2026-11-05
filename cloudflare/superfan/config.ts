@@ -21,6 +21,7 @@ export interface SuperfanEnv {
   WATCH_URL: string;
   /** `on`: the wide watch (`wideOn`). */
   WATCH_WIDE?: string;
+  RESPONSE_LATENCY?: string;
   /** Generated regional backend roles, not arbitrary Worker names. */
   WATCH_BACKENDS?: string;
   /** The site as people reach it: what the wide watch and the synthetic checks probe. */

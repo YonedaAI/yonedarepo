@@ -1,3 +1,4 @@
+import { LATENCY_COPY } from './mail-copy-latency';
 // The words of an alert mail: what each signal means to a person and what to do first, condensed
 // from docs/incidents.md. Each entry is one cause, so signals of one cause on one component become
 // one block (mail-render.ts). In order, worst first: the first item names the mail. Every signal
@@ -228,13 +229,7 @@ export const COPY: Copy[] = [
     means: 'Checks can fail once the disk fills.',
     first: 'Look at the check image and workspace sizes.',
   },
-  {
-    signals: ['p95_wall_ms'],
-    title: (f) => `${capital(f.word)} execution time rose`,
-    means: (f) =>
-      `Estimated 95th percentile: ${duration(count(f, 'p95_wall_ms'))}${f.baseline ? `; usual estimate ${duration(f.baseline)}` : ''}. Includes background work.`,
-    first: "Inspect request timings and upstream calls in this Worker's logs.",
-  },
+  ...LATENCY_COPY,
   {
     signals: ['deadman_stale'],
     title: () => 'Dead-man check has stopped',

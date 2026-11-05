@@ -1,11 +1,11 @@
-// The quick pass, every five minutes on the wide watch: only the urgent signals, so a site that
+// The quick pass, every five minutes on the wide watch: urgent signals and calibrated HTTP latency, so a site that
 // is down reaches a person in minutes rather than at the next hourly pass. It files and resolves
-// urgent findings and mails them, and leaves everything else to the hourly pass: no digest and no
-// model call (the hourly pass writes the narrative). It takes no run lease: each step is one
+// urgent findings and mails them, and leaves everything else to the hourly pass: no model call (the hourly pass writes the narrative). It takes no run lease: each step is one
 // ledger transaction, so overlapping a full pass only counts a finding twice.
 import { WINDOW_MS } from './analytics';
 import { type SuperfanEnv, wideOn } from './config';
 import { readDelivery } from './delivery';
+import { watchHttp } from './http-watch';
 import { notifyUrgent } from './notify';
 import { evaluate, observation, problems, type Snapshot } from './signals';
 import { MARK_WINDOW_MS } from './tail';
@@ -34,6 +34,7 @@ export async function runQuick(env: SuperfanEnv, deps = productionDeps(env)): Pr
     readDelivery(deps.analytics, ledger, now).catch(() => undefined),
   ]);
   const snapshot: Snapshot = {
+    latencyCalibration: env.RESPONSE_LATENCY === 'on',
     window: { start: new Date(start).toISOString(), end: new Date(now).toISOString() },
     ...site,
     tail: tail.components,
@@ -53,6 +54,7 @@ export async function runQuick(env: SuperfanEnv, deps = productionDeps(env)): Pr
   }
   await ledger.resolveAbsent(evaluated, present, now);
   await notifyUrgent(env, ledger, now);
+  await watchHttp(env, ledger, now, revision);
   await ledger.beat(now);
   return { outcome: 'ok', urgent: present.length };
 }

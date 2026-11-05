@@ -61,6 +61,8 @@ describe('superfan read endpoint', () => {
 
 /** Takes away what came after version 4, for a test that rebuilds an older shape. */
 function backToVersion4(sql: SqlStorage) {
+  sql.exec('DROP TABLE http_latency_minutes');
+  sql.exec('DROP TABLE latency_windows');
   sql.exec('DROP TABLE queue_gaps');
   sql.exec('DROP TABLE queue_consumers');
   sql.exec('DROP TABLE probe_results');
@@ -125,7 +127,9 @@ describe('superfan ledger schema', () => {
     await runInDurableObject(stub, (_instance, state) => {
       const sql = state.storage.sql;
       migrate(sql);
-      sql.exec('UPDATE schema_version SET version = ?', MIGRATIONS.length - 1);
+      sql.exec('DROP TABLE http_latency_minutes');
+      sql.exec('DROP TABLE latency_windows');
+      sql.exec('UPDATE schema_version SET version = ?', MIGRATIONS.findIndex(m => m.includes("component = 'object_push_queue'")));
       const open = (key: string, component: string) =>
         sql.exec(
           "INSERT INTO findings (dedup_key, component, kind, status, signals, summary, narrative_status, first_seen, last_seen) VALUES (?, ?, 'anomaly', 'open', '[]', 's', 'pending', 1, 7)",

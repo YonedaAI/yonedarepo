@@ -318,3 +318,40 @@ O1 and O5 can start now. The analytics plan's Phase 7 reads from O1 to O4.
 | Service levels | `shared/service-levels.ts`, `cloudflare/worker/platform-service-levels.ts`, `cloudflare/superfan/service-points.ts`, `frontend/src/features/admin/AdminServiceLevels.tsx` |
 | Code health | `xtask/src/`, `.github/workflows/ci.yml` |
 | Evidence | `tools/fanout-bench/results.mjs`, `tools/staging-realworld.mjs` |
+
+## Calibrated HTTP latency
+
+Request budget: with `RESPONSE_LATENCY=on`, the front Worker writes one bounded
+structured timing line per invocation. No extra foreground network call, SQL
+statement, response-body buffering or awaited background work is introduced.
+Tail ingestion uses its existing ledger RPC. Each five-minute HTTP pass adds
+one calibration RPC and one resolution RPC, plus one observation RPC per
+active series. Notification claims use the existing bounded send path. There
+is no additional analytics query or model call. Existing email caps apply. Timing minute rows last 48 hours; calibration windows last 7 days.
+
+Response-ready time runs until the handler supplies a Response. It excludes
+background work and response-body transfer; it is not browser page-load time.
+Invocation lifetime is measured separately. Page, API, health, scanner-shaped,
+asset, transfer and marked internal traffic have separate counters. Scanner
+classification is a telemetry hint, never a denial or an authentication rule.
+Failure, CPU/memory, exception and health alarms still include every request.
+
+Only successful external page/API traffic trains latency detectors. A closed
+5-minute window needs 100 requests (five upper-tail samples at p95). Learning
+requires 24 qualifying distinct windows in 24 separate hours, spanning at least 24 hours. Repeated
+polls cannot create more evidence. The reference is the median window p95;
+the comparison band is the historical 95th percentile of window p95 values,
+plus one 1.5x histogram bucket to account for measurement resolution. Two
+consecutive qualifying closed windows must exceed it. Low volume is reported
+as insufficient data and does not prove recovery. These are conservative
+initial detector requirements, not a validated product SLO or a promise that
+a particular response time is acceptable. They need review against actual
+traffic. Existing mixed frontend baselines are not reused.
+
+Dev has the same detectors, but its email destination is intentionally empty.
+Read its authenticated Superfan `/status` and `/findings` for evidence.
+
+Other invocation-lifetime alarms also start fresh: 100 successful executions
+per independent closed UTC hour, with 24 qualifying hours spanning 24 hours.
+Their band comes from the observed hourly distribution, not the old three-run
+moving average. Error, exception, resource and health checks are unchanged.

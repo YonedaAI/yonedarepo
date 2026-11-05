@@ -152,6 +152,8 @@ describe('ledger schema', () => {
       sql.exec('DROP TABLE deploys');
       sql.exec('ALTER TABLE findings DROP COLUMN revision');
       sql.exec('ALTER TABLE findings DROP COLUMN last_revision');
+      sql.exec('DROP TABLE http_latency_minutes');
+      sql.exec('DROP TABLE latency_windows');
       sql.exec('UPDATE schema_version SET version = 4');
       sql.exec(
         "INSERT INTO findings (dedup_key, component, kind, status, signals, summary, narrative_status, first_seen, last_seen) VALUES ('a:b', 'a', 'anomaly', 'open', '[]', 's', 'pending', 1, 1)",
