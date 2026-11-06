@@ -6,10 +6,11 @@
 use crate::authority::Cred;
 use crate::moves::{self, Command, Outcomes};
 use crate::service::Service;
+use crate::timing::{Clock, Phases, wall_ms};
 use crate::{pause, project, verify};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use yoneda_core::{
     Error, Result,
     git_object::{ObjectId, ObjectKind, write_pack},
@@ -23,6 +24,8 @@ const VERIFIED_PAGE: usize = 25;
 
 /// Answers a receive-pack request body with Git's report (empty for Git's probe).
 pub fn receive(svc: &Service, cred: &Cred, body: &[u8]) -> Result<Vec<u8>> {
+    let clock = Clock::start();
+    let start_ms = wall_ms();
     let access = svc.authority.call(
         cred,
         json!({ "op": "repo_git_access", "service": "git-receive-pack" }),
@@ -69,6 +72,7 @@ pub fn receive(svc: &Service, cred: &Cred, body: &[u8]) -> Result<Vec<u8>> {
         .collect();
     let tips: Vec<String> = going.iter().filter_map(|c| c.target()).collect();
     let mut fresh = HashSet::new();
+    let stored = Clock::start();
     if !tips.is_empty() {
         match store(svc, cred, &mut session, &tips, &access, &reads, &going) {
             Ok(recorded) => fresh = recorded,
@@ -82,23 +86,58 @@ pub fn receive(svc: &Service, cred: &Cred, body: &[u8]) -> Result<Vec<u8>> {
             }
         }
     }
+    let store_ms = stored.ms();
     pause::point("after_record");
+    let mut phases: HashMap<String, Phases> = HashMap::new();
     if atomic {
+        let moving = Clock::start();
         moves::move_all(svc, cred, &going, &mut outcomes, &mut messages);
+        for c in &going {
+            phases
+                .entry(c.refname.clone())
+                .or_default()
+                .add("land", moving.ms());
+        }
     } else {
         for c in &going {
-            let why = moves::move_one(svc, cred, c, &fresh, &mut messages);
+            let moving = Clock::start();
+            let mut p = Phases::default();
+            let why = moves::move_one(svc, cred, c, &fresh, &mut messages, &mut p);
+            p.add("land", moving.ms());
+            phases.insert(c.refname.clone(), p);
             outcomes.insert(c.refname.clone(), why);
         }
     }
     pause::point("after_land");
+    let projecting = Clock::start();
     if let Err(e) = project::project(svc) {
         eprintln!(
             "yoneda-local: refs not projected yet: {}",
             moves::reason(&e)
         );
     }
-    report(&commands, &outcomes, None, side_band, &messages)
+    let project_ms = projecting.ms();
+    let answer = report(&commands, &outcomes, None, side_band, &messages);
+    if svc.timings.on() {
+        let lines: Vec<Value> = commands
+            .iter()
+            .map(|c| {
+                let p = phases.remove(&c.refname).unwrap_or_default();
+                let outcome = match (&outcomes[&c.refname], p.merged) {
+                    (Some(_), _) => "refused",
+                    (None, true) => "merged",
+                    (None, false) => "landed",
+                };
+                let mut ms = p.ms;
+                ms.insert("store".into(), json!(store_ms));
+                ms.insert("project".into(), json!(project_ms));
+                ms.insert("total".into(), json!(clock.ms()));
+                json!({ "ref": c.refname, "outcome": outcome, "start_ms": start_ms, "ms": ms })
+            })
+            .collect();
+        svc.timings.write(&lines);
+    }
+    answer
 }
 
 /// Feeds the body to the session, storing each file it spills (over 8 MiB) as it ends.

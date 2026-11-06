@@ -66,6 +66,11 @@ pub fn build(
         .decode(prepared["push_b64"].as_str().unwrap_or_default())
         .map_err(|_| local_error("The prepared merge has no pack"))?;
     let report = store.receive_pack(&push)?;
+    if let Some(why) = refused_by_git(&report) {
+        return Err(local_error(format!(
+            "The store refused the merge commit: {why}"
+        )));
+    }
     let id = ObjectId::parse(prepared["commit"].as_str().unwrap_or_default())?;
     let read = store.read(&[id])?;
     let (_, data) = read
@@ -96,4 +101,13 @@ pub fn conflict_paths(e: &Error) -> Vec<String> {
         .rsplit_once(" in ")
         .map(|(_, paths)| paths.split(", ").map(|p| p.trim().to_owned()).collect())
         .unwrap_or_default()
+}
+
+/// Git's reason for a refused ref in a receive-pack report (`ng <ref> <reason>`).
+fn refused_by_git(report: &[u8]) -> Option<String> {
+    String::from_utf8_lossy(report)
+        .split("ng ")
+        .nth(1)
+        .and_then(|rest| rest.split_once(' '))
+        .map(|(_, why)| why.split('\n').next().unwrap_or(why).trim().to_owned())
 }

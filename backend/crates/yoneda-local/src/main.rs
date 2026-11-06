@@ -7,15 +7,20 @@
 //! - `sync [--json]`: run a sync round now (in the running service, else here).
 //! - `token create <name> | list | revoke <name>`: an agent's own token (`token:<name>`).
 //! - `log [--json]`: the newest landings and who made each.
+//! - `check add <name> (--on-host | --image <image>) -- <command> | list | remove <name>`:
+//!   checks run on what would land on `main` (its merge, when there is one).
 //! - `credential get`: Git's credential helper for the remote.
 mod advertise;
 mod authority;
 mod backend;
+mod check_cmd;
+mod checks;
 mod cloud;
 mod compute;
 mod credential;
 mod http;
 mod init;
+mod land;
 mod layout;
 mod lock;
 mod merge;
@@ -28,6 +33,7 @@ mod service;
 mod store;
 mod sync;
 mod sync_http;
+mod timing;
 mod tokens;
 mod verify;
 
@@ -37,7 +43,8 @@ use std::sync::Arc;
 use yoneda_core::Result;
 
 const USAGE: &str = "usage: yoneda local <init | serve | status [--json] | sync [--json] | \
-                     token <create <name> | list | revoke <name>> | log [--json] | credential get>";
+                     token <create <name> | list | revoke <name>> | log [--json] | \
+                     check <add | list | remove> | credential get>";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -62,6 +69,7 @@ fn run(cwd: &std::path::Path, args: &[String]) -> Result<String> {
         Some("sync") => report::sync_now(cwd, args.iter().any(|a| a == "--json")),
         Some("token") => tokens::run(cwd, &args[1..]),
         Some("log") => tokens::log(cwd, args.iter().any(|a| a == "--json")),
+        Some("check") => check_cmd::run(cwd, &args[1..]),
         Some("credential") => credential::answer(
             cwd,
             args.get(1).map_or("", String::as_str),
@@ -75,6 +83,7 @@ fn serve(cwd: &std::path::Path) -> Result<()> {
     let layout = Layout::find(cwd)?;
     let _held = lock::take(&layout)?;
     let svc = Arc::new(Service::open(&layout)?);
+    svc.store.configure()?;
     // A crash may have fallen between the authority's commit and a ref update.
     project::project(&svc)?;
     let kicks = sync::start(svc.clone())?;

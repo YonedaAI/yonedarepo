@@ -16,13 +16,19 @@ pub struct Store {
     pub path: PathBuf,
 }
 
-/// Settings of a fresh store: objects and refs durable before Git returns, nothing ever
-/// pruned (the authority records commits by id and expects them to stay), and the
-/// hidden refs server-built commits arrive under left out of fetches.
-const SETTINGS: [(&str, &str); 6] = [
+/// Settings of the store: objects and refs durable before Git returns, nothing ever
+/// pruned or repacked behind the service's back (the authority records commits by id and
+/// expects them to stay), and the hidden refs server-built commits arrive under left out of
+/// fetches. `gc.auto=0` alone does not stop Git: its default maintenance strategy is now
+/// geometric repacking, which `receive-pack` starts after each push and which then races
+/// the next push's quarantine ("unable to migrate objects to permanent storage", seen with
+/// 8 simultaneous pushes).
+const SETTINGS: [(&str, &str); 8] = [
     ("core.fsync", "objects,derived-metadata,reference"),
     ("core.fsyncMethod", "fsync"),
     ("gc.auto", "0"),
+    ("receive.autogc", "false"),
+    ("maintenance.auto", "false"),
     ("gc.pruneExpire", "never"),
     ("uploadpack.hideRefs", "refs/yoneda/"),
     ("receive.fsckObjects", "true"),
@@ -43,10 +49,16 @@ impl Store {
             .unwrap_or("store.git");
         run_in(parent, &["init", "-q", "--bare", "-b", "main", name], None)?;
         let store = Self::at(path);
-        for (key, value) in SETTINGS {
-            store.git(&["config", key, value], None)?;
-        }
+        store.configure()?;
         Ok(store)
+    }
+
+    /// Applies the store's settings (again: a store made by an older version gains new ones).
+    pub fn configure(&self) -> Result<()> {
+        for (key, value) in SETTINGS {
+            self.git(&["config", key, value], None)?;
+        }
+        Ok(())
     }
 
     pub fn git(&self, args: &[&str], stdin: Option<&[u8]>) -> Result<Vec<u8>> {

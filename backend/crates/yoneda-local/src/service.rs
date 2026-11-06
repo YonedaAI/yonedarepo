@@ -5,6 +5,7 @@ use crate::authority::{Authority, Cred};
 use crate::layout::{Config, Layout};
 use crate::store::Store;
 use crate::sync::Kick;
+use crate::timing::Timings;
 use std::sync::{Mutex, mpsc};
 use tokio::sync::watch;
 use yoneda_core::Result;
@@ -22,6 +23,8 @@ pub struct Service {
     pub main_landed: watch::Sender<u64>,
     /// The running sync thread, told of each landing on `main` (none outside `serve`).
     pub sync: Mutex<Option<mpsc::Sender<Kick>>>,
+    /// Per-push timings, when switched on (`timing`).
+    pub timings: Timings,
 }
 
 /// The ref projector's platform role (`repo_refs`, `repo_commit`: read).
@@ -39,6 +42,7 @@ impl Service {
             projecting: Mutex::new(()),
             main_landed: watch::channel(0).0,
             sync: Mutex::new(None),
+            timings: Timings::from_env(),
         })
     }
 

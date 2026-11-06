@@ -123,8 +123,9 @@ is the cloud's Rust push path (`ReceiveSession`, `repo_record_pushed`, landing).
    `refused`, `offline`. Local acceptance and cloud publication are shown
    separately; a local landing is never rolled back.
 6. **Capabilities.** Locally: landing, OCC, declared reads, merges, the log and
-   reads at a version. The local policy has no required checks or approvals.
-   Cloud policy, checks and approvals apply when the work lands in the cloud.
+   reads at a version, and the owner's local checks (`yoneda local check`, below)
+   on the revision that lands. No approvals locally. Cloud policy, checks and
+   approvals apply when the work lands in the cloud.
 
 Built so far (2026-11-04, `backend/crates/yoneda-local`, answers 1–4 and 6):
 `init`, `serve`, `status`, the credential helper, the receive path, landing and
@@ -196,10 +197,57 @@ remote. Two runs on `spf13/pflag`, paired with dev (`r09800c38c9b18db1b675`,
   checkout or remote (the first flagged only an edit made in this worktree by the
   operator during the run).
 
+Races, local checks and write speed, built 2026-11-06:
+
+- **Simultaneous writers** (`tests/races.rs`): 8 linked worktrees of one clone push to
+  `main` released by one barrier, and the service's own timings show every receive began
+  before the first finished. Disjoint files: all 8 land (1 fast-forward, 7 platform
+  merges). Different lines of one file: all 8 land and the file holds every edit. The
+  same line: exactly 1 lands; the other 7 are refused `conflict in list.txt`, each
+  loser's own branch kept. Half and half: 1 of the same-line half and all of the other
+  half land. Each ends with `git fsck --strict` clean.
+- **What the race tests found:** 1 push in 4–8 runs was refused `MERGE_REQUIRED`. The
+  platform's merge commit had been turned away by the store's `receive-pack` with
+  "unable to migrate objects to permanent storage": Git's default maintenance strategy
+  is now geometric repacking, which `receive-pack` starts after each push whatever
+  `gc.auto` says, and it raced the next push. The store now sets `receive.autogc=false`
+  and `maintenance.auto=false`, and `serve` applies them to stores made earlier. Before:
+  6 failing runs of 25; after: 0 of 40 (the race, checks and local tests together). A
+  refused merge now logs Git's own reason. Taking the landing lock away makes the race
+  tests fail too (2 runs of 3): a writer gives up after 8 attempts (`OVERLOADED`); no
+  edit was lost either way, as the authority verifies every landing.
+- **Local checks** (`yoneda local check`, `src/checks.rs`): the owner's commands, kept as
+  the policy's command runners and run through the engine's fenced check runs, so each
+  verdict is recorded against its commit, tree, file-set digest and policy digest. They
+  run on what would land, while the landing lock is held: the pushed commit for a
+  fast-forward, the platform's merge commit otherwise. A failure, a timeout (the process
+  group is stopped by its own id) or a check that cannot run refuses the landing, with
+  the output's last lines. `--on-host` or `--image <image>` (Docker, no network) is
+  required: pushed code is untrusted, so sandboxed agents' work belongs in an image.
+  Tested (`tests/checks.rs`): a failing check refuses a fast-forward; two pushes that each
+  pass alone but fail together are refused on the merged result, which exists in no
+  worktree; 4 simultaneous pushes all land checked; a 1 s timeout stops `sleep 30`; and
+  (with Docker) a check in `alpine:3.22`. Removing the merge-result check makes the
+  combined-revision test fail. Sync down lands cloud `main` without local checks; the
+  cloud's own apply there.
+- **Write speed, local only** (unpaired, so no cloud in the path; `YONEDA_LOCAL_TIMINGS`
+  on): disjoint files, all writers released together, 3 runs each, Mac, debug build,
+  min/median/max ms:
+
+  | Writers | Client push | Service | Landing (incl. waiting) | Landings/s |
+  |---:|---:|---:|---:|---:|
+  | 1 | 108–125 | 62–74 | 0–1 | 8.0–9.2 |
+  | 4 | 162 / 322–342 / 406 | 99 / 251–276 / 345 | 2 / 151–176 / 247 | 9.8–10.5 |
+  | 16 | 311 / 911–970 / 1,491 | 198 / 770–827 / 1,351 | 1 / 555–570 / 1,089 | 10.7–11.2 |
+
+  Landings on `main` are serial under the landing lock, so throughput stays about 10 a
+  second whatever the writer count, and the wait is what grows. Not yet measured: a
+  release build, and where a landing's time goes beyond these phases.
+
 Acceptance criteria above: met for disjoint landing, overlap refusal with both
-proposals kept, crash and retry, Git verification, and offline work with a changed
-cloud head and revoked access (tests 4, 8–12). Not yet: checks on the combined revision
-(the local policy has none) and latency measured apart from the cloud.
+proposals kept, crash and retry, Git verification, offline work with a changed cloud
+head and revoked access (tests 4, 8–12), simultaneous writers, checks on the combined
+revision, and local latency apart from the cloud.
 
 The service coordinates repository state. Agents remain external clients; this
 proposal does not add planners, model execution or agent scheduling to the

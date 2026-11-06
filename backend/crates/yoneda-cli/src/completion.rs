@@ -23,7 +23,10 @@ const COMMANDS: &[(&str, &[&str])] = &[
     ("grep", &[]),
     ("help", &[]),
     ("land", &[]),
-    ("local", &["init", "serve", "status"]),
+    (
+        "local",
+        &["init", "serve", "status", "sync", "token", "log", "check"],
+    ),
     ("log", &[]),
     ("login", &[]),
     ("logout", &[]),
