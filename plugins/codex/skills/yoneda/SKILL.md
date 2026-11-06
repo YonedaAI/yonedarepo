@@ -5,7 +5,7 @@ description: "Use when the current Git repository has a yoneda:: remote (git rem
 
 # Working in a YonedaRepo repository
 
-YonedaRepo is a Git server built for many agents at once. Locally it is plain Git, with the platform's own commit ids. The difference is on the server: when you push to `main`, it **merges disjoint concurrent changes for you**, and each push is one transaction. Check the remote first:
+YonedaRepo is a Git server built for many agents at once. Locally it is plain Git, with the platform's own commit ids. The difference is on the server: when you push to the integration branch (`main` by default), it **merges disjoint concurrent changes for you**, and each push is one transaction. Check the remote first:
 
 ```sh
 git remote -v            # yoneda::https://api.yonedarepo.com/r… or local http://127.0.0.1:…/git/r….git means this skill applies
@@ -23,6 +23,8 @@ No `yoneda` command? Install it (with the `git-remote-yoneda` helper): `curl -fs
 - Each session record reports what the clone fetched against the bytes of the files you read.
 
 ## The loop
+
+**If a `local` remote exists, follow the local service loop below first.** Its integration branch may be `dev`. `origin` may be GitHub: the cloud examples here never authorize pushing GitHub `main` or bypassing the project's release process.
 
 Before you start, file a flight plan: `yoneda flight-plan -m <goal> [--scope <text>]` (or MCP `git_flight_plan` with `branch` and `session_id` set to `$YONEDA_SESSION_ID`). One or two sentences on what this work sets out to do, for this branch, pushed or not. The landing shows the goal to whoever reviews it, and the Intent drift agent, where it is on, compares it with the diff. Nothing refuses a push without one; a landing with none just reads "No flight plan". Never put a secret in it (a plan holding a credential is refused).
 
@@ -54,15 +56,14 @@ Landing checks more than overlapping writes. A push may declare the files its ch
 
 A clone can run its own YonedaRepo (`yoneda local serve`): the same landing rules, on this machine, for every session and agent working in that clone. Its remote is `local` (`http://127.0.0.1:<port>/git/<id>.git`; from a container, `http://host.docker.internal:<port>/git/<id>.git`).
 
-1. **Work in your own worktree**, from local `main`: `git fetch local`, then `git worktree add -b <task> <path> local/main`. Never edit another session's worktree or the clone's own checkout.
-2. **Land with `git push local HEAD:main`.** One of three answers:
-   - it lands as is (nothing else landed meanwhile);
-   - `main: landed with server merge, run git pull`: others changed other files or lines, and both are on `main`;
-   - refused: `conflict in <path>`, `read conflict on <path>`, or `check <name> failed` (the clone's own checks run on what would land, merges included). Your branch is kept: `git pull local main`, fix, commit and push again.
-3. **Declare reads the same way**: `yoneda reads add <path>`, then `yoneda push local HEAD:main`.
-4. **Leave the cloud to the service.** It syncs `main` to the paired cloud repository by itself; `yoneda local status` shows local `main` and the cloud's state apart. Do not push the same work to the cloud remote as well.
-5. **No answer from the remote** (connection refused)? The service is not running. Ask the person who owns the clone to start `yoneda local serve`; do not start your own in a session.
-6. **In a container**, your Git password is the token made for you (`yoneda local token create <name>`, by the person); never use another agent's. `yoneda local log` shows each landing and who made it.
+1. **Discover the integration branch** with `yoneda local status` (`--json` reports `branch` and `head`); `git config --get yoneda.localBranch` also names it. Examples below use `dev`; use the reported branch (`main` on older/default setups).
+2. **Work in your own task worktree**, from `local/dev`: `git fetch local`, then `git worktree add -b feature/<task> .worktrees/<task> local/dev`. Never edit another session's worktree or the clone's own checkout.
+3. **Land with `git push local HEAD:dev`.** It either lands as is, lands with a server merge of compatible concurrent work, or refuses with a conflict, stale read or failed check. On refusal: `git pull local dev`, resolve in your worktree, commit and push again. Never force-push the integration branch.
+4. **Declare reads the same way**: `yoneda reads add <path>`, then `yoneda push local HEAD:dev`. Fetch `local/dev` after acceptance and verify any merged result before integration.
+5. **Respect the project's publication path.** For a project with development and production branches, use **task branches → local/dev → dev → release PR → main**. Local acceptance is separate from updating checkout `dev`, pushing GitHub and deploying. The coordinating session handles integration after checks.
+6. **Cloud sync is explicit configuration.** The owner can initialize with `yoneda local init --branch dev --no-cloud`, or stop the service and run `yoneda local configure --branch dev --no-cloud` for an existing clone. This preserves existing refs and prevents cloud publication, even with a stored login. `--cloud` enables automatic sync to the **same named branch** of the paired Yoneda cloud repository; it does not handle GitHub release PRs. Never enable it for a release-controlled clone without the owner's instruction.
+7. **No answer from the remote** (connection refused)? Ask the clone's owner to start `yoneda local serve`; do not start a second service in a session.
+8. **In a container**, use the token made for you (`yoneda local token create <name>`, by the owner); never another agent's. `yoneda local log` shows each landing and who made it.
 
 ## Go-around: findings come back to you
 

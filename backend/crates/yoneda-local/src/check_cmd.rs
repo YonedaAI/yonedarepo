@@ -97,7 +97,10 @@ fn add(svc: &Service, name: &str, rest: &[String]) -> Result<String> {
         );
         Ok(())
     })?;
-    Ok(format!("check {name} added: it runs on what lands on main"))
+    Ok(format!(
+        "check {name} added: it runs on what lands on {}",
+        svc.config.branch
+    ))
 }
 
 fn remove(svc: &Service, name: &str) -> Result<String> {

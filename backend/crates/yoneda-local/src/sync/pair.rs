@@ -1,10 +1,10 @@
 //! Pairing: each local repository has a cloud repository. A clone made from YonedaRepo is
 //! paired with its own (`init` records it). Otherwise sync creates one on the stored
 //! login's origin, records its id before pushing anything (so a retry never creates a
-//! second), pushes `main`'s history to it, and then gives the local repository the cloud
+//! second), pushes the integration branch's history to it, and then gives the local repository the cloud
 //! repository's id: the remote `local` and the service's URL follow.
 use super::state::{State, Sync};
-use super::{classify, local_main, main_version};
+use super::{classify, local_head, log_version};
 use crate::cloud::{self, Cloud};
 use crate::layout::{Layout, local_error};
 use crate::service::Service;
@@ -56,9 +56,9 @@ pub fn pair(svc: &Service, layout: &Layout, sync: &mut Sync) -> Result<Option<Cl
         repo: sync.repo.clone().unwrap_or_default(),
     };
     if !sync.paired {
-        if let Some(local) = local_main(svc)? {
+        if let Some(local) = local_head(svc)? {
             let url = target.git_url();
-            let refspec = format!("{local}:refs/heads/main");
+            let refspec = format!("{local}:{}", svc.config.refname());
             let out = cloud::git(
                 &layout.store(),
                 &target.origin,
@@ -68,7 +68,10 @@ pub fn pair(svc: &Service, layout: &Layout, sync: &mut Sync) -> Result<Option<Cl
                 let (state, why) = classify(&out);
                 sync.note(
                     state,
-                    format!("pushing main to the new cloud repository: {why}"),
+                    format!(
+                        "pushing {} to the new cloud repository: {why}",
+                        svc.config.branch
+                    ),
                 );
                 return Ok(None);
             }
@@ -76,7 +79,7 @@ pub fn pair(svc: &Service, layout: &Layout, sync: &mut Sync) -> Result<Option<Cl
         }
         adopt_id(layout, &target.repo)?;
         sync.paired = true;
-        sync.synced_version = main_version(svc)?;
+        sync.synced_version = log_version(svc)?;
         sync.save(layout)?;
     }
     Ok(Some(target))
@@ -133,6 +136,8 @@ mod tests {
             repo: "r00000000000000000001".into(),
             port: 4321,
             aliases: Vec::new(),
+            branch: "main".into(),
+            sync_enabled: true,
         };
         layout.write_config(&before).unwrap();
         adopt_id(&layout, "r00000000000000000002").unwrap();

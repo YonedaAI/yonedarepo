@@ -1,10 +1,9 @@
 //! `yoneda local init`: gives the clone at the working directory its local repository.
 //! It creates `.git/yoneda/local/` (store, authority, token, port), initializes the
 //! repository with a local policy (no required checks or approvals: the cloud's policy
-//! applies when work lands there), imports `main`'s history by pushing it through the same
-//! receive path every push takes, and points the clone's remote `local` and its credential
-//! helper at the service. Then it pairs with the cloud (`sync`): the clone's yoneda remote,
-//! else a new cloud repository on the stored login's origin, which takes `main`'s history.
+//! applies when work lands there), imports the configured branch through the normal
+//! receive path, and adds the remote `local` and its credential helper. Cloud sync is
+//! automatic by default; `--no-cloud` disables it even with a stored login.
 use crate::authority::Cred;
 use crate::cloud::{self, Cloud};
 use crate::layout::{Config, Layout, local_error, restrict, write_private};
@@ -19,13 +18,25 @@ use yoneda_core::{Result, git_object::ObjectId, transport::receive_pack_request}
 /// The token's repository name and scopes: fetch, push and land.
 const TOKEN: &str = "local";
 
-pub fn init(cwd: &Path) -> Result<String> {
+pub fn init(cwd: &Path, args: &[String]) -> Result<String> {
+    let options = crate::configure::Options::parse(cwd, args)?;
     let layout = Layout::find(cwd)?;
     if let Ok(config) = layout.config() {
+        if options.branch.as_ref().is_some_and(|b| b != &config.branch)
+            || options.cloud.is_some_and(|c| c != config.sync_enabled)
+        {
+            return Err(local_error(
+                "Already initialized: stop the service and run `yoneda local configure` to change its settings",
+            ));
+        }
         return Ok(format!("Already set up: remote local at {}", config.url()));
     }
     let top = git_text(cwd, &["rev-parse", "--show-toplevel"])?;
-    let paired = paired_remote(cwd);
+    let paired = options
+        .cloud
+        .unwrap_or(true)
+        .then(|| paired_remote(cwd))
+        .flatten();
     let config = Config {
         repo: match &paired {
             Some(cloud) => cloud.repo.clone(),
@@ -33,6 +44,8 @@ pub fn init(cwd: &Path) -> Result<String> {
         },
         port: free_port()?,
         aliases: Vec::new(),
+        branch: options.branch.unwrap_or_else(|| "main".into()),
+        sync_enabled: options.cloud.unwrap_or(true),
     };
     std::fs::create_dir_all(&layout.dir)
         .map_err(|e| local_error(format!("Cannot create {:?}: {e}", layout.dir)))?;
@@ -52,7 +65,9 @@ pub fn init(cwd: &Path) -> Result<String> {
         json!({ "op": "repo_token_create", "name": TOKEN, "scopes": ["read", "write", "land"],
                 "_secret": token }),
     )?;
-    let imported = import_main(&svc, cwd, &Cred::Token(token))?;
+    svc.store
+        .git(&["symbolic-ref", "HEAD", &config.refname()], None)?;
+    let imported = import_branch(&svc, cwd, &config.branch, &Cred::Token(token))?;
     configure_clone(cwd, &config)?;
     let sync = Sync {
         name: Some(name_of(&top)),
@@ -72,7 +87,10 @@ pub fn init(cwd: &Path) -> Result<String> {
             .unwrap_or_else(|| "not paired yet".into()),
     };
     let local = match imported {
-        Some(tip) => format!("Local repository ready: main at {tip}, remote local at {url}"),
+        Some(tip) => format!(
+            "Local repository ready: {} at {tip}, remote local at {url}",
+            config.branch
+        ),
         None => format!("Local repository ready (empty), remote local at {url}"),
     };
     Ok(format!("{local}\ncloud: {cloud}"))
@@ -152,15 +170,25 @@ fn name_of(top: &str) -> String {
     }
 }
 
-/// Pushes the clone's `main` (or its checked-out commit) into the new repository.
-fn import_main(svc: &Service, cwd: &Path, cred: &Cred) -> Result<Option<ObjectId>> {
-    let tip = git_text(
-        cwd,
-        &["rev-parse", "--verify", "-q", "refs/heads/main^{commit}"],
-    )
-    .or_else(|_| git_text(cwd, &["rev-parse", "--verify", "-q", "HEAD^{commit}"]));
-    let Ok(tip) = tip else {
-        return Ok(None);
+/// Imports the named branch. Only the legacy default main falls back to HEAD.
+pub(crate) fn import_branch(
+    svc: &Service,
+    cwd: &Path,
+    branch: &str,
+    cred: &Cred,
+) -> Result<Option<ObjectId>> {
+    let refname = format!("refs/heads/{branch}");
+    let revision = format!("{refname}^{{commit}}");
+    let tip = git_text(cwd, &["rev-parse", "--verify", "-q", &revision]);
+    let tip = match tip {
+        Ok(tip) => tip,
+        Err(_) if branch == "main" => {
+            let Ok(tip) = git_text(cwd, &["rev-parse", "--verify", "-q", "HEAD^{commit}"]) else {
+                return Ok(None);
+            };
+            tip
+        }
+        Err(_) => return Err(local_error(format!("No local branch {branch} to import"))),
     };
     let tip = ObjectId::parse(&tip)?;
     let pack = run_in(
@@ -168,12 +196,12 @@ fn import_main(svc: &Service, cwd: &Path, cred: &Cred) -> Result<Option<ObjectId
         &["pack-objects", "--revs", "--stdout", "-q"],
         Some(format!("{tip}\n").as_bytes()),
     )?;
-    let body = receive_pack_request("refs/heads/main", None, tip, &pack)?;
+    let body = receive_pack_request(&refname, None, tip, &pack)?;
     let report = receive::receive(svc, cred, &body)?;
     let text = String::from_utf8_lossy(&report);
-    if !text.contains("ok refs/heads/main") {
+    if !text.contains(&format!("ok {refname}")) {
         return Err(local_error(format!(
-            "Importing main failed: {}",
+            "Importing {branch} failed: {}",
             text.trim()
         )));
     }
@@ -196,5 +224,6 @@ fn configure_clone(cwd: &Path, config: &Config) -> Result<()> {
     );
     let key = format!("credential.{}.helper", config.origin());
     run_in(cwd, &["config", &key, &helper], None)?;
+    run_in(cwd, &["config", "yoneda.localBranch", &config.branch], None)?;
     Ok(())
 }

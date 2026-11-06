@@ -113,7 +113,7 @@ fn revoke(svc: &Service, name: &str) -> Result<String> {
 /// `log [--json]`: the newest landings, oldest first: version, kind, ref, commit, actor.
 pub fn log(cwd: &Path, as_json: bool) -> Result<String> {
     let svc = Service::open(&Layout::find(cwd)?)?;
-    let version = crate::sync::main_version(&svc)?;
+    let version = crate::sync::log_version(&svc)?;
     let read = svc.authority.call(
         &Cred::Owner,
         json!({ "op": "repo_txlog", "after": version.saturating_sub(LOG_LIMIT),

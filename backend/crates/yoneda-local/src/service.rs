@@ -21,9 +21,9 @@ pub struct Service {
     pub projecting: Mutex<()>,
     /// One drain of staged objects into the store at a time (`outbox`).
     pub draining: Mutex<()>,
-    /// `main`'s log version after each landing on it: the seam cloud sync subscribes to.
-    pub main_landed: watch::Sender<u64>,
-    /// The running sync thread, told of each landing on `main` (none outside `serve`).
+    /// the integration branch's log version after each landing on it: the seam cloud sync subscribes to.
+    pub branch_landed: watch::Sender<u64>,
+    /// The running sync thread, told of each landing on the integration branch (none outside `serve`).
     pub sync: Mutex<Option<mpsc::Sender<Kick>>>,
     /// Per-push timings, when switched on (`timing`).
     pub timings: Timings,
@@ -43,15 +43,15 @@ impl Service {
             landing: Mutex::new(()),
             projecting: Mutex::new(()),
             draining: Mutex::new(()),
-            main_landed: watch::channel(0).0,
+            branch_landed: watch::channel(0).0,
             sync: Mutex::new(None),
             timings: Timings::from_env(),
         })
     }
 
-    /// Tells subscribers `main` landed at `version`.
-    pub fn landed_on_main(&self, version: u64) {
-        self.main_landed.send_replace(version);
+    /// Tells subscribers the integration branch landed at `version`.
+    pub fn landed_on_branch(&self, version: u64) {
+        self.branch_landed.send_replace(version);
         if let Some(kicks) = self.sync.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             let _ = kicks.send(Kick::Landed);
         }

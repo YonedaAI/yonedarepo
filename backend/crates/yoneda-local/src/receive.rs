@@ -38,8 +38,12 @@ pub fn receive(svc: &Service, cred: &Cred, body: &[u8]) -> Result<Vec<u8>> {
         failure = session.finish().err().map(|e| moves::reason(&e));
     }
     let listed = session.commands();
-    let commands: Vec<Command> = serde_json::from_value(listed["commands"].clone())
+    let mut commands: Vec<Command> = serde_json::from_value(listed["commands"].clone())
         .map_err(|_| Error::new("INVALID_INPUT", "Unreadable push commands"))?;
+    // The clone's integration branch uses the same transactional landing path as main.
+    for command in &mut commands {
+        command.protected |= command.refname == svc.config.refname();
+    }
     if failure.is_none() && commands.is_empty() {
         return Ok(Vec::new());
     }
