@@ -60,8 +60,9 @@ The platform tools dispatch through the same operation table as REST and the per
 
 | Client | Install |
 |---|---|
+| Any agent (Claude Code, Codex, opencode, Cursor, Gemini CLI and [the others `skills` supports](https://github.com/vercel-labs/skills/blob/main/docs/agents.md)) | `npx skills add YonedaAI/yonedarepo`: the one skill (`skills/yoneda/SKILL.md`), into the project (`-g` for every project; `-a <agent>` to choose). It covers cloud and local repositories; the rows below add each agent's MCP server and, for Claude Code and opencode, the hooks that record reads and sessions |
 | Claude Code | `/plugin marketplace add https://yonedarepo.com/downloads/claude/marketplace.json`, then `/plugin install yoneda@yonedarepo` (the public marketplace the site serves: no Git host account needed; Claude Code 2.1.224 or later). `yoneda setup claude` prints these two commands for its origin's site and writes the project's `.mcp.json`. Inside this repository, `.claude-plugin/marketplace.json` also works as a Git marketplace (`yoneda@yoneda`). |
-| Codex | `yoneda setup codex`: the skill (`plugins/codex/skills/yoneda/SKILL.md`) into `~/.agents/skills/yoneda/`, and `[mcp_servers.yoneda]` in `~/.codex/config.toml` (`$CODEX_HOME` moves the config) |
+| Codex | `yoneda setup codex`: the skill (a copy of `skills/yoneda/SKILL.md`) into `~/.agents/skills/yoneda/`, and `[mcp_servers.yoneda]` in `~/.codex/config.toml` (`$CODEX_HOME` moves the config) |
 | Gemini CLI | `yoneda setup gemini`: `plugins/gemini/` into `~/.gemini/extensions/yoneda/` with its MCP URL set to `--origin`, and the server in `~/.gemini/settings.json` |
 
 Each `setup` takes `--origin <url>` (default: `$YONEDA_ORIGIN`, else the signed-in origin) and writes no token: the agents read `YONEDA_TOKEN` when they connect. The skill files are compiled into the CLI, so they match the installed version.
