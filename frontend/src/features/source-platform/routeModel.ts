@@ -60,13 +60,16 @@ export function sessionBytes(s: Pick<RouteSession, 'read_bytes' | 'fetched_bytes
 }
 
 /** The totals in one line. */
-export function routeSummary(t: RouteTotals) {
+export function routeSummary(t: RouteTotals, sessions: readonly RouteSession[]) {
+  const readsKnown = sessions.length > 0 && sessions.every((s) => s.read_bytes != null);
   return [
     counted(t.commits, 'commit', 'commits'),
     counted(t.sessions, 'session', 'sessions'),
-    `${byteSize(t.read_bytes)} read`,
+    readsKnown && `${byteSize(t.read_bytes)} read`,
     `${counted(t.memories_delivered, 'memory', 'memories')} delivered`,
-  ].join(' · ');
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 /** What the server cut, for `Showing only the newest …`; null when nothing was. */

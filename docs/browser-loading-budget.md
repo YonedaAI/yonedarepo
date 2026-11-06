@@ -68,3 +68,36 @@ Native asset serving uses build-generated exact `_headers` entries for existing 
 files. The deployment passes `STATIC_ASSET_CACHE` into `VITE_STATIC_ASSET_CACHE` for the build.
 There is no wildcard rule that could cache a missing chunk’s HTML fallback. Dev and prod
 serve assets directly; Worker response headers remain a fallback for proxied asset reads.
+
+### Admin Overview and Traffic
+
+Behind `ADMIN_READ_CACHE`: authenticate every request, reuse completed JSON
+snapshots for at most 15 seconds, scoped to environment, cell, operator, query
+and relevant report flags. Keep at most 32 entries per isolate; no in-flight
+I/O is shared between invocations. Cold isolates still perform the full read.
+Successful operator mutations clear local snapshots; failures and partial
+responses never warm them. HTTP responses remain `no-store`.
+
+A cold Overview uses three D1 reads per cell instead of eight, with the
+newsletter count parallel to cell totals. Traffic keeps its ten analytics SQL
+queries but starts the Web Analytics witness as soon as its counting-start
+query finishes. Warm snapshots make neither query set. `EARLY_READS` starts
+the exact document's Admin read alongside session discovery and hands that
+response to the existing authorized API parser once. No IndexedDB is needed.
+
+Admin tab revisits also reuse a fresh report for at most 15 seconds within one
+mounted Admin scope. Switching viewer or leaving Admin discards it. Browser mutations clear its snapshots. Cache reuse
+does not extend expiry; explicit reload still uses the normal API authorization.
+No browser persistence is used. Overview/Traffic tab revisits within the budget
+need no new main report request; secondary sections retain their existing reads.
+
+The same scoped snapshot primitive is shared by Admin's list/report tabs, Explore,
+organization repository lists/audit pages and repository Insights. Each viewer's
+workspace scope is discarded on identity changes and explicit refresh; Admin has
+its own nested scope, discarded on exit. Mutations fence in-flight old snapshots.
+Live account details, balances, keys, storage diagnostics, permissions, Git refs
+and transaction leases still use fresh reads. The shell already retains its
+repository directory and sign-up feed across tab changes. Exact initial Users,
+Repositories, Audit and report routes now adopt early reads; direct repository
+and Explore directories do too. At most one main default and the existing
+sign-up feed start early on Admin documents, without bulk tab prefetch.

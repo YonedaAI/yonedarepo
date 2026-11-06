@@ -18,6 +18,7 @@ mod adapter;
 mod forks;
 mod git;
 mod scenarios;
+mod working_bases;
 
 /// What the platform answered for one operation.
 #[derive(Debug, PartialEq, Eq)]

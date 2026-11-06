@@ -1,19 +1,11 @@
+import { LATENCY_COPY } from './mail-copy-latency';
 // The words of an alert mail: what each signal means to a person and what to do first, condensed
 // from docs/incidents.md. Each entry is one cause, so signals of one cause on one component become
 // one block (mail-render.ts). In order, worst first: the first item names the mail. Every signal
 // the watcher can raise needs a line here; a test holds that, and these lines to the UI rules.
 
 import { PROBE_COPY, RELEASE_COPY } from './mail-copy-release';
-import {
-  type Copy,
-  capital,
-  count,
-  duration,
-  type Facts,
-  type Link,
-  number,
-  plural,
-} from './mail-words';
+import { type Copy, capital, count, type Facts, type Link, number, plural } from './mail-words';
 
 export type { Copy, Facts, Link } from './mail-words';
 export { capital, number } from './mail-words';
@@ -32,6 +24,7 @@ export const WORD: Record<string, string> = {
   commit_shards: 'commit',
   pack_builder: 'clone pack',
   ssh_gateway: 'SSH gateway',
+  ssh_maintenance: 'SSH maintenance',
   workspace_authority: 'account',
   cron: 'scheduled task',
   synthetic: 'site check',
@@ -206,9 +199,15 @@ export const COPY: Copy[] = [
   },
   {
     signals: ['lag_ms'],
-    title: (f) => `${capital(f.noun)}s waited ${duration(count(f, 'lag_ms'))} to start`,
-    means: 'Work is queueing longer than it should.',
-    first: 'Find job.failed in the platform logs. A slow job is the usual cause.',
+    title: () => 'Queue message age needs review',
+    means: 'Age includes scheduled delays; it does not prove work started late.',
+    first: 'Check queue.late and delivery timings before treating this as a fault.',
+  },
+  {
+    signals: ['queue_late'],
+    title: (f) => `${plural(count(f, 'queue_late'), 'job')} delivered late`,
+    means: 'Messages arrived over two minutes after their scheduled delivery time.',
+    first: 'Find queue.late in the platform logs and inspect delivery timings.',
   },
   {
     signals: ['retries_per_message'],
@@ -228,13 +227,7 @@ export const COPY: Copy[] = [
     means: 'Checks can fail once the disk fills.',
     first: 'Look at the check image and workspace sizes.',
   },
-  {
-    signals: ['p95_wall_ms'],
-    title: (f) => `${capital(f.word)} calls slowed to ${duration(count(f, 'p95_wall_ms'))}`,
-    means: (f) =>
-      f.baseline ? `They usually take about ${duration(f.baseline)}.` : 'Slower than usual.',
-    first: "Find the slowest requests and routes in this Worker's logs.",
-  },
+  ...LATENCY_COPY,
   {
     signals: ['deadman_stale'],
     title: () => 'Dead-man check has stopped',

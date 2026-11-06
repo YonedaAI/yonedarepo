@@ -138,10 +138,22 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
         "OVERVIEW_MARKDOWN_PRELOAD",
         "EARLY_READS",
         "REGIONAL_API",
+        "RESPONSE_LATENCY",
     ] {
         assert_eq!(vars[switch], "on", "{switch}");
     }
-    assert_eq!(vars.as_object().map(|v| v.len()), Some(18));
+    assert_eq!(vars.as_object().map(|v| v.len()), Some(19));
+    assert_eq!(
+        role(&workers, "superfan").config["vars"]["RESPONSE_LATENCY"],
+        "on"
+    );
+    let (_, dev_workers) = dev();
+    for name in ["agents", "superfan"] {
+        assert_eq!(
+            role(&dev_workers, name).config["vars"]["RESPONSE_LATENCY"],
+            "on"
+        );
+    }
     assert!(
         agents.get("placement").is_none(),
         "frontend runs at the edge"

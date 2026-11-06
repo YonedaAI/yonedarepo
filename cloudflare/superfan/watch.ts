@@ -6,6 +6,7 @@
 import { type AnalyticsSource, CloudflareAnalytics, TelemetryError, WINDOW_MS } from './analytics';
 import { dailyCap, probesOn, type SuperfanEnv, type WatchSite, watchSite, wideOn } from './config';
 import { readDelivery } from './delivery';
+import { LEGACY_LATENCY_KEYS, watchHttp } from './http-watch';
 import type { Observed, SuperfanLedger } from './ledger';
 import { FlashModel, type ModelClient, ModelError } from './model';
 import { notifyFindings, notifyUrgent } from './notify';
@@ -192,7 +193,10 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
     );
     findings.push(seen.id);
   }
-  const evaluated = TELEMETRY_REASONS.map((r) => `telemetry:${r}`);
+  const evaluated = [
+    ...TELEMETRY_REASONS.map((r) => `telemetry:${r}`),
+    ...(env.RESPONSE_LATENCY === 'on' ? LEGACY_LATENCY_KEYS : []),
+  ];
   const tailLive = tail.events > 0 && !(deps.target instanceof Error);
   if (!site || (!tailLive && !analytics)) {
     await ledger.resolveAbsent(evaluated, present, now);
@@ -200,6 +204,7 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
     return { outcome: 'telemetry_failed', anomalies: 0, modelCalls: 0, findings };
   }
   const snapshot: Snapshot = {
+    latencyCalibration: env.RESPONSE_LATENCY === 'on',
     window: { start: new Date(start).toISOString(), end: new Date(now).toISOString() },
     ...site,
     tail: tailLive ? tail.components : {},
@@ -212,7 +217,12 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
   // Off, nothing evaluates these: an open one must still be able to end.
   if (!releaseOn(env)) evaluated.push(...RELEASE_KEYS);
   if (!probesOn(env)) evaluated.push(...PROBE_KEYS);
-  const reports = evaluate(snapshot, await ledger.baselines(), wideOn(env));
+  await watchHttp(env, ledger, now, revision);
+  const reports = evaluate(
+    snapshot,
+    await ledger.baselines(env.RESPONSE_LATENCY === 'on', now),
+    wideOn(env),
+  );
   let anomalies = 0;
   const seenProblems: { seen: Observed; report: ComponentReport }[] = [];
   for (const report of reports) {
@@ -231,7 +241,7 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
     if (seen.needsNarrative && modelCalls < MAX_CALLS_PER_RUN)
       if (await narrate(deps, env, seen.id, report, snapshot)) modelCalls++;
   await ledger.resolveAbsent(evaluated, present, now);
-  await ledger.recordBaselines(baselineSamples(reports), now);
+  await ledger.recordBaselines(baselineSamples(reports), now, env.RESPONSE_LATENCY === 'on');
   await ledger.finishRun(run, 'ok', anomalies, modelCalls, now);
   return { outcome: 'ok', anomalies, modelCalls, findings };
 }

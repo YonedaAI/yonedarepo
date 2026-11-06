@@ -65,21 +65,18 @@ export async function siteTraffic(
   const queries = trafficQueries(dataset, span, who, { chart, compare: full });
   try {
     const names = Object.keys(queries) as QueryName[];
-    const answers = await Promise.all(names.map((name) => run(queries[name] ?? '')));
+    const pending = names.map((name) => run(queries[name] ?? ''));
+    // The witness only depends on the counting-start query, not every report section.
+    const witness = pending[names.indexOf('classed_since')].then((rows) =>
+      webAnalytics(env, RANGE_DAYS[range], fetcher, now, Math.max(classedAt(rows[0]), span.start)),
+    );
+    const [answers, web_analytics] = await Promise.all([Promise.all(pending), witness]);
     const rows = Object.fromEntries(names.map((name, i) => [name, answers[i]])) as Record<
       Exclude<QueryName, 'previous'>,
       Row[]
     > & { previous?: Row[] };
     const counted = classedAt(rows.classed_since[0]);
     const days = RANGE_DAYS[range];
-    // Web Analytics is the witness for Humans, so it only speaks for the time they were counted.
-    const web_analytics = await webAnalytics(
-      env,
-      days,
-      fetcher,
-      now,
-      Math.max(counted, span.start),
-    );
     const whole = span.previous_start !== null && counted > 0 && counted <= span.previous_start;
     const traffic: SiteTraffic = {
       range,

@@ -11,7 +11,7 @@ import type {
   TrafficRange,
 } from '../../../../shared/site-traffic';
 import { Failure, Loading } from '../source-platform/SourceStatus';
-import { useSource } from '../source-platform/useSource';
+import { useReadSource } from '../source-platform/useReadSource';
 import { AdminLandings } from './AdminLandings';
 import { PlatformClients, TrafficCheck, TrafficHeadlineCards } from './AdminTrafficCheck';
 import { countryName, providerLabel } from './adminModel';
@@ -107,7 +107,7 @@ function ClassChart({
 export function AdminTraffic() {
   const [range, setRange] = useState<TrafficRange>('7d');
   const [who, setWho] = useState<TrafficClass>('humans');
-  const report = useSource<SiteTrafficResult>(`/admin/traffic?range=${range}&class=${who}`);
+  const report = useReadSource<SiteTrafficResult>(`/admin/traffic?range=${range}&class=${who}`);
   // What's offered comes with the first answer, and stays while another range loads.
   const offered = useRef<TrafficRange[]>([]);
   if (report.data?.ok) offered.current = report.data.traffic.ranges;

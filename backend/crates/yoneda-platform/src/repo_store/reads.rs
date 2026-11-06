@@ -2,7 +2,7 @@
 //! by replaying the hash-chained log, so time travel also verifies history integrity.
 use super::{
     land_gates::gates,
-    rows::{self, Settings, branch_ref, current_version, object_id},
+    rows::{self, Settings, current_version, object_id, read_ref},
 };
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
@@ -116,7 +116,7 @@ pub fn refs<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
 
 pub fn snapshot<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let version = at(db, c)?;
-    let refname = branch_ref(c)?;
+    let refname = read_ref(c)?;
     let commit = ref_at(db, c, version, &refname)?.ok_or_else(|| {
         Error::new(
             "NOT_FOUND",
@@ -137,7 +137,7 @@ const FILES_COUNTED: u64 = 1_001;
 /// than one generation per object fetch.
 pub fn log<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let version = at(db, c)?;
-    let refname = branch_ref(c)?;
+    let refname = read_ref(c)?;
     let limit = c["limit"].as_u64().unwrap_or(50).clamp(1, 200);
     let mut next = match c.get("from").filter(|v| !v.is_null()) {
         Some(_) => Some(rows::recorded(db, &object_id(c, "from")?)?.id),
@@ -230,7 +230,7 @@ pub fn commit<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
     let key = [json!(id.hex())];
     // The gates read as landing on `ref`; a commit alone names no target, so main.
     let target = match c["ref"].is_string() {
-        true => branch_ref(c)?,
+        true => read_ref(c)?,
         false => "refs/heads/main".to_owned(),
     };
     Ok(json!({

@@ -97,6 +97,7 @@ function platformReports(s: Snapshot, baselines: Baselines, wide: boolean): Comp
     report('derived_jobs', s, [
       ...invocationSignals('derived_jobs', s, baselines),
       marked(s, 'compaction_stalls'),
+      marked(s, 'queue_late'),
       named(s, 'audit_event_corrupt'),
       named(s, 'audit_erase_blocked'),
       ...(a ? queueSignals(a) : []),
@@ -128,11 +129,15 @@ const dedupKey = (component: Component, fired: Signal[]) =>
  */
 export function problems(r: ComponentReport): { key: string; level: Level; fired: Signal[] }[] {
   const fired = r.signals.filter((s) => s.anomalous);
-  const rest = fired.filter((s) => !s.urgent);
+  const separate = (s: Signal) =>
+    s.urgent || s.name === 'p95_execution_ms' || /(?:response|execution)_p95_ms$/.test(s.name);
+  const rest = fired.filter((s) => !separate(s));
+  const single = fired.filter(separate).map((s) => {
+    const level: Level = s.urgent ? 'urgent' : 'digest';
+    return { key: dedupKey(r.component, [s]), level, fired: [s] };
+  });
   return [
-    ...fired
-      .filter((s) => s.urgent)
-      .map((s) => ({ key: dedupKey(r.component, [s]), level: 'urgent' as const, fired: [s] })),
+    ...single,
     ...(rest.length
       ? [{ key: dedupKey(r.component, rest), level: 'digest' as const, fired: rest }]
       : []),

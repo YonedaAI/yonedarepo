@@ -81,6 +81,7 @@
           "WATCH_SCRIPT": "{prefix}-platform",
           "WATCH_URL": "https://api.dev.yonedarepo.com",
           "WATCH_WIDE": "on",
+          "RESPONSE_LATENCY": "on",
           "WATCH_FRONT_URL": "https://dev.yonedarepo.com",
           "DEADMAN_URL": "https://{prefix}-deadman.{subdomain}.workers.dev",
           "RELEASE_COMPARE": "off",
@@ -298,6 +299,8 @@
           "SHARED_READ_TREES": "on",
           "JOINED_REPO_PATH": "on",
           "OVERVIEW_BOOTSTRAP": "on",
+          "OVERVIEW_AUTH_OVERLAP": "on",
+          "OVERVIEW_REF_NAMES": "on",
           "OVERVIEW_DEFER_ACTIVITY": "on",
           "OVERVIEW_ADMITTED_SNAPSHOT": "on",
           "REPO_IMAGE_REVALIDATION": "on",
@@ -305,7 +308,8 @@
           "SEARCH_CODE_MEMO": "on",
           "RECENT_VERSIONS": "on",
           "REGIONAL_API": "on",
-          "REPO_ANALYTICS": "on"
+          "REPO_ANALYTICS": "on",
+          "ADMIN_READ_CACHE": "on"
         },
         "secrets_store_secrets": [
           {
@@ -927,6 +931,7 @@
           ]
         },
         "vars": {
+          "RESPONSE_LATENCY": "on",
           "AUDIT_LOG": "off",
           "TRAFFIC_EVENTS": "on",
           "TRAFFIC_REPORT": "on",

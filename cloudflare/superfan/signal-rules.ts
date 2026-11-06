@@ -1,7 +1,13 @@
 // The rule primitives: what one signal or one component's report is, and the rules every
 // component shares. signals.ts and signals-wide.ts build the reports from them.
+
 import type { Analytics, QueueStats } from './analytics';
 import type { Stall } from './delivery';
+import {
+  LATENCY_BASELINE_SPAN_MS,
+  LATENCY_BASELINE_WINDOWS,
+  LATENCY_MIN_REQUESTS,
+} from './http-latency';
 import type { Health } from './probes';
 import type { ReleaseComparison } from './release';
 import { NAMED_SEPARATOR, type TailComponent, type TailSample, type TailStats } from './tail';
@@ -37,6 +43,7 @@ export interface ComponentReport {
   samples: TailSample[];
 }
 export interface Snapshot {
+  latencyCalibration?: boolean;
   window: { start: string; end: string };
   health: Health;
   tail: Partial<Record<TailComponent, TailStats>>;
@@ -52,7 +59,17 @@ export interface Snapshot {
   /** The worst queue stall in the window; null: none; absent: unread. */
   delivery?: Stall | null;
 }
-export type Baselines = Record<string, { value: number; samples: number }>;
+export type Baselines = Record<
+  string,
+  {
+    value: number;
+    samples: number;
+    status?: 'learning' | 'ready';
+    windows?: number;
+    spanMs?: number;
+    ceiling?: number;
+  }
+>;
 
 export const MIN_INVOCATIONS = 20;
 export const MAX_ERROR_RATE = 0.02;
@@ -63,7 +80,6 @@ const MIN_BASELINE_SAMPLES = 3;
 const MAX_EXCEPTIONS = 3;
 const MAX_ERROR_LOGS = 5;
 const MAX_BACKLOG = 50;
-const MAX_LAG_MS = 120_000;
 const MAX_RETRIES = 1;
 
 export const baselineKey = (component: Component, signal: string) => `${component}/${signal}`;
@@ -72,22 +88,40 @@ export function threshold(name: string, value: number | null, unit: string, max:
   return { name, value, unit, anomalous: value !== null && value > max, rule: `> ${max}` };
 }
 
-function drift(component: Component, t: TailStats, baselines: Baselines): Signal {
+function drift(
+  component: Component,
+  t: TailStats,
+  baselines: Baselines,
+  calibrated = false,
+): Signal {
   const base = baselines[baselineKey(component, 'p95_wall_ms')];
   const value = t.p95WallMs;
-  const enough = value !== null && t.invocations >= MIN_INVOCATIONS;
+  const enough =
+    value !== null && t.invocations >= (calibrated ? LATENCY_MIN_REQUESTS : MIN_INVOCATIONS);
   return {
-    name: 'p95_wall_ms',
+    name: calibrated ? 'p95_execution_ms' : 'p95_wall_ms',
     value,
     unit: 'ms',
     anomalous: Boolean(
       enough &&
         base &&
-        base.samples >= MIN_BASELINE_SAMPLES &&
-        value > base.value * DRIFT_FACTOR &&
-        value - base.value >= DRIFT_FLOOR_MS,
+        (calibrated
+          ? (base.windows ?? 0) >= LATENCY_BASELINE_WINDOWS &&
+            (base.spanMs ?? 0) >= LATENCY_BASELINE_SPAN_MS &&
+            base.ceiling !== undefined &&
+            value > base.ceiling
+          : base.samples >= MIN_BASELINE_SAMPLES &&
+            value > base.value * DRIFT_FACTOR &&
+            value - base.value >= DRIFT_FLOOR_MS),
     ),
-    rule: `> ${DRIFT_FACTOR}x baseline (+${DRIFT_FLOOR_MS} ms) after ${MIN_BASELINE_SAMPLES} quiet runs`,
+    rule: calibrated
+      ? `Invocation lifetime: >= ${LATENCY_MIN_REQUESTS} requests; ${LATENCY_BASELINE_WINDOWS} independent hourly references spanning 24 hours; above measured band ${base?.ceiling ?? 'not established'} ms`
+      : `> ${DRIFT_FACTOR}x baseline (+${DRIFT_FLOOR_MS} ms) after ${MIN_BASELINE_SAMPLES} quiet runs`,
+    ...(calibrated
+      ? {
+          detail: `${t.invocations} executions in the last hour; ${base?.windows ?? 0} independent baseline hours. Includes I/O and background work.`,
+        }
+      : {}),
     ...(base ? { baseline: Math.round(base.value) } : {}),
     ...(enough ? { sample: value } : {}),
   };
@@ -115,7 +149,9 @@ export function invocationSignals(
       rule: `>= ${MAX_EXCEPTIONS}`,
     },
     threshold('error_logs', t.errorLogs, 'count', MAX_ERROR_LOGS),
-    drift(component, t, baselines),
+    ...(component === 'front_worker' && s.latencyCalibration
+      ? []
+      : [drift(component, t, baselines, s.latencyCalibration)]),
   ];
 }
 
@@ -164,7 +200,13 @@ export function queueSignals(a: Pick<Analytics, 'queue'>): Signal[] {
   return [
     ...backlogSignals(q),
     threshold('dead_letter_backlog', q.deadLetterBacklog, 'messages', 0),
-    threshold('lag_ms', q.lagMs, 'ms', MAX_LAG_MS),
+    {
+      name: 'lag_ms',
+      value: q.lagMs,
+      unit: 'ms',
+      anomalous: false,
+      rule: 'Age since enqueue includes intentional delays; ready-time evidence required',
+    },
     threshold('retries_per_message', q.retries, 'avg', MAX_RETRIES),
   ];
 }

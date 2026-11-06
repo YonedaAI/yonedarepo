@@ -5,8 +5,16 @@ import type { RepoStatus as FullRepoStatus } from '../../../../shared/contracts/
 import type { Policy } from '../repo-settings/policy';
 import type { Viewer } from './RepoMembers';
 
+/** Overview may omit hashes/versions for unselected branches; names remain complete. */
+type BrowserRef = Pick<FullRepoStatus['refs'][number], 'name'> &
+  Partial<Pick<FullRepoStatus['refs'][number], 'commit_id' | 'version'>>;
+
 /** Browser metadata deliberately excludes expensive storage diagnostics. */
-export type RepoStatus = Omit<FullRepoStatus, 'objects'> & { recent_versions?: boolean };
+export type RepoStatus = Omit<FullRepoStatus, 'objects' | 'refs'> & {
+  refs: BrowserRef[];
+  refs_view?: 'names';
+  recent_versions?: boolean;
+};
 
 /** Whether the viewer may create and delete branches and create tags: the write role and
  * above (the server decides each request; this only hides controls). */

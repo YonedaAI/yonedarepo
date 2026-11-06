@@ -2,9 +2,13 @@
 // rules that fired), latency baselines, the daily spend counter, the run lease and the
 // heartbeat. Every method is one synchronous transaction, so overlapping runs cannot double-spend
 // or double-mail.
+
 import { DurableObject } from 'cloudflare:workers';
 import type { SuperfanEnv } from './config';
 import { type Delivery, gapsSince, recordDeliveries } from './delivery';
+import { executionBaselines, recordExecutionBaselines } from './execution-baselines';
+import { httpLatency } from './http-latency';
+import { type HttpMinute, httpTrafficStats, ingestHttp } from './http-timing';
 import { type DeployRow, insertDeploy, latestRevision, recentDeploys } from './ledger-deploys';
 import {
   type Level,
@@ -83,11 +87,24 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
   }
 
   /** Merges one tail batch's counters. */
-  ingest(rows: TailRow[], now: number, delivered: Delivery[] = []) {
+  ingest(rows: TailRow[], now: number, delivered: Delivery[] = [], http: HttpMinute[] = []) {
     this.#tx((sql) => {
       ingestRows(sql, rows, now);
+      if (http.length) ingestHttp(sql, http, now);
       recordDeliveries(sql, delivered, now);
     });
+  }
+
+  httpStatus(now: number) {
+    return this.#tx((sql) => ({
+      series: httpLatency(sql, now, false),
+      traffic: httpTrafficStats(sql, now),
+      execution_baselines: executionBaselines(sql, now),
+    }));
+  }
+
+  httpLatency(now: number, record = true) {
+    return this.#tx((sql) => httpLatency(sql, now, record));
   }
 
   queueGaps(since: number) {
@@ -187,7 +204,8 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
     });
   }
 
-  baselines(): Baselines {
+  baselines(calibrated = false, now = Date.now()): Baselines {
+    if (calibrated) return executionBaselines(this.ctx.storage.sql, now);
     const out: Baselines = {};
     for (const row of this.ctx.storage.sql
       .exec<{ key: string; value: number; samples: number }>(
@@ -198,7 +216,8 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
     return out;
   }
 
-  recordBaselines(samples: { key: string; value: number }[], now: number) {
+  recordBaselines(samples: { key: string; value: number }[], now: number, calibrated = false) {
+    if (calibrated) return this.#tx((sql) => recordExecutionBaselines(sql, now));
     this.#tx((sql) => {
       for (const { key, value } of samples)
         sql.exec(

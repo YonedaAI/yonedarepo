@@ -79,10 +79,12 @@ fn stage_worker(
     config: Value,
     prod: bool,
 ) {
-    if prod && workers[worker].has_containers {
-        out.push(Step::ActiveGate { worker });
+    if workers[worker].has_containers {
+        if prod {
+            out.push(Step::ActiveGate { worker });
+        }
+        out.push(Step::RolloutGate);
     }
-    out.push(Step::RolloutGate);
     out.push(Step::Bootstrap { worker, config });
     if !(workers[worker].secrets.is_empty() && workers[worker].optional_secrets.is_empty()) {
         out.push(Step::Secrets { worker });
@@ -203,9 +205,11 @@ pub(crate) fn deploy(
     let path = copy.0.to_str().ok_or("Invalid bootstrap config path")?;
     let revision = format!("BUILD_REVISION:{head}");
     let message = crate::deploy_ledger::message(env, head);
-    crate::infra::wrangler::run(
+    crate::deploy_wrangler::run(
         &spec.account_id,
         &crate::deploy_exec::deploy_args(path, &revision, head, &message, false),
+        head,
+        false,
     )
 }
 

@@ -182,7 +182,7 @@ impl Run<'_> {
                 let config = copy.as_ref().map_or(w.config_path.as_str(), |c| c.path());
                 let message = crate::deploy_ledger::message(env, head);
                 let deploy = deploy_args(config, &revision, head, &message, dry_run);
-                wrangler::run(&spec.account_id, &deploy)?;
+                crate::deploy_wrangler::run(&spec.account_id, &deploy, head, dry_run)?;
                 let state = if dry_run { "dry run" } else { "deployed" };
                 summary.insert(worker, row(w, state, "-"));
             }

@@ -16,7 +16,7 @@ Analytics asks whether people are using this. Observability asks whether it's wo
 
 | Gap | Evidence |
 |---|---|
-| The prod monitor has never run | `deploy-prod.yml` has 0 runs on GitHub, and `ship.yml` isn't registered |
+| Confirm the production monitor after ship | `deploy-prod.yml` owns deploy, smoke and monitoring; `ci.yml` owns release validation |
 | Unexpected API 500s log no text | `repo-api.ts:523`; the tail counts them and keeps nothing |
 | Nothing reliably reaches a person | One digest email, tested only against a fake, off on dev, with no check that it's alive |
 | No request or correlation id | None generated; a failure can't be followed across Worker, Durable Object, queue and container |
@@ -231,7 +231,7 @@ Failure paths are not on that budget: a line is written only when something alre
 
 ## Phase O3: Ship with a net
 
-1. Register `ship.yml` and run the whole ship pipeline once against dev, so its first real run isn't on prod.
+1. Run `ci.yml` full release validation, then follow the ship pipeline's production smoke and monitoring steps.
 2. **Built.** A deploy ledger: commit, time, environment, who. `--tag` and `--message` on each deploy, so Cloudflare's versions name their commit.
 3. **Built.** Findings carry the revision. After a deploy, compare error rate and latency with the release before.
 4. **Built.** Synthetic checks every few minutes, on dev and prod: `/health`, a page, a public clone, an API read. A landing on a probe repository on dev only at first. Probe traffic is marked as our own.
@@ -266,7 +266,7 @@ Enforce, then track.
 | 300-line rule | `cargo xtask` check: today's 53 files become a list that can only shrink, and no new offenders |
 | Secret scan | `gitleaks` in CI |
 | Migration drift | A CI step, so it's caught before runtime |
-| Deep differential | The 100×200 run nightly, not ignored |
+| Deep differential | The 100×200 manual deep differential |
 | Test timing and flakes | Keep results; flag tests that fail then pass, and tests that slow down |
 | Wasm and bundle size | Budgets in CI; a jump fails the check |
 | Dependencies | Report how far behind we are |
@@ -316,5 +316,57 @@ O1 and O5 can start now. The analytics plan's Phase 7 reads from O1 to O4.
 | After a deploy | `cloudflare/superfan/ledger-deploys.ts`, `release.ts`, `synthetic.ts`, `synthetic-checks.ts` |
 | Spans | `cloudflare/worker/repo-span-sample.ts`, `repo-timing.ts` |
 | Service levels | `shared/service-levels.ts`, `cloudflare/worker/platform-service-levels.ts`, `cloudflare/superfan/service-points.ts`, `frontend/src/features/admin/AdminServiceLevels.tsx` |
-| Code health | `xtask/src/`, `.github/workflows/ci.yml`, `full.yml` |
+| Code health | `xtask/src/`, `.github/workflows/ci.yml` |
 | Evidence | `tools/fanout-bench/results.mjs`, `tools/staging-realworld.mjs` |
+
+## Calibrated HTTP latency
+
+Request budget: with `RESPONSE_LATENCY=on`, the front Worker writes one bounded
+structured timing line per invocation. No extra foreground network call, SQL
+statement, response-body buffering or awaited background work is introduced.
+Tail ingestion uses its existing ledger RPC. Each five-minute HTTP pass adds
+one calibration RPC and one resolution RPC, plus one observation RPC per
+active series. Notification claims use the existing bounded send path. There
+is no additional analytics query or model call. Existing email caps apply. Timing minute rows last 48 hours; calibration windows last 7 days.
+
+Response-ready time runs until the handler supplies a Response. It excludes
+background work and response-body transfer; it is not browser page-load time.
+Invocation lifetime is measured separately. Page, API, health, scanner-shaped,
+asset, transfer and marked internal traffic have separate counters. Scanner
+classification is a telemetry hint, never a denial or an authentication rule.
+Failure, CPU/memory, exception and health alarms still include every request.
+
+Only successful external page/API traffic trains latency detectors. A closed
+5-minute window needs 100 requests (five upper-tail samples at p95). Learning
+requires 24 qualifying distinct windows in 24 separate hours, spanning at least 24 hours. Repeated
+polls cannot create more evidence. The reference is the median window p95;
+the comparison band is the historical 95th percentile of window p95 values,
+plus one 1.5x histogram bucket to account for measurement resolution. Two
+consecutive qualifying closed windows must exceed it. Low volume is reported
+as insufficient data and does not prove recovery. These are conservative
+initial detector requirements, not a validated product SLO or a promise that
+a particular response time is acceptable. They need review against actual
+traffic. Existing mixed frontend baselines are not reused.
+
+Dev has the same detectors, but its email destination is intentionally empty.
+Read its authenticated Superfan `/status` and `/findings` for evidence.
+
+Other invocation-lifetime alarms also start fresh: 100 successful executions
+per independent closed UTC hour, with 24 qualifying hours spanning 24 hours.
+Their band comes from the observed hourly distribution, not the old three-run
+moving average. Error, exception, resource and health checks are unchanged.
+
+## Queue and SSH idle traffic
+
+Queue age is diagnostic, since producer delays can deliberately span 12 hours.
+Platform producers carry `queue_delay_ms` on sends and batches. First delivery
+measures time since Cloudflare enqueue minus that delay; `queue.late` records
+waits over the existing two-minute budget. Older messages are unknown and retry
+failures keep their existing rules. This adds no network requests or ledger
+tables: at most one warning per overdue first delivery, using existing tail marks.
+
+SSH alarms and explicitly identified keep-alive RPCs have separate maintenance
+counters, samples and count-based failure rules. They cannot seed the SSH request
+error denominator or execution baseline. Unidentified events keep the request
+rules. Failed cron keep-alives retain their existing failure alarm. This uses
+the existing per-minute tail rows and adds no API requests.

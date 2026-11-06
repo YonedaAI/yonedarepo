@@ -76,6 +76,9 @@ export interface Env {
   JOINED_REPO_PATH?: string;
   /** Off by default: one fresh response supplies the full selected Overview. */
   OVERVIEW_BOOTSTRAP?: string;
+  OVERVIEW_AUTH_OVERLAP?: string;
+  /** Off by default: Overview omits unused metadata for unselected branches. */
+  OVERVIEW_REF_NAMES?: string;
   /** Off by default: optional activity follows admitted core content at the captured revision. */
   OVERVIEW_DEFER_ACTIVITY?: string;
   /** Off by default: current ordinary Overview selects its root during fresh admission. */
@@ -205,6 +208,8 @@ export interface Env {
   VISITORS?: string;
   /** `on` records a new account's region and samples where writes come from (region.ts). */
   REGION_SIGNALS?: string;
+  /** Short authenticated snapshots of the read-only operator dashboards. */
+  ADMIN_READ_CACHE?: string;
   /** `on`: requests find their cell, and a Worker forwards what is another's (cells.ts). Unset or
    * anything else: this Worker serves everything it is sent, as ever. */
   CELLS?: string;
@@ -271,6 +276,8 @@ export interface Env {
   /** The hostname clients use for Git over SSH (`ssh.yonedarepo.com`). */
   SSH_HOST?: string;
   BUILD_REVISION?: string;
+  /** Response-ready timing, separate from invocation lifetime. */
+  RESPONSE_LATENCY?: string;
   /** `on`: the request id goes on every response and travels with each hop (request-scope.ts;
    * unset or anything else: failure lines still carry it, nothing else changes). */
   REQUEST_IDS?: string;

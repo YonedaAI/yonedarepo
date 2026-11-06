@@ -21,6 +21,7 @@ import {
   valueLabel,
   workspacePath,
 } from './agentsModel';
+import { EarlierAttempts } from './EarlierAttempts';
 
 type Space = { workspace?: string };
 
@@ -187,6 +188,7 @@ export function AgentRunDetail({
                 </p>
               )}
             </section>
+            <EarlierAttempts attempts={detail.previous_attempts} />
             <section aria-labelledby="transcript-heading">
               <h2 id="transcript-heading">Transcript</h2>
               {detail.transcript ? (

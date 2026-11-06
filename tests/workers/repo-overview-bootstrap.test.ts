@@ -8,7 +8,7 @@ import type { Env } from '../../cloudflare/worker/types';
 import { api, author, countingOps, drainObjects, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
-const on = { ...scoped, OVERVIEW_BOOTSTRAP: 'on' } as Env;
+const on = { ...scoped, OVERVIEW_BOOTSTRAP: 'on', OVERVIEW_AUTH_OVERLAP: 'on' } as Env;
 const mode = 'summary=true&overview=true';
 async function setup(name: string, files = [file('README.md', '# Before\n'), file('src/a.txt', 'a\n')]) {
   const owner = { cookie: await signup(name) };
@@ -68,6 +68,37 @@ it('old/off endpoints keep their existing cheap compatible responses', async () 
   expect(id.body).not.toHaveProperty('overview');
   const named = await api(`/resolve/overview_off/project?${mode}`, r.owner, {}, off);
   expect(named.body).toEqual({ id: r.id, handle: 'overview_off', name: 'project', path: '/overview_off/project' });
+});
+
+it('reads a selected tag snapshot and activity after main moves without widening access', async () => {
+  const r = await setup('overview_tag');
+  const tagged = await api(`/repos/${r.id}/tags`, r.owner, { body: { name: 'v1', commit: r.commit } }, on);
+  expect(tagged.status).toBe(200);
+  const changed = await api(`/repos/${r.id}/commits`, r.owner, { body: { ref: 'main', changes: [file('README.md', '# After\n')], message: 'after tag', author } }, on);
+  expect(changed.status).toBe(200);
+  expect((await api(`/repos/${r.id}/land`, r.owner, { body: { ref: 'main', commit: changed.body.commit } }, on)).status).toBe(200);
+  const ref = 'refs/tags/v1';
+  for (const deferred of ['off', 'on']) {
+    const env = { ...on, OVERVIEW_DEFER_ACTIVITY: deferred };
+    const shown = await api(`/repos/${r.id}?${mode}&ref=${ref}`, r.owner, {}, env);
+    expect(shown.body.overview.errors).toBeUndefined();
+    expect(shown.body.overview).toMatchObject({ ref, tree: { commit: r.commit }, latest: { commit: r.commit }, readme: { commit: r.commit, content: '# Before\n' } });
+    const activity = deferred === 'off' ? shown.body.overview.activity : (await api(`/repos/${r.id}/log?ref=${ref}&from=${r.commit}&at=${shown.body.overview.activity_request.at}&limit=200&view=overview`, r.owner, {}, env)).body;
+    expect(activity.commits.map((c: any) => c.commit)).toEqual([r.commit]);
+  }
+  const off = { ...on, OVERVIEW_BOOTSTRAP: 'off' };
+  expect((await api(`/repos/${r.id}/tree?ref=${ref}`, r.owner, {}, off)).body.commit).toBe(r.commit);
+  expect((await api(`/repos/${r.id}/blob?ref=${ref}&path=README.md`, r.owner, {}, off)).body.content).toBe('# Before\n');
+  expect((await api(`/repos/${r.id}/commits/${r.commit}?ref=${ref}`, r.owner, {}, off)).body.commit).toBe(r.commit);
+  const token = await api(`/repos/${r.id}/tokens`, r.owner, { body: { name: 'tag_reader', scopes: ['read'], paths: ['src/'] } }, on);
+  const reader = { token: token.body.token };
+  const limited = await api(`/repos/${r.id}?${mode}&ref=${ref}`, reader, {}, on);
+  expect(limited.body.overview.tree.entries.map((e: any) => e.name)).toEqual(['src']);
+  expect(limited.body.overview.readme).toBeNull();
+  expect(JSON.stringify(limited.body)).not.toContain('# Before');
+  expect((await api(`/repos/${r.id}?${mode}&ref=${ref}`, {}, {}, on)).status).toBe(404);
+  expect((await api(`/repos/${r.id}/tokens/tag_reader`, r.owner, { method: 'DELETE' }, on)).status).toBe(200);
+  expect((await api(`/repos/${r.id}?${mode}&ref=${ref}`, reader, {}, on)).status).toBe(401);
 });
 
 it('keeps empty repositories and missing README content explicit', async () => {
@@ -253,4 +284,95 @@ it('masks an unexpected section fault without hiding the other Overview content'
   expect(response.body.overview).toMatchObject({ latest: null, tree: { commit: r.commit }, readme: { content: '# Before\n' }, errors: { latest: { code: 'INTERNAL', message: 'Something went wrong on our side.' } } });
   expect(response.body.overview.activity.commits[0].commit).toBe(r.commit);
   expect(JSON.stringify(response.body)).not.toContain('simulated internal section detail');
+});
+
+it.each([['on', '', true], ['on', 'off', false], ['on', 'unknown', true], ['off', 'on', false], [undefined, 'on', false]] as const)('gates handle/auth overlap with %s/%s while keeping name/admission after both', async (flag, control, enabled) => {
+  const handle = `overlap_${flag ?? 'unset'}_${control || 'plain'}`;
+  const r = await setup(handle);
+  expect((await api('/orgs', r.owner, { body: { name: `${handle}_org` } }, on)).status).toBe(200);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let entered!: () => void;
+  const orgStarted = new Promise<void>(resolve => { entered = resolve; });
+  const calls: string[] = [];
+  const namespace = on.WORKSPACES;
+  const env = { ...on, OVERVIEW_AUTH_OVERLAP: flag, WORKSPACES: {
+    idFromName: (name: string) => namespace.idFromName(name),
+    get: (id: DurableObjectId) => ({ fetch: async (url: string, init: RequestInit) => {
+      const command = JSON.parse(String(init.body)); calls.push(command.op);
+      if (command.op === 'org_access') { entered(); await held; }
+      return namespace.get(id).fetch(url, init);
+    } }),
+  } } as unknown as Env;
+  const pending = api(`/resolve/${handle}/project?${mode}&auth_overlap=${control}`, r.owner, {}, env);
+  let answer: Awaited<typeof pending>;
+  try {
+    await orgStarted;
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(calls.includes('handle_lookup')).toBe(enabled);
+    expect(calls).not.toContain('owned_repo_resolve');
+  } finally { release(); answer = await pending; }
+  expect(answer.status).toBe(200);
+  expect(answer.body.summary.overview.tree.commit).toBe(r.commit);
+  expect(calls.filter(op => op === 'session')).toHaveLength(1);
+  expect(calls.filter(op => op === 'handle_lookup')).toHaveLength(1);
+  expect(calls.filter(op => op === 'owned_repo_resolve')).toHaveLength(1);
+});
+
+
+it('keeps organization refusal ahead of a failed overlapping lookup without resolving names or reading content', async () => {
+  const r = await setup('overlap_denial');
+  expect((await api('/orgs', r.owner, { body: { name: 'overlap_denial_org' } }, on)).status).toBe(200);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let entered!: () => void;
+  const orgStarted = new Promise<void>(resolve => { entered = resolve; });
+  const calls: string[] = [];
+  const ns = on.WORKSPACES;
+  const env = { ...on, OVERVIEW_AUTH_OVERLAP: 'on', WORKSPACES: {
+    idFromName: (name: string) => ns.idFromName(name),
+    get: (id: DurableObjectId) => ({ fetch: async (url: string, init: RequestInit) => {
+      const command = JSON.parse(String(init.body)); calls.push(command.op);
+      if (command.op === 'handle_lookup') throw new Error('Synthetic handle transport failure');
+      if (command.op === 'org_access') { entered(); await held; throw Object.assign(new Error('Organization refused'), { code: 'FORBIDDEN' }); }
+      return ns.get(id).fetch(url, init);
+    } }),
+  } } as unknown as Env;
+  const pending = api(`/resolve/overlap_denial/project?${mode}`, r.owner, {}, env);
+  await orgStarted;
+  await new Promise(resolve => setTimeout(resolve, 0));
+  release();
+  const answer = await pending;
+  expect(answer.status).toBe(403);
+  expect(answer.body.error.message).toBe('Organization refused');
+  expect(calls.filter(op => op === 'handle_lookup')).toHaveLength(1);
+  expect(calls).not.toContain('owned_repo_resolve');
+});
+
+it('keeps every branch choice but omits unused branch hashes only in the flagged Overview view', async () => {
+  const r = await setup('overview_ref_names');
+  for (const ref of ['chosen', 'other'])
+    expect((await api(`/repos/${r.id}/branches`, r.owner, { body: { ref, commit: r.commit, expected: null } }, on)).status).toBe(200);
+  expect((await api(`/repos/${r.id}/tags`, r.owner, { body: { name: 'v1', commit: r.commit } }, on)).status).toBe(200);
+  const seen = countingOps(on);
+  const env = { ...seen.env, OVERVIEW_REF_NAMES: 'on' } as Env;
+  const path = `/repos/${r.id}?${mode}&ref=chosen`;
+  const full = await api(path, r.owner, {}, seen.env);
+  const compact = await api(path, r.owner, {}, env);
+  expect(compact.status).toBe(200);
+  expect(compact.body.refs.find((ref: any) => ref.name === 'refs/heads/other')).toEqual({ name: 'refs/heads/other' });
+  expect(compact.body.refs.find((ref: any) => ref.name === 'refs/heads/chosen')).toEqual(full.body.refs.find((ref: any) => ref.name === 'refs/heads/chosen'));
+  expect(compact.body.refs.find((ref: any) => ref.name === 'refs/heads/main')).toEqual(full.body.refs.find((ref: any) => ref.name === 'refs/heads/main'));
+  expect(compact.body.refs.find((ref: any) => ref.name === 'refs/tags/v1')).toEqual(full.body.refs.find((ref: any) => ref.name === 'refs/tags/v1'));
+  expect(compact.body.refs.map((ref: any) => ref.name)).toEqual(full.body.refs.map((ref: any) => ref.name));
+  expect(compact.body.overview).toEqual(full.body.overview);
+  expect(compact.body.viewer).toEqual(full.body.viewer);
+  expect(compact.body.version).toBe(full.body.version);
+  const named = await api(`/resolve/overview_ref_names/project?${mode}&ref=chosen`, r.owner, {}, env);
+  expect(named.body.summary.refs).toEqual(compact.body.refs);
+  const ordinary = await api(`/repos/${r.id}?summary=true`, r.owner, {}, env);
+  const disabled = await api(`${path}&refs_view=full`, r.owner, {}, env);
+  expect(ordinary.body.refs).toEqual(full.body.refs);
+  expect(disabled.body.refs).toEqual(full.body.refs);
+  expect(seen.take().repo_status).toBe(5);
 });

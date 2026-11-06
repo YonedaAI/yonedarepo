@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { RESERVED_HANDLES } from '../../../shared/account';
+import { earlyReadScript } from '../../vite-early-reads';
 import { namedOverviewRef } from '../features/source-platform/overviewBootstrap';
 import { resolvePath } from '../features/source-platform/RepoByName';
 import { managedApi, sourceApi } from '../features/source-platform/sourceApi';
@@ -259,4 +260,30 @@ it('transfers self cancellation without cancelling an adopted session', async ()
   expect(fetch.mock.calls[1]?.[1]?.signal?.aborted).toBe(true);
   await expect(session).resolves.toMatchObject({ username: 'sample' });
   expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+it('starts exact Admin reports with session discovery without fetching unrelated tabs', () => {
+  for (const [path, expected] of [
+    ['/admin', '/api/v1/admin/overview'],
+    ['/admin/overview', '/api/v1/admin/overview'],
+    ['/admin/traffic', '/api/v1/admin/traffic?range=7d&class=humans'],
+  ]) {
+    const fetch = vi.fn((_url: string) => new Promise<Response>(() => {}));
+    vi.stubGlobal('fetch', fetch);
+    beginEarlyReads(windowAt(path));
+    expect(fetch.mock.calls.map((args) => args[0])).toEqual([
+      '/api/auth/session?summary=true',
+      expected,
+      '/api/v1/admin/signups?since=0',
+    ]);
+    window.__yonedaEarlyReads?.clear();
+  }
+});
+
+it('runs the emitted head script with all dependencies serialized', async () => {
+  const fetch = vi.fn((_url: string) => new Promise<Response>(() => {}));
+  vi.stubGlobal('fetch', fetch);
+  const script = earlyReadScript();
+  expect(() => new Function('window', script)(windowAt('/admin/users'))).not.toThrow();
+  expect(fetch.mock.calls.map((args) => args[0])).toContain('/api/v1/admin/accounts');
 });

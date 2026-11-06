@@ -5,6 +5,7 @@
 // when passes last ran.
 import { backendScripts, isWatchable, probesOn, type SuperfanEnv, wideOn } from './config';
 import { deliveries } from './delivery';
+import { httpTimings } from './http-timing';
 import { parseDeploy } from './ledger-deploys';
 import { noticesOn } from './notify';
 import { QUICK_CRON, runQuick } from './quick';
@@ -74,6 +75,7 @@ export async function superfanFetch(req: Request, env: SuperfanEnv): Promise<Res
       probes: probesOn(env),
       release_compare: releaseOn(env),
       last_deploy: (await ledger.deploys(1))[0] ?? null,
+      ...(env.RESPONSE_LATENCY === 'on' ? { http_latency: await ledger.httpStatus(now) } : {}),
       ...(await ledger.status(now)),
     });
   }
@@ -89,7 +91,11 @@ export async function superfanTail(events: TraceItem[], env: SuperfanEnv) {
   const rows = aggregate(events, env.WATCH_SCRIPT, wideOn(env), backendScripts(env));
   recordDeaths(env, events);
   const delivered = deliveries(events, env.WATCH_SCRIPT);
-  if (rows.length) await ledgerStub(env).ingest(rows, Date.now(), delivered);
+  const http =
+    env.RESPONSE_LATENCY === 'on' && wideOn(env)
+      ? httpTimings(events, env.WATCH_SCRIPT.replace(/-platform$/, '-agents'))
+      : [];
+  if (rows.length || http.length) await ledgerStub(env).ingest(rows, Date.now(), delivered, http);
 }
 
 export default {

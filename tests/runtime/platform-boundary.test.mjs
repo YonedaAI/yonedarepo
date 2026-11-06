@@ -24,6 +24,8 @@ const neutral = new Set([
   // The logger and the request's scope; they import only each other and types.
   './log',
   './request-scope',
+  // Dependency-free queue scheduling metadata and eligible-age measurement, no domain rules.
+  './queue-timing',
   // Streaming service-binding transport and cancellation; imports nothing.
   './forward-request',
   // Work in flight in one isolate; imports nothing.

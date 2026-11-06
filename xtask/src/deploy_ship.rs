@@ -1,9 +1,5 @@
-//! The GitHub side of a ship (docs/ship-pipeline.md). Live tests stay on the owner's Mac:
-//! `cargo xtask live-tests` turns a passing full kit into a `live-tests` commit status, and a
-//! prod deploy from a merged ship PR (`--ship-head`) reads that status and the PR head's Ship
-//! run instead of the dev Workers and the evidence file. This repository is public, so the
-//! status says only "pass" and the tree. Decisions are pure over gathered facts, as in
-//! deploy_guard. Local deploys never come through here.
+//! Production deploys require a successful release CI run at the merged PR's exact tree.
+//! The optional `live-tests` command attests a full local kit; deployment does not read it.
 use crate::deploy_evidence::{EVIDENCE_DIR, full_kit_passes, newest_evidence};
 use crate::deploy_guard::{self as guard, Facts, Options, short};
 use crate::infra::spec::{Env, Spec};
@@ -14,9 +10,9 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 const LIVE_TESTS: &str = "live-tests";
-/// Only the owner's status counts: a workflow token with `statuses: write` is someone else.
+/// Account expected when explicitly publishing the optional local attestation.
 const OWNER: &str = "MagnetonIO";
-const SHIP_WORKFLOW: &str = ".github/workflows/ship.yml";
+const CI_WORKFLOW: &str = ".github/workflows/ci.yml";
 
 /// What GitHub says about a merged ship PR's head.
 #[derive(Clone, Debug, Default)]
@@ -25,10 +21,54 @@ pub(crate) struct ShipFacts {
     pub pr_head: String,
     /// The PR head's tree (`None`: not in this clone).
     pub tree: Option<String>,
-    /// The commit's statuses, newest first, as GitHub lists them.
-    pub statuses: Vec<Value>,
-    /// Ship workflow runs at the PR head.
+    /// Release CI pull-request runs at the PR head.
     pub runs: Vec<Value>,
+    /// Completed final gates bound to one run and its latest attempt.
+    pub gates: Vec<ReleaseGate>,
+}
+
+/// Stable release proof after GitHub drops the merged PR from a run's associations.
+#[derive(Clone, Debug)]
+pub(crate) struct ReleaseGate {
+    run_id: u64,
+    attempt: u64,
+    head: String,
+}
+
+fn identity(run: &Value) -> Option<(u64, u64)> {
+    Some((
+        run["id"].as_u64().filter(|id| *id > 0)?,
+        run["run_attempt"].as_u64().filter(|n| *n > 0)?,
+    ))
+}
+
+/// A complete, unpaginated latest-attempt page must contain exactly one successful final gate.
+fn final_gate(run: &Value, page: &Value, paginated: bool) -> Option<ReleaseGate> {
+    if paginated {
+        return None;
+    }
+    let (run_id, attempt) = identity(run)?;
+    let jobs = page["jobs"].as_array()?;
+    let total = page["total_count"].as_u64()?;
+    if total == 0 || total > 100 || usize::try_from(total).ok()? != jobs.len() {
+        return None;
+    }
+    let mut gates = jobs.iter().filter(|job| job["name"] == "Ship gate");
+    let gate = gates.next()?;
+    if gates.next().is_some()
+        || gate["status"] != "completed"
+        || gate["conclusion"] != "success"
+        || gate["run_id"].as_u64() != Some(run_id)
+        || gate["run_attempt"].as_u64() != Some(attempt)
+        || gate["head_sha"] != run["head_sha"]
+    {
+        return None;
+    }
+    Some(ReleaseGate {
+        run_id,
+        attempt,
+        head: gate["head_sha"].as_str()?.into(),
+    })
 }
 
 /// `--ship-head <sha>`.
@@ -48,13 +88,12 @@ fn description(tree: &str) -> String {
     format!("pass tree {tree}")
 }
 
-/// The PR head has HEAD's tree, its newest `live-tests` is the owner's pass for that tree, and a
-/// Ship run of this repository's dev (Check and Full suite are its jobs) succeeded there.
+/// The PR head has HEAD's tree and this repository's release CI succeeded there.
 pub(crate) fn passes(facts: &Facts) -> Result<()> {
     let ship = facts
         .ship
         .as_ref()
-        .ok_or("Refusing prod: the ship statuses were not read.")?;
+        .ok_or("Refusing prod: the release CI proof was not read.")?;
     let head = short(&ship.pr_head);
     if facts.head_tree.is_empty() || ship.tree.as_deref() != Some(facts.head_tree.as_str()) {
         return Err(format!(
@@ -63,66 +102,46 @@ pub(crate) fn passes(facts: &Facts) -> Result<()> {
         )
         .into());
     }
-    live_tests_pass(ship, &facts.head_tree)?;
     if !ship.runs.iter().any(|run| ship_run(run, ship)) {
         return Err(format!(
-            "Refusing prod: no successful Ship run at {head}, so Check and Full suite did not pass there."
+            "Refusing prod: no successful release CI run at {head}, so required CI validation did not pass there."
         )
         .into());
     }
     Ok(())
 }
 
-fn live_tests_pass(ship: &ShipFacts, tree: &str) -> Result<()> {
-    let head = short(&ship.pr_head);
-    let status = ship
-        .statuses
-        .iter()
-        .find(|status| status["context"] == LIVE_TESTS)
-        .ok_or_else(|| {
-            format!(
-                "Refusing prod: no {LIVE_TESTS} status at {head}. Run `cargo xtask live-tests`."
-            )
-        })?;
-    if status["state"] != "success" {
-        let state = status["state"].as_str().unwrap_or("missing");
-        return Err(format!("Refusing prod: {LIVE_TESTS} is {state} at {head}.").into());
-    }
-    if status["creator"]["login"] != OWNER {
-        return Err(
-            format!("Refusing prod: {LIVE_TESTS} at {head} was not set by {OWNER}.").into(),
-        );
-    }
-    if status["description"] != description(tree).as_str() {
-        return Err(format!("Refusing prod: {LIVE_TESTS} at {head} is for another tree.").into());
-    }
-    Ok(())
-}
-
-/// A successful Ship run of this repository's dev at the PR head. A fork's run counts for
+/// A successful release CI run of this repository's dev at the PR head. A fork's run counts for
 /// nothing: `pull_request` runs of forks live in this repository too.
-fn ship_run(run: &Value, ship: &ShipFacts) -> bool {
+fn ci_run(run: &Value, ship: &ShipFacts) -> bool {
     let path = run["path"].as_str().unwrap_or_default();
     run["event"] == "pull_request"
         && run["conclusion"] == "success"
         && run["head_sha"] == ship.pr_head.as_str()
         && run["head_branch"] == "dev"
         && run["head_repository"]["full_name"] == ship.repo.as_str()
-        && (path == SHIP_WORKFLOW || path.starts_with(&format!("{SHIP_WORKFLOW}@")))
+        && (path == CI_WORKFLOW || path.starts_with(&format!("{CI_WORKFLOW}@")))
 }
 
-/// Reads the PR head's statuses and Ship runs; needs the runner's GITHUB_REPOSITORY and GH_TOKEN.
+fn ship_run(run: &Value, ship: &ShipFacts) -> bool {
+    ci_run(run, ship)
+        && ship.gates.iter().any(|gate| {
+            identity(run) == Some((gate.run_id, gate.attempt)) && run["head_sha"] == gate.head
+        })
+}
+
+/// Reads release CI runs; needs GITHUB_REPOSITORY and GH_TOKEN on a runner or workstation.
 pub(crate) async fn gather(pr_head: &str) -> Result<ShipFacts> {
     let variable = |name: &str| {
         std::env::var(name)
-            .map_err(|_| format!("--ship-head runs in GitHub Actions: {name} is not set"))
+            .map_err(|_| format!("--ship-head needs release CI proof: {name} is not set"))
     };
     let (repo, token) = (variable("GITHUB_REPOSITORY")?, variable("GH_TOKEN")?);
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .user_agent("yonedarepo-xtask")
         .build()?;
-    let get = async |path: String| -> Result<Value> {
+    let get = async |path: String| -> Result<(Value, bool)> {
         let answer = client
             .get(format!("https://api.github.com/repos/{repo}/{path}"))
             .bearer_auth(&token)
@@ -133,21 +152,36 @@ pub(crate) async fn gather(pr_head: &str) -> Result<ShipFacts> {
         if !status.is_success() {
             return Err(format!("GitHub answered {status} for {path}").into());
         }
-        Ok(answer.json().await?)
+        let paginated = answer.headers().contains_key(reqwest::header::LINK);
+        Ok((answer.json().await?, paginated))
     };
-    let statuses = get(format!("commits/{pr_head}/statuses?per_page=100")).await?;
-    let runs = get(format!(
-        "actions/workflows/ship.yml/runs?head_sha={pr_head}&event=pull_request&status=success&per_page=20"
+    let (runs, _) = get(format!(
+        "actions/workflows/ci.yml/runs?head_sha={pr_head}&event=pull_request&status=success&per_page=20"
     ))
     .await?;
     let list = |value: &Value| value.as_array().cloned().unwrap_or_default();
-    Ok(ShipFacts {
+    let mut ship = ShipFacts {
         pr_head: pr_head.to_owned(),
         tree: guard::tree_of(pr_head),
-        statuses: list(&statuses),
         runs: list(&runs["workflow_runs"]),
-        repo,
-    })
+        gates: Vec::new(),
+        repo: repo.clone(),
+    };
+    for run in &ship.runs {
+        if !ci_run(run, &ship) {
+            continue;
+        }
+        let Some((id, _)) = identity(run) else {
+            continue;
+        };
+        let (page, paginated) =
+            get(format!("actions/runs/{id}/jobs?filter=latest&per_page=100")).await?;
+        if let Some(gate) = final_gate(run, &page, paginated) {
+            ship.gates.push(gate);
+            break;
+        }
+    }
+    Ok(ship)
 }
 
 fn status_args(sha: &str, tree: &str) -> Vec<String> {
@@ -168,7 +202,7 @@ fn status_args(sha: &str, tree: &str) -> Vec<String> {
 }
 
 /// `cargo xtask live-tests [--dry-run]`: on a clean checkout at the tip of dev whose newest kit
-/// evidence is a full pass at HEAD, sets the status a ship needs. HEAD must be on GitHub.
+/// evidence is a full pass at HEAD, sets an optional status. HEAD must be on GitHub.
 pub(crate) fn mark(args: &[String]) -> Result<()> {
     let spec = Spec::load(&Env::Dev)?;
     let mut facts = guard::git_facts(&spec)?;

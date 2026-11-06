@@ -5,7 +5,7 @@ import type { FunnelStep, VisitorReport, VisitorResult } from '../../../../share
 import { TRAFFIC_RANGES, type TrafficRange } from '../../../../shared/site-traffic';
 import { activityBars, percent } from '../source-platform/insightsModel';
 import { Failure, Loading } from '../source-platform/SourceStatus';
-import { useSource } from '../source-platform/useSource';
+import { useReadSource } from '../source-platform/useReadSource';
 import { CountTable, RangePicker } from './AdminParts';
 import { countryName } from './adminModel';
 import { TimeChart } from './TimeChart';
@@ -126,7 +126,7 @@ function Report({ r }: { r: VisitorReport }) {
 
 export function AdminVisitors() {
   const [range, setRange] = useState<TrafficRange>('30d');
-  const answer = useSource<VisitorResult>(`/admin/visitors?range=${range}`);
+  const answer = useReadSource<VisitorResult>(`/admin/visitors?range=${range}`);
   const body = () => {
     if (answer.loading && !answer.data) return <Loading what="visitors" />;
     if (answer.error || !answer.data)

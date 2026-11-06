@@ -1,3 +1,5 @@
+import { readAdminOverview } from './platform-admin-overview';
+import { adminRead, clearAdminReads, memoizedAdminRead } from './platform-admin-read-cache';
 // `/api/v1/admin/*`: the operators' admin pages (admin-auth.ts says who). Reads come from the
 // D1 projections (admin-queries.ts), each account's authority and the site traffic report
 // (platform-site-traffic.ts). Actions are safe and reversible: credit grants (the managed agents
@@ -23,7 +25,7 @@ import {
   setSuspended,
 } from './platform-admin-accounts';
 import { adminBilling, adminBillingOn } from './platform-admin-billing';
-import { everyCell, mergeOverview, mergePages, mergeSignups } from './platform-admin-cells';
+import { everyCell, mergePages, mergeSignups } from './platform-admin-cells';
 import { setInternal } from './platform-admin-internal';
 import {
   audit,
@@ -31,7 +33,6 @@ import {
   largestRepos,
   listAccounts,
   listRepos,
-  overview,
   repoRowOf,
   signups,
 } from './platform-admin-queries';
@@ -46,7 +47,7 @@ import { setAsideAuditRow } from './platform-audit-set-aside';
 import { operatorOrgHold, operatorRepoHold } from './platform-holds';
 import { infraReport } from './platform-infra-report';
 import { currentHold } from './platform-legal-hold';
-import { exportSubscribers, subscriberCount } from './platform-newsletter';
+import { exportSubscribers } from './platform-newsletter';
 import { adminReports, operationsReport } from './platform-operations-report';
 import {
   auditedPurge,
@@ -96,10 +97,15 @@ export function adminRoute(
     void deniedAttempt(env, auth, parts[0]);
     throw new ApiError('FORBIDDEN', 'Operators only');
   }
-  return operatorRoute(env, actor, method, parts, body, query).catch((e) => {
-    void failedAttempt(env, actor, method, parts, e);
-    throw e;
-  });
+  return operatorRoute(env, actor, method, parts, body, query)
+    .then((value) => {
+      if (method !== 'GET') clearAdminReads();
+      return value;
+    })
+    .catch((e) => {
+      void failedAttempt(env, actor, method, parts, e);
+      throw e;
+    });
 }
 
 async function operatorRoute(
@@ -109,21 +115,17 @@ async function operatorRoute(
   parts: string[],
   body: () => Promise<Json>,
   query: URLSearchParams,
+  cacheAllowed = true,
 ): Promise<Json> {
   const [section, id, action, record, sub] = parts;
   const get = method === 'GET';
+  if (get && cacheAllowed && memoizedAdminRead(section, id))
+    return adminRead(env, actor, `/${parts.join('/')}?${query}`, () =>
+      operatorRoute(env, actor, method, parts, body, query, false),
+    );
   const post = method === 'POST';
   const hold = action === 'hold' && !record && (post || method === 'DELETE');
-  if (section === 'overview' && !id && get) {
-    const newsletter = await subscriberCount(env);
-    const totals = await everyCell(
-      env,
-      '/api/v1/admin/overview',
-      () => overview(env),
-      mergeOverview,
-    );
-    return { ...totals, billing: adminBillingOn(env), newsletter };
-  }
+  if (section === 'overview' && !id && get) return readAdminOverview(env, actor);
   if (section === 'newsletter' && !id && get)
     return exportSubscribers(env, actor, query.get('after'));
   if (section === 'signups' && !id && get) {
@@ -133,7 +135,8 @@ async function operatorRoute(
   }
   if (section === 'audit' && !id && get)
     return operatorAudit(env) ? operatorLog(env, query) : auditLog(env, query.get('before'));
-  if (section === 'traffic' && !id && get) return trafficReport(env, query);
+  if (section === 'traffic' && !id && get)
+    return adminRead(env, actor, `/traffic?${query}`, () => trafficReport(env, query));
   if (section === 'traffic' && id === 'landings' && get) return landingReport(env, query);
   if (section === 'operations' && !id && get) return operationsReport(env, query);
   if (section === 'visitors' && !id && get) return visitorReport(env, query);

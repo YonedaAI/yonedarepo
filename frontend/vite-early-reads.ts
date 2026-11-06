@@ -1,7 +1,15 @@
-import type { Plugin } from 'vite';
+import { minifySync, type Plugin } from 'vite';
 import { reservedHandlesSchema } from '../shared/contracts/reserved-handles';
+import { SIGNUPS_SEEN_KEY } from './src/features/admin/adminSeen';
+import { earlyPageReads } from './src/lib/earlyPageReads';
 import { beginEarlyReads } from './src/lib/earlyReads';
 import { plainNamedOverview } from './src/lib/overviewEntryRoute';
+
+/** The self-contained script shipped in HTML, also executed by its contract test. */
+export function earlyReadScript() {
+  const source = `(${beginEarlyReads.toString()})(window,${JSON.stringify(reservedHandlesSchema.enum)},(${plainNamedOverview.toString()}),(${earlyPageReads.toString()}),${JSON.stringify(SIGNUPS_SEEN_KEY)});`;
+  return minifySync('early-reads.js', source).code;
+}
 
 /** A dependency-free head script starts authorized GETs before the app bundle arrives. */
 export function earlyReads(enabled: boolean): Plugin {
@@ -12,7 +20,7 @@ export function earlyReads(enabled: boolean): Plugin {
       handler: () => enabled ? [{
         tag: 'script',
         attrs: { 'data-yoneda-early-reads': '' },
-        children: `(${beginEarlyReads.toString()})(window,${JSON.stringify(reservedHandlesSchema.enum)},(${plainNamedOverview.toString()}));`,
+        children: earlyReadScript(),
         injectTo: 'head-prepend',
       }] : [],
     },

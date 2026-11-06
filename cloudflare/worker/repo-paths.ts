@@ -173,8 +173,9 @@ export async function resolvePath(
   handle: string,
   name: string,
   query?: URLSearchParams,
+  ownerLookup?: Promise<HandleOwner | null>,
 ): Promise<Json> {
-  const owner = await ownerOf(env, handle);
+  const owner = await (ownerLookup ?? ownerOf(env, handle));
   const found = owner && (await named(env, owner.account, name.replace(/\.git$/, '')));
   if (!owner || !found) throw missing();
   // Answered where the repository is: only that cell can say who may read it.

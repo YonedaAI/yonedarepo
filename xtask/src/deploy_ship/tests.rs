@@ -21,22 +21,23 @@ fn options() -> Options {
         ..Options::default()
     }
 }
-fn status(state: &str, creator: &str, tree: &str) -> Value {
-    json!({"context": "live-tests", "state": state, "description": format!("pass tree {tree}"), "creator": {"login": creator}})
-}
 fn run() -> Value {
     json!({
-        "event": "pull_request", "conclusion": "success", "head_sha": PR_HEAD, "head_branch": "dev",
-        "head_repository": {"full_name": REPO}, "path": ".github/workflows/ship.yml"
+        "id": 123, "run_attempt": 1, "event": "pull_request", "conclusion": "success", "head_sha": PR_HEAD, "head_branch": "dev",
+        "head_repository": {"full_name": REPO}, "path": ".github/workflows/ci.yml",
+        "pull_requests": [{"head":{"sha":PR_HEAD,"ref":"dev"},"base":{"ref":"main"}}]
     })
+}
+fn jobs() -> Value {
+    json!({"total_count":1,"jobs":[{"name":"Ship gate","run_id":123,"run_attempt":1,"head_sha":PR_HEAD,"status":"completed","conclusion":"success"}]})
 }
 fn ship() -> ShipFacts {
     ShipFacts {
         repo: REPO.into(),
         pr_head: PR_HEAD.into(),
         tree: Some(TREE.into()),
-        statuses: vec![status("success", "MagnetonIO", TREE)],
         runs: vec![run()],
+        gates: vec![final_gate(&run(), &jobs(), false).unwrap()],
     }
 }
 fn facts(ship: Option<ShipFacts>) -> Facts {
@@ -56,14 +57,38 @@ fn refused(ship: ShipFacts, needle: &str) {
 }
 
 #[test]
-fn a_merged_ship_deploys_on_its_statuses_without_dev_workers_or_evidence() {
-    guard::preflight(&Env::Prod, &prod(), &facts(Some(ship())), &options()).unwrap();
+fn release_ci_suffices_without_live_statuses_or_local_kit() {
+    let ship = ship();
+    guard::preflight(&Env::Prod, &prod(), &facts(Some(ship)), &options()).unwrap();
+}
+
+#[test]
+fn merged_ci_run_remains_valid_after_github_removes_pull_association() {
+    let mut merged = run();
+    merged["pull_requests"] = json!([]);
+    let ship = ShipFacts {
+        runs: vec![merged],
+        ..ship()
+    };
+    guard::preflight(&Env::Prod, &prod(), &facts(Some(ship)), &options()).unwrap();
+}
+
+#[test]
+fn direct_prod_deploy_requires_the_ci_release_path_even_with_passing_local_evidence() {
+    let mut facts = facts(Some(ship()));
+    facts.evidence = Some(full_kit(Some(TREE), MERGE));
+    let direct = Options {
+        confirm: true,
+        ..Options::default()
+    };
+    let error = guard::preflight(&Env::Prod, &prod(), &facts, &direct).unwrap_err();
+    assert!(error.to_string().contains("CI release workflow"), "{error}");
 }
 
 #[test]
 fn ship_mode_never_passes_without_its_facts_or_confirm_or_on_dev() {
     let error = guard::preflight(&Env::Prod, &prod(), &facts(None), &options()).unwrap_err();
-    assert!(error.to_string().contains("ship statuses"), "{error}");
+    assert!(error.to_string().contains("release CI proof"), "{error}");
     let unconfirmed = Options {
         confirm: false,
         ..options()
@@ -113,36 +138,6 @@ fn the_pr_head_must_have_heads_tree() {
 }
 
 #[test]
-fn live_tests_must_be_the_owners_newest_pass_for_this_tree() {
-    let with = |statuses: Vec<Value>| ShipFacts { statuses, ..ship() };
-    refused(with(vec![]), "no live-tests status");
-    refused(
-        with(vec![json!({"context": "other", "state": "success"})]),
-        "no live-tests status",
-    );
-    refused(
-        with(vec![status("failure", "MagnetonIO", TREE)]),
-        "live-tests is failure",
-    );
-    refused(
-        with(vec![status("success", "github-actions[bot]", TREE)]),
-        "not set by MagnetonIO",
-    );
-    refused(
-        with(vec![status("success", "MagnetonIO", OTHER_TREE)]),
-        "another tree",
-    );
-    // The newest status wins: GitHub lists them newest first.
-    refused(
-        with(vec![
-            status("failure", "MagnetonIO", TREE),
-            status("success", "MagnetonIO", TREE),
-        ]),
-        "live-tests is failure",
-    );
-}
-
-#[test]
 fn check_and_full_count_only_from_a_successful_ship_run_of_this_repository() {
     let with = |change: &dyn Fn(&mut Value)| {
         let mut forged = run();
@@ -157,41 +152,98 @@ fn check_and_full_count_only_from_a_successful_ship_run_of_this_repository() {
             runs: vec![],
             ..ship()
         },
-        "no successful Ship run",
+        "no successful release CI run",
     );
     refused(
         with(&|r| r["head_repository"]["full_name"] = json!("someone/yonedarepo")),
-        "no successful Ship run",
+        "no successful release CI run",
     );
     refused(
         with(&|r| r["head_branch"] = json!("patch")),
-        "no successful Ship run",
+        "no successful release CI run",
     );
     refused(
         with(&|r| r["path"] = json!(".github/workflows/evil.yml")),
-        "no successful Ship run",
+        "no successful release CI run",
     );
     refused(
         with(&|r| r["conclusion"] = json!("failure")),
-        "no successful Ship run",
+        "no successful release CI run",
     );
     refused(
         with(&|r| r["event"] = json!("push")),
-        "no successful Ship run",
+        "no successful release CI run",
     );
     refused(
         with(&|r| r["head_sha"] = json!(MERGE)),
-        "no successful Ship run",
+        "no successful release CI run",
+    );
+    refused(
+        with(&|r| r["event"] = json!("workflow_dispatch")),
+        "no successful release CI run",
+    );
+    refused(
+        with(&|r| r["path"] = json!(".github/workflows/deploy-prod.yml")),
+        "no successful release CI run",
     );
     let at_ref = ShipFacts {
         runs: vec![{
             let mut r = run();
-            r["path"] = json!(".github/workflows/ship.yml@refs/pull/9/merge");
+            r["path"] = json!(".github/workflows/ci.yml@refs/pull/9/merge");
             r
         }],
         ..ship()
     };
     guard::preflight(&Env::Prod, &prod(), &facts(Some(at_ref)), &options()).unwrap();
+}
+
+#[test]
+fn final_gate_must_be_completed_success_from_the_same_run_and_attempt() {
+    assert!(
+        final_gate(&run(), &jobs(), true).is_none(),
+        "pagination headers deny proof"
+    );
+    let without = ShipFacts {
+        gates: vec![],
+        ..ship()
+    };
+    refused(without, "no successful release CI run");
+    for (field, value) in [
+        ("name", json!("Other gate")),
+        ("status", json!("in_progress")),
+        ("conclusion", json!("skipped")),
+        ("conclusion", json!("failure")),
+        ("conclusion", json!("cancelled")),
+        ("conclusion", Value::Null),
+        ("run_id", json!(456)),
+        ("run_attempt", json!(2)),
+        ("head_sha", json!(MERGE)),
+    ] {
+        let mut page = jobs();
+        page["jobs"][0][field] = value;
+        assert!(
+            final_gate(&run(), &page, false).is_none(),
+            "{field}: {page}"
+        );
+    }
+    for page in [
+        json!({}),
+        json!({"total_count":0,"jobs":[]}),
+        json!({"total_count":2,"jobs":jobs()["jobs"]}),
+        json!({"total_count":101,"jobs":jobs()["jobs"]}),
+        json!({"total_count":2,"jobs":[jobs()["jobs"][0], jobs()["jobs"][0]]}),
+    ] {
+        assert!(final_gate(&run(), &page, false).is_none(), "{page}");
+    }
+    let mut changed = run();
+    changed["run_attempt"] = json!(2);
+    refused(
+        ShipFacts {
+            runs: vec![changed],
+            ..ship()
+        },
+        "no successful release CI run",
+    );
 }
 
 #[test]
@@ -241,6 +293,9 @@ fn only_a_full_passing_kit_at_head_sets_live_tests() {
     assert!(error(full_kit(None, MERGE)).contains("records no tree"));
     assert!(error(full_kit(Some(OTHER_TREE), MERGE)).contains("not recorded against HEAD"));
     assert!(error(full_kit(Some(TREE), PR_HEAD)).contains("not recorded against HEAD"));
+    let mut other_platform = full_kit(Some(TREE), MERGE);
+    other_platform["items"][0]["metrics"]["platform"] = json!(PR_HEAD);
+    assert!(error(other_platform).contains("not recorded against HEAD"));
     let mut partial = full_kit(Some(TREE), MERGE);
     partial["items"].as_array_mut().unwrap().truncate(5);
     assert!(error(partial).contains("not a full kit"));
@@ -255,13 +310,6 @@ fn only_a_full_passing_kit_at_head_sets_live_tests() {
         ..facts(None)
     };
     assert!(full_kit_passes(&none).is_err());
-    // The evidence of another commit of the same tree is not "at HEAD".
-    let same_tree = Facts {
-        evidence: Some(full_kit(Some(TREE), PR_HEAD)),
-        trees: [(PR_HEAD.to_owned(), TREE.to_owned())].into(),
-        ..facts(None)
-    };
-    assert!(full_kit_passes(&same_tree).is_err());
 }
 
 #[test]

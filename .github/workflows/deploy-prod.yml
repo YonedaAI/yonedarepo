@@ -5,8 +5,8 @@ name: Deploy prod
 # (workflow_dispatch, dry run by default) it is a re-run of the same steps for main's tip, for
 # instance after the busy-container check stopped a deploy.
 #
-# `--ship-head` makes xtask require, for the PR head: HEAD's tree, the owner's live-tests status
-# for that tree, and a successful Ship run (Check and Full suite). HEAD must be the tip of main
+# `--ship-head` requires the PR head's exact tree and successful CI release validation.
+# HEAD must be the tip of main
 # and no container instance busy (a rollout kills runs). `allow_active` exists only on the manual
 # form and is never the default. Nothing here rolls back: a repository that ran a migration
 # refuses older binaries (SCHEMA_TOO_NEW); the docs have the manual steps.
@@ -77,7 +77,6 @@ jobs:
     permissions:
       contents: read
       actions: read
-      statuses: read
     outputs:
       started_at: ${{ steps.started.outputs.at }}
       cli_needed: ${{ steps.cli.outputs.needed }}
@@ -124,24 +123,54 @@ jobs:
         if: always()
         run: rm -rf ~/.config/yonedarepo
 
-  # macOS: `downloads stage` builds the darwin targets with plain Cargo, the rest with zig.
-  downloads:
-    name: Publish the CLI
+  # Target builds have no production secrets. Same-run artifacts carry exact-source receipts.
+  cli-build:
+    name: CLI / ${{ matrix.target }}
     needs: deploy
     if: needs.deploy.outputs.cli_needed == 'true'
     runs-on: macos-latest
-    timeout-minutes: 60
-    environment: production
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - target: darwin-arm64
+            triple: aarch64-apple-darwin
+            zig: false
+          - target: darwin-x64
+            triple: x86_64-apple-darwin
+            zig: false
+          - target: linux-x64
+            triple: x86_64-unknown-linux-musl
+            zig: true
+          - target: linux-arm64
+            triple: aarch64-unknown-linux-musl
+            zig: true
+          - target: windows-x64
+            triple: x86_64-pc-windows-gnu
+            zig: true
+          - target: windows-arm64
+            triple: aarch64-pc-windows-gnullvm
+            zig: true
+    env:
+      CLI_TARGET: ${{ matrix.target }}
+      RUST_TARGET: ${{ matrix.triple }}
+      SOURCE_REVISION: ${{ github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
       - uses: ./.github/actions/node
-      - uses: ./.github/actions/env-file
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          content: ${{ secrets.YONEDA_ENV_FILE }}
-          env: prod
+          shared-key: cli-${{ matrix.target }}
+          key: ${{ matrix.triple }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          cache-bin: true
+      - name: Install the Rust target
+        run: rustup target add "$RUST_TARGET"
       - name: Cross-compile tools
+        if: matrix.zig
         env:
           ZIG: zig-aarch64-macos-0.17.0
           ZIG_URL: https://ziglang.org/download/0.17.0/zig-aarch64-macos-0.17.0.tar.xz
@@ -152,9 +181,52 @@ jobs:
           tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/$ZIG" >> "$GITHUB_PATH"
           cargo install cargo-zigbuild --version 0.24.0 --locked
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-pc-windows-gnu aarch64-pc-windows-gnullvm
-      - name: Stage the downloads
-        run: node tools/ship/quiet.mjs deploy -- cargo xtask downloads stage --env prod
+      - name: Build and package the target
+        run: |
+          echo "Building CLI archive: $CLI_TARGET"
+          node tools/ship/quiet.mjs deploy -- cargo xtask downloads stage --env prod --targets "$CLI_TARGET" --revision "$SOURCE_REVISION"
+          echo "CLI archive ready: $CLI_TARGET"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cli-${{ matrix.target }}-${{ github.sha }}
+          path: |
+            target/downloads/prod/receipt.json
+            target/downloads/prod/cli/*/yoneda-*-${{ matrix.target }}.*
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0 # Archives are already compressed.
+
+  downloads:
+    name: Publish the CLI
+    needs: [deploy, cli-build]
+    if: needs.deploy.outputs.cli_needed == 'true' && needs.cli-build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      SOURCE_REVISION: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/node
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: cli-assemble
+          key: ${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: cli-*-${{ github.sha }}
+          path: target/cli-input
+      - name: Assemble the complete release
+        run: |
+          echo "Verifying the complete CLI archive cohort"
+          node tools/ship/quiet.mjs deploy -- cargo xtask downloads assemble --env prod --from target/cli-input --revision "$SOURCE_REVISION"
+          echo "Complete CLI release verified"
+      - uses: ./.github/actions/env-file
+        with:
+          content: ${{ secrets.YONEDA_ENV_FILE }}
+          env: prod
       - name: Upload the downloads
         run: |
           CLOUDFLARE_API_TOKEN=$(sed -n 's/^CLOUDFLARE_API_TOKEN=//p' ~/.config/yonedarepo/deploy-prod.env)

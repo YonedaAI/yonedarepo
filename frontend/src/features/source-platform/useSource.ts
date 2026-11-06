@@ -36,8 +36,9 @@ export function useSource<T = any>(
     loading: initial === undefined && path !== null,
     answered: initial === undefined ? undefined : request,
   });
-  // A navigation's fresh response is already admitted. It is never a reusable cache:
-  // changing the request or explicitly reloading permanently ends this initial value.
+  // Caller-admitted initial data applies once: repository navigation supplies a fresh
+  // response; read-only report scopes enforce their own viewer/TTL policy. Changing the
+  // request or explicitly reloading permanently ends this initial value.
   const seeded = useRef(initial === undefined ? undefined : request);
   if (seeded.current !== request) seeded.current = undefined;
   useEffect(() => {

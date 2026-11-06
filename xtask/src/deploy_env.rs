@@ -48,8 +48,10 @@ pub(crate) async fn run(
     let mut timings = Timings::default();
     let started = Instant::now();
     let mut facts = guard::git_facts(spec)?;
-    if env.is_prod() {
-        crate::deploy_evidence::prod_facts(&mut facts, options).await?;
+    if env.is_prod()
+        && let Some(head) = &options.ship_head
+    {
+        facts.ship = Some(crate::deploy_ship::gather(head).await?);
     }
     guard::preflight(env, spec, &facts, options)?;
     let inventory = if !options.front_only && !options.dry_run {

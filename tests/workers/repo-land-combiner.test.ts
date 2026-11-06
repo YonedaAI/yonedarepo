@@ -64,12 +64,46 @@ it('never lands write skew in one batch: of a (reads x, writes y) and b (reads y
   const batcher = new LandBatcher(scoped, async () => {});
   batcher.target = { repo: id, ref: 'main' };
   const status = async (ticket: number) => (await lander({ op: 'repo_land_status', ticket })).status;
-  await batcher.step();
-  expect([await status(tickets[0]), await status(tickets[1])]).toEqual(['landed', 'pending']);
-  // The next batch validates b against a log that holds a: its read of y is stale.
-  await batcher.step();
-  const later = await lander({ op: 'repo_land_status', ticket: tickets[1] });
-  expect([later.status, later.result.code]).toEqual(['failed', 'CONFLICT']);
+  vi.useFakeTimers();
+  try {
+    const target = { repo: id, ref: 'main' };
+    const waits = tickets.map((ticket) => batcher.wait(target, ticket, 20_000));
+    const duplicate = batcher.wait(target, tickets[0], 20_000);
+    expect(vi.getTimerCount()).toBe(3);
+    await batcher.step();
+    expect([await status(tickets[0]), await status(tickets[1])]).toEqual(['landed', 'pending']);
+    expect(await waits[0]).toEqual(await duplicate);
+    expect(vi.getTimerCount()).toBe(1); // Only the pending ticket retains its deadline.
+    // The next batch validates b against a log that holds a: its read of y is stale.
+    await batcher.step();
+    const later = await lander({ op: 'repo_land_status', ticket: tickets[1] });
+    expect([later.status, later.result.code]).toEqual(['failed', 'CONFLICT']);
+    expect((await waits[1])?.status).toBe('failed');
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  }
+});
+
+it('a completed submission releases its deadline on immediate refusal', async () => {
+  // The authority's refusal is simulated; this checks only the timer lifecycle.
+  const full = { ...scoped, SOURCE_REPOS: {
+    idFromName: (name: string) => name,
+    get: () => ({ fetch: async () => Response.json({ error: { code: 'REPO_FULL', message: 'Full' } }) }),
+  } } as unknown as Env;
+  const batcher = new LandBatcher(full, async () => {});
+  vi.useFakeTimers();
+  try {
+    const result = batcher.submit({ repo: 'r-full', ref: 'main' }, {}, 20_000);
+    expect(vi.getTimerCount()).toBe(1);
+    await batcher.step();
+    expect(await result).toMatchObject({ status: 'failed', code: 'REPO_FULL' });
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  }
 });
 
 it('logs a lander left waiting, which Superfan counts', async () => {
