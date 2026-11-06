@@ -192,3 +192,38 @@ fn pushes_without_the_token_are_refused() {
     assert!(!fetch.status.success(), "{}", text(&fetch));
     assert_eq!(l.status()["main"], before);
 }
+
+/// Killed after a merge landed staged in the authority, before its objects reached the
+/// store: restart writes them there, then moves `main` to the merge.
+#[test]
+fn restart_drains_a_staged_merge_the_crash_left_behind() {
+    let mut l = Local::new();
+    l.serve();
+    let a = l.worktree("wt-a");
+    let b = l.worktree("wt-b");
+    l.commit(&a, "a.txt", "a changed\n");
+    l.commit(&b, "b.txt", "b changed\n");
+    assert!(l.push(&a, &[]).status.success());
+    l.kill();
+    let marker = l.dir.path().join("paused");
+    let m = marker.to_str().unwrap().to_owned();
+    l.serve_with(&[
+        ("YONEDA_LOCAL_PAUSE", "after_land"),
+        ("YONEDA_LOCAL_PAUSE_FILE", &m),
+    ]);
+    let mut push = l.push_command(&b, &[]);
+    push.stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    let mut push = push.spawn().unwrap();
+    Local::wait_for(&marker);
+    l.kill();
+    let _ = push.wait();
+    let landed = l.status()["main"].as_str().unwrap().to_owned();
+    let held = l.git(&l.store(), &["cat-file", "-e", &landed]);
+    assert!(!held.status.success(), "the merge was still only staged");
+    l.serve();
+    assert_eq!(l.store_ref("main"), landed);
+    assert_eq!(l.show("main:a.txt"), "a changed");
+    assert_eq!(l.show("main:b.txt"), "b changed");
+    l.git_ok(&l.store(), &["fsck", "--strict", "--no-dangling"]);
+}

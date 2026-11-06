@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn adopting_the_cloud_id_keeps_the_earlier_one_as_an_alias() {
         let dir = tempfile::tempdir().unwrap();
-        let ok = Command::new("git")
+        let ok = Command::new(crate::store::git_bin())
             .args(["init", "-q"])
             .current_dir(dir.path())
             .status()

@@ -39,7 +39,7 @@ impl Config {
 impl Layout {
     /// The layout of the clone (or worktree) at `cwd`.
     pub fn find(cwd: &Path) -> Result<Self> {
-        let out = Command::new("git")
+        let out = Command::new(crate::store::git_bin())
             .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
             .current_dir(cwd)
             .output()

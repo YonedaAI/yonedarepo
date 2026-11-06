@@ -7,7 +7,7 @@ use crate::authority::Cred;
 use crate::moves::{self, Command, Outcomes};
 use crate::service::Service;
 use crate::timing::{Clock, Phases, wall_ms};
-use crate::{pause, project, verify};
+use crate::{outbox, pause, project, verify};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -110,6 +110,14 @@ pub fn receive(svc: &Service, cred: &Cred, body: &[u8]) -> Result<Vec<u8>> {
     }
     pause::point("after_land");
     let projecting = Clock::start();
+    // The platform's merge commits are staged in the authority: into the store first, so
+    // the refs below can move to them.
+    if let Err(e) = outbox::drain(svc) {
+        eprintln!(
+            "yoneda-local: staged objects not written yet: {}",
+            moves::reason(&e)
+        );
+    }
     if let Err(e) = project::project(svc) {
         eprintln!(
             "yoneda-local: refs not projected yet: {}",

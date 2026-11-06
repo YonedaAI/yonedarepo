@@ -138,10 +138,10 @@ plan above:
   then `repo_land` with `merge`), not queued for a combiner; both are the
   engine's paths and the authority verifies the merge either way. The host holds
   a lock across those steps so no other landing moves the head in between.
-- Nothing is staged in the authority: pushed packs are verified, then written to
-  the store before they are recorded, and the platform's own merge commits reach
-  the store as a receive-pack request (under a hidden ref the store does not
-  advertise), so the object outbox stays empty.
+- Pushed packs are verified, then written to the store before they are recorded.
+  The platform's own merge commits are staged in the authority and drained into
+  the store after the landing (since 2026-11-06; before, a receive-pack request
+  under a hidden ref, still used with `YONEDA_LOCAL_STAGE=off`).
 - Fetch is Git's own `git http-backend` over the store.
 - The token is an engine repository token (`token:local`, read, write and land),
   so the engine authenticates every request; per-agent tokens are the same
@@ -240,9 +240,9 @@ Races, local checks and write speed, built 2026-11-06:
   | 4 | 162 / 322–342 / 406 | 99 / 251–276 / 345 | 2 / 151–176 / 247 | 9.8–10.5 |
   | 16 | 311 / 911–970 / 1,491 | 198 / 770–827 / 1,351 | 1 / 555–570 / 1,089 | 10.7–11.2 |
 
-  Landings on `main` are serial under the landing lock, so throughput stays about 10 a
-  second whatever the writer count, and the wait is what grows. Not yet measured: a
-  release build, and where a landing's time goes beyond these phases.
+  Landings on `main` are serial under the landing lock, so throughput stayed about 10 a
+  second whatever the writer count. Since then (docs/local-landing-budget.md): 28.5–30.4
+  a second at 16 writers, 37–40 ms for a lone push.
 
 Acceptance criteria above: met for disjoint landing, overlap refusal with both
 proposals kept, crash and retry, Git verification, offline work with a changed cloud

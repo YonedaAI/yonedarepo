@@ -28,6 +28,10 @@ pub fn project(svc: &Service) -> Result<()> {
         if current == Some(*id) {
             continue;
         }
+        // A staged merge not yet drained into the store: the push that drains it moves it.
+        if !svc.store.has(id) {
+            continue;
+        }
         if current.is_none_or(|c| recorded(svc, &c)) {
             svc.store.update_ref(name, Some(*id), current)?;
         } else {

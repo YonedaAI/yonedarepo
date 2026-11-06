@@ -31,7 +31,7 @@ pub fn serve(store: &Store, req: &Request) -> Result<Answer> {
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("store.git");
-    let mut cmd = Command::new("git");
+    let mut cmd = Command::new(crate::store::git_bin());
     cmd.arg("http-backend")
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
