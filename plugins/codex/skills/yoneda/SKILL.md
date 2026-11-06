@@ -1,6 +1,6 @@
 ---
 name: yoneda
-description: Use when the current Git repository has a yoneda:: remote (git remote -v shows yoneda::https://...), or when asked to create, clone, read, land or review YonedaRepo repositories, or to use the yoneda CLI or YonedaRepo MCP tools. Not for ordinary GitHub/GitLab remotes.
+description: "Use when the current Git repository has a yoneda:: remote (git remote -v shows yoneda::https://...) or a local YonedaRepo remote (`local`, http://127.0.0.1:<port>/git/<id>.git or http://host.docker.internal:<port>/git/<id>.git), or when asked to create, clone, read, land or review YonedaRepo repositories, or to use the yoneda CLI or YonedaRepo MCP tools. Not for ordinary GitHub/GitLab remotes."
 ---
 
 # Working in a YonedaRepo repository
@@ -8,9 +8,11 @@ description: Use when the current Git repository has a yoneda:: remote (git remo
 YonedaRepo is a Git server built for many agents at once. Locally it is plain Git, with the platform's own commit ids. The difference is on the server: when you push to `main`, it **merges disjoint concurrent changes for you**, and each push is one transaction. Check the remote first:
 
 ```sh
-git remote -v            # yoneda::https://api.yonedarepo.com/r… means this skill applies
+git remote -v            # yoneda::https://api.yonedarepo.com/r… or local http://127.0.0.1:…/git/r….git means this skill applies
 yoneda status --brief    # one line, no network: repository, branch, commits not on the platform yet
 ```
+
+No `yoneda` command? Install it (with the `git-remote-yoneda` helper): `curl -fsSL https://yonedarepo.com/install.sh | sh`, then `yoneda login`. `yoneda setup claude|codex|gemini|opencode` adds what a skill cannot: the account MCP server, and in Claude Code and opencode the hooks that record your reads and sessions. Without them, everything below still works by hand.
 
 ## Cloning: fetch only what you need
 
@@ -47,6 +49,20 @@ Landing checks more than overlapping writes. A push may declare the files its ch
 1. The session's reads live in `.git/yoneda/reads` (never committed). In Claude Code the yoneda plugin records every Read and Grep result there. Elsewhere, declare the files your change relies on: `yoneda reads add <path>` (a directory as `dir/`). `yoneda reads list` shows them, `yoneda reads clear` drops them.
 2. Push. With a `yoneda::` remote, `git push` declares them by itself. With an HTTPS remote (`https://…/git/r….git`), use `yoneda push <git push arguments>` (e.g. `yoneda push origin main`): it adds `-o yoneda.reads=…`. Either clears them after a clean push. In Claude Code, a plain `git push` to an HTTPS remote is stopped while reads are recorded.
 3. Record the session. The Claude Code and opencode plugins do it at the end of each turn that pushed: the CLI, model, your last message (truncated) and the session's transcript with the context it started with. The platform redacts credentials in the transcript and the repository's readers can see it. Elsewhere, after pushing: `yoneda session record --cli <cli> --summary <text> --model <m> [--transcript <file>]` for HEAD (a short summary, never secrets). `yoneda session list` shows a commit's records.
+
+## A local service: many sessions on one machine
+
+A clone can run its own YonedaRepo (`yoneda local serve`): the same landing rules, on this machine, for every session and agent working in that clone. Its remote is `local` (`http://127.0.0.1:<port>/git/<id>.git`; from a container, `http://host.docker.internal:<port>/git/<id>.git`).
+
+1. **Work in your own worktree**, from local `main`: `git fetch local`, then `git worktree add -b <task> <path> local/main`. Never edit another session's worktree or the clone's own checkout.
+2. **Land with `git push local HEAD:main`.** One of three answers:
+   - it lands as is (nothing else landed meanwhile);
+   - `main: landed with server merge, run git pull`: others changed other files or lines, and both are on `main`;
+   - refused: `conflict in <path>`, `read conflict on <path>`, or `check <name> failed` (the clone's own checks run on what would land, merges included). Your branch is kept: `git pull local main`, fix, commit and push again.
+3. **Declare reads the same way**: `yoneda reads add <path>`, then `yoneda push local HEAD:main`.
+4. **Leave the cloud to the service.** It syncs `main` to the paired cloud repository by itself; `yoneda local status` shows local `main` and the cloud's state apart. Do not push the same work to the cloud remote as well.
+5. **No answer from the remote** (connection refused)? The service is not running. Ask the person who owns the clone to start `yoneda local serve`; do not start your own in a session.
+6. **In a container**, your Git password is the token made for you (`yoneda local token create <name>`, by the person); never use another agent's. `yoneda local log` shows each landing and who made it.
 
 ## Go-around: findings come back to you
 

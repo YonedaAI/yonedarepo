@@ -3,7 +3,7 @@
 //! placeholders filled in, so the documents cannot drift from `yoneda --help`.
 use super::*;
 
-const SKILL: &str = include_str!("../../../../../plugins/yoneda/skills/yoneda/SKILL.md");
+const SKILL: &str = include_str!("../../../../../skills/yoneda/SKILL.md");
 const CODEX_SKILL: &str = include_str!("../../../../../plugins/codex/skills/yoneda/SKILL.md");
 const GEMINI: &str = include_str!("../../../../../plugins/gemini/GEMINI.md");
 const CODEX_AGENTS: &str = include_str!("../../../../../plugins/codex/AGENTS.md");
@@ -63,7 +63,7 @@ fn concrete(command: &str) -> Vec<Vec<String>> {
 #[test]
 fn every_documented_command_parses() {
     let docs = [
-        ("plugins/yoneda/skills/yoneda/SKILL.md", SKILL),
+        ("skills/yoneda/SKILL.md", SKILL),
         ("plugins/gemini/GEMINI.md", GEMINI),
         ("plugins/codex/AGENTS.md", CODEX_AGENTS),
         ("plugins/opencode/AGENTS.md", OPENCODE_AGENTS),
