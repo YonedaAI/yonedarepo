@@ -45,11 +45,11 @@ fn ask_service(layout: &Layout, port: u16) -> Result<Sync> {
 }
 
 fn show(svc: &Service, sync: &Sync, as_json: bool) -> Result<String> {
-    let main = sync::local_main(svc)?.map(|m| m.to_string());
-    let version = sync::main_version(svc)?;
+    let head = sync::local_head(svc)?.map(|m| m.to_string());
+    let version = sync::log_version(svc)?;
     let unsynced = sync::unsynced(svc, sync.synced_version)?;
     let cloud = sync.repo.as_ref().map(|r| {
-        json!({ "origin": sync.origin, "repo": r, "main": sync.cloud_main, "paired": sync.paired })
+        json!({ "origin": sync.origin, "repo": r, "branch": svc.config.branch, "head": sync.cloud_main, "main": if svc.config.branch == "main" { sync.cloud_main.as_deref() } else { None }, "paired": sync.paired })
     });
     let url = svc
         .layout
@@ -57,7 +57,8 @@ fn show(svc: &Service, sync: &Sync, as_json: bool) -> Result<String> {
         .map_or_else(|_| svc.config.url(), |c| c.url());
     if as_json {
         return Ok(json!({
-            "main": main, "version": version, "url": url,
+            "branch": svc.config.branch, "head": head,
+            "main": if svc.config.branch == "main" { head.as_deref() } else { None }, "version": version, "url": url,
             "sync": { "state": sync.state, "detail": sync.detail, "unsynced": unsynced,
                       "last_round_ms": sync.last_round_ms, "cloud": cloud.unwrap_or(Value::Null) },
         })
@@ -68,7 +69,11 @@ fn show(svc: &Service, sync: &Sync, as_json: bool) -> Result<String> {
         .and_then(|v| v.as_str().map(str::to_owned))
         .unwrap_or_default();
     let mut lines = vec![
-        format!("local main: {}", main.as_deref().unwrap_or("(empty)")),
+        format!(
+            "local {}: {}",
+            svc.config.branch,
+            head.as_deref().unwrap_or("(empty)")
+        ),
         format!("log version: {version}"),
         format!("remote local: {url}"),
         format!("cloud sync: {state}"),
@@ -76,7 +81,8 @@ fn show(svc: &Service, sync: &Sync, as_json: bool) -> Result<String> {
     if let (Some(origin), Some(repo)) = (&sync.origin, &sync.repo) {
         lines.push(format!("cloud repository: {origin} ({repo})"));
         lines.push(format!(
-            "cloud main: {}",
+            "cloud {}: {}",
+            svc.config.branch,
             sync.cloud_main.as_deref().unwrap_or("(empty)")
         ));
     }

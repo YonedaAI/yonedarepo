@@ -132,11 +132,11 @@ fn landed(
     if merged {
         messages.push(format!("{branch}: landed with server merge, run git pull"));
     }
-    if branch == "main"
+    if branch == svc.config.branch
         && answer["already"] != true
         && let Some(version) = answer["version"].as_u64()
     {
-        svc.landed_on_main(version);
+        svc.landed_on_branch(version);
     }
     None
 }

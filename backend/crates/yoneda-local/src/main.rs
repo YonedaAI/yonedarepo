@@ -3,12 +3,12 @@
 //!
 //! - `init`: set up the clone's local repository and remote `local`.
 //! - `serve`: run the service (one per clone) until interrupted.
-//! - `status [--json]`: local `main` and its log version, and where cloud sync stands.
+//! - `status [--json]`: local the integration branch and its log version, and where cloud sync stands.
 //! - `sync [--json]`: run a sync round now (in the running service, else here).
 //! - `token create <name> | list | revoke <name>`: an agent's own token (`token:<name>`).
 //! - `log [--json]`: the newest landings and who made each.
 //! - `check add <name> (--on-host | --image <image>) -- <command> | list | remove <name>`:
-//!   checks run on what would land on `main` (its merge, when there is one).
+//!   checks run on what would land on the integration branch (its merge, when there is one).
 //! - `credential get`: Git's credential helper for the remote.
 mod advertise;
 mod authority;
@@ -17,6 +17,7 @@ mod check_cmd;
 mod checks;
 mod cloud;
 mod compute;
+mod configure;
 mod credential;
 mod http;
 mod init;
@@ -44,7 +45,7 @@ use service::Service;
 use std::sync::Arc;
 use yoneda_core::Result;
 
-const USAGE: &str = "usage: yoneda local <init | serve | status [--json] | sync [--json] | \
+const USAGE: &str = "usage: yoneda local <init [--branch <name>] [--no-cloud] | configure [--branch <name>] [--no-cloud | --cloud] | serve | status [--json] | sync [--json] | \
                      token <create <name> | list | revoke <name>> | log [--json] | \
                      check <add | list | remove> | credential get>";
 
@@ -65,7 +66,8 @@ fn main() {
 
 fn run(cwd: &std::path::Path, args: &[String]) -> Result<String> {
     match args.first().map(String::as_str) {
-        Some("init") => init::init(cwd),
+        Some("init") => init::init(cwd, &args[1..]),
+        Some("configure") => configure::run(cwd, &args[1..]),
         Some("serve") => serve(cwd).map(|()| String::new()),
         Some("status") => report::status(cwd, args.iter().any(|a| a == "--json")),
         Some("sync") => report::sync_now(cwd, args.iter().any(|a| a == "--json")),
@@ -86,6 +88,8 @@ fn serve(cwd: &std::path::Path) -> Result<()> {
     let _held = lock::take(&layout)?;
     let svc = Arc::new(Service::open(&layout)?);
     svc.store.configure()?;
+    svc.store
+        .git(&["symbolic-ref", "HEAD", &svc.config.refname()], None)?;
     // A crash may have fallen between a staged landing and its objects reaching the store,
     // or between the authority's commit and a ref update.
     outbox::drain(&svc)?;

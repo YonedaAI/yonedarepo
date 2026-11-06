@@ -21,9 +21,16 @@ pub struct Config {
     pub repo: String,
     pub port: u16,
     pub aliases: Vec<String>,
+    /// Local integration branch, also the paired cloud branch when sync is enabled.
+    pub branch: String,
+    pub sync_enabled: bool,
 }
 
 impl Config {
+    pub fn refname(&self) -> String {
+        format!("refs/heads/{}", self.branch)
+    }
+
     /// Whether `repo` (from a request path) names this repository: its id or an earlier one.
     pub fn serves(&self, repo: &str) -> bool {
         repo == self.repo || self.aliases.iter().any(|a| a == repo)
@@ -101,12 +108,15 @@ impl Layout {
             repo,
             port,
             aliases,
+            branch: value["branch"].as_str().unwrap_or("main").to_owned(),
+            sync_enabled: value["sync_enabled"].as_bool().unwrap_or(true),
         })
     }
 
     pub fn write_config(&self, config: &Config) -> Result<()> {
-        let text = json!({ "repo": config.repo, "port": config.port, "aliases": config.aliases })
-            .to_string();
+        let text = json!({ "repo": config.repo, "port": config.port, "aliases": config.aliases,
+            "branch": config.branch, "sync_enabled": config.sync_enabled })
+        .to_string();
         write_private(&self.config_path(), text.as_bytes())
     }
 

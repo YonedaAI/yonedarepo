@@ -1,8 +1,11 @@
 # Future feature: local Rust repository service
 
-Status: in progress, 2026-11-04 (owner: "we need our model locally and in the cloud";
-"each local repo has a yonedarepo"). Work lands on `claude/yoneda-local`, not `dev`,
-until the owner says so.
+Status: implemented locally; configurable integration branch added 2026-11-06.
+This repository uses **task branches → local/dev → dev → release PR → main**.
+`yoneda local configure --branch dev --no-cloud` selects development landing
+without automatic cloud publication. See [the runbook](runbook.md)
+for commands. Existing installations default to `main`; the original design
+below uses that name for the shared integration branch.
 
 ## Intended outcome
 

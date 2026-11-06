@@ -15,9 +15,9 @@ pub enum State {
     Synced,
     /// Local landings not yet on the cloud (or a round not run yet).
     Pending,
-    /// Cloud `main` moved in a way that conflicts with local `main`; local `main` is kept.
+    /// Cloud the integration branch moved in a way that conflicts with local the integration branch; local the integration branch is kept.
     Diverged,
-    /// The cloud refused local `main` as a conflict; the cloud is left as it was.
+    /// The cloud refused local the integration branch as a conflict; the cloud is left as it was.
     Conflict,
     /// The cloud could not be reached; local work keeps landing.
     Offline,
@@ -25,6 +25,8 @@ pub enum State {
     Refused,
     /// No cloud repository yet: no yoneda remote and no stored login to create one with.
     Unpaired,
+    /// Publication is explicitly disabled for this clone.
+    Disabled,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -35,14 +37,14 @@ pub struct Sync {
     pub name: Option<String>,
     /// The cloud repository id (the local one matches it once paired).
     pub repo: Option<String>,
-    /// Whether `main`'s history has reached the cloud repository.
+    /// Whether the integration branch's history has reached the cloud repository.
     pub paired: bool,
     pub state: State,
     /// Why, in the platform's or Git's words.
     pub detail: Option<String>,
-    /// Cloud `main` as last seen.
+    /// Cloud the integration branch as last seen.
     pub cloud_main: Option<String>,
-    /// The local log version up to which local `main` is on the cloud.
+    /// The local log version up to which local the integration branch is on the cloud.
     pub synced_version: u64,
     /// When the last round finished (ms since the epoch).
     pub last_round_ms: Option<u64>,

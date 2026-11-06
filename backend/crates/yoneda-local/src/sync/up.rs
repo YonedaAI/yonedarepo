@@ -1,9 +1,9 @@
-//! Up: local `main` onto cloud `main`, by a stock smart-HTTP push from the store, so every
+//! Up: local the integration branch onto cloud the integration branch, by a stock smart-HTTP push from the store, so every
 //! commit keeps its id. The push declares the union of what the unsynced local landings
 //! read, so the cloud's own landing rules judge them; a refusal leaves the cloud as it was
-//! and local `main` as it is (a local landing is never rolled back).
+//! and local the integration branch as it is (a local landing is never rolled back).
 use super::state::{State, Sync};
-use super::{Ctx, classify, local_main, main_version};
+use super::{Ctx, classify, local_head, log_version};
 use crate::cloud;
 use crate::service::PROJECTOR;
 use serde_json::json;
@@ -15,12 +15,12 @@ const LOG_PAGE: u64 = 500;
 /// The most read paths one push declares (the cloud caps them as well).
 const MAX_READS: usize = 1000;
 
-/// Pushes local `main` when the cloud lacks it. Answers whether anything was pushed.
+/// Pushes local the integration branch when the cloud lacks it. Answers whether anything was pushed.
 pub fn up(ctx: &Ctx, sync: &mut Sync) -> Result<bool> {
-    let Some(local) = local_main(ctx.svc)? else {
+    let Some(local) = local_head(ctx.svc)? else {
         return Ok(false);
     };
-    let version = main_version(ctx.svc)?;
+    let version = log_version(ctx.svc)?;
     let on_cloud = sync.cloud_main.as_deref().is_some_and(|c| {
         c == local.to_string()
             || yoneda_core::git_object::ObjectId::parse(c)
@@ -32,7 +32,7 @@ pub fn up(ctx: &Ctx, sync: &mut Sync) -> Result<bool> {
     }
     let reads = unsynced_reads(ctx, sync.synced_version)?;
     let url = ctx.cloud.git_url();
-    let refspec = format!("{local}:refs/heads/main");
+    let refspec = format!("{local}:{}", ctx.svc.config.refname());
     let option = format!("yoneda.reads={}", reads.join(","));
     let mut args = vec!["push", "--porcelain", &url, &refspec];
     if !reads.is_empty() {
@@ -46,13 +46,16 @@ pub fn up(ctx: &Ctx, sync: &mut Sync) -> Result<bool> {
     let porcelain = String::from_utf8_lossy(&out.stdout);
     let rejected = porcelain
         .lines()
-        .find(|l| l.starts_with('!') && l.contains("refs/heads/main"));
+        .find(|l| l.starts_with('!') && l.contains(&ctx.svc.config.refname()));
     match rejected {
         Some(line) if line.contains("conflict") => {
             let why = line.rsplit('\t').next().unwrap_or(line).trim();
             sync.note(
                 State::Conflict,
-                format!("the cloud refused local main {local}: {why}"),
+                format!(
+                    "the cloud refused local {} {local}: {why}",
+                    ctx.svc.config.branch
+                ),
             );
         }
         Some(line) => sync.note(State::Pending, line.trim().to_owned()),
@@ -64,7 +67,7 @@ pub fn up(ctx: &Ctx, sync: &mut Sync) -> Result<bool> {
     Ok(false)
 }
 
-/// Every path the local landings on `main` after `version` declared they read.
+/// Every path the local landings on the integration branch after `version` declared they read.
 fn unsynced_reads(ctx: &Ctx, mut after: u64) -> Result<Vec<String>> {
     let mut reads = BTreeSet::new();
     loop {
@@ -77,7 +80,7 @@ fn unsynced_reads(ctx: &Ctx, mut after: u64) -> Result<Vec<String>> {
             break;
         };
         for e in &entries {
-            if e["refname"] == "refs/heads/main" {
+            if e["refname"] == ctx.svc.config.refname() {
                 for r in e["read_set"].as_array().into_iter().flatten() {
                     if let Some(r) = r.as_str() {
                         reads.insert(r.to_owned());

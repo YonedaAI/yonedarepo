@@ -1,7 +1,7 @@
 //! Cloud sync: each local repository is paired with a cloud repository and kept in step
-//! with it automatically: a round runs right after each landing on local `main`, every
+//! with it automatically: a round runs right after each landing on local the integration branch, every
 //! 30 seconds (`YONEDA_LOCAL_SYNC_SECONDS`), and on `yoneda local sync`. A round pairs if
-//! needed, brings cloud `main` down, pushes local `main` up, and brings down whatever the
+//! needed, brings cloud the integration branch down, pushes local the integration branch up, and brings down whatever the
 //! cloud made of it (a cloud merge). Local acceptance and cloud publication stay separate
 //! outcomes: nothing local is rolled back because the cloud refused it.
 mod down;
@@ -22,7 +22,7 @@ use yoneda_core::{Result, git_object::ObjectId};
 
 /// Why the sync thread wakes.
 pub enum Kick {
-    /// `main` landed locally.
+    /// the integration branch landed locally.
     Landed,
     /// `yoneda local sync`: run a round now and answer its outcome.
     Now(mpsc::Sender<Sync>),
@@ -33,7 +33,7 @@ pub struct Ctx<'a> {
     pub svc: &'a Service,
     pub layout: &'a Layout,
     pub cloud: Cloud,
-    /// Sync's own principal for landing cloud `main` locally.
+    /// Sync's own principal for landing cloud the integration branch locally.
     pub cred: Cred,
 }
 
@@ -96,10 +96,14 @@ pub fn round(svc: &Service) -> Sync {
 }
 
 fn steps(svc: &Service, layout: &Layout, sync: &mut Sync) -> Result<()> {
+    if !svc.config.sync_enabled {
+        sync.note(State::Disabled, "cloud sync is disabled for this clone");
+        return Ok(());
+    }
     let Some(cloud) = pair::pair(svc, layout, sync)? else {
         return Ok(());
     };
-    // Up pushes local `main` from the store, so its staged merges go there first.
+    // Up pushes local the integration branch from the store, so its staged merges go there first.
     crate::outbox::drain(svc)?;
     let ctx = Ctx {
         svc,
@@ -109,7 +113,7 @@ fn steps(svc: &Service, layout: &Layout, sync: &mut Sync) -> Result<()> {
     };
     down::down(&ctx, sync)?;
     if up::up(&ctx, sync)? {
-        // The cloud may have merged local main with work of its own: bring that down.
+        // The cloud may have merged local head with work of its own: bring that down.
         down::down(&ctx, sync)?;
         up::up(&ctx, sync)?;
     }
@@ -131,26 +135,26 @@ fn sync_token(svc: &Service, layout: &Layout) -> Result<String> {
     Ok(token)
 }
 
-/// Local `main`, from the authority.
-pub fn local_main(svc: &Service) -> Result<Option<ObjectId>> {
+/// Local the integration branch, from the authority.
+pub fn local_head(svc: &Service) -> Result<Option<ObjectId>> {
     let listed = svc
         .authority
         .call(&PROJECTOR, json!({ "op": "repo_refs" }))?;
-    listed["refs"]["refs/heads/main"]
+    listed["refs"][svc.config.refname()]
         .as_str()
         .map(ObjectId::parse)
         .transpose()
 }
 
 /// The local log's version.
-pub fn main_version(svc: &Service) -> Result<u64> {
+pub fn log_version(svc: &Service) -> Result<u64> {
     let listed = svc
         .authority
         .call(&PROJECTOR, json!({ "op": "repo_refs" }))?;
     Ok(listed["version"].as_u64().unwrap_or(0))
 }
 
-/// Landings on local `main` after `version`.
+/// Landings on local the integration branch after `version`.
 pub fn unsynced(svc: &Service, version: u64) -> Result<u64> {
     let page = svc.authority.call(
         &PROJECTOR,
@@ -160,7 +164,7 @@ pub fn unsynced(svc: &Service, version: u64) -> Result<u64> {
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|e| e["refname"] == "refs/heads/main")
+        .filter(|e| e["refname"] == svc.config.refname())
         .count() as u64)
 }
 
