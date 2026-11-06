@@ -182,10 +182,27 @@ impl Local {
     }
 
     pub fn push(&self, wt: &Path, extra: &[&str]) -> Output {
-        let mut args = vec!["push"];
-        args.extend_from_slice(extra);
-        args.extend_from_slice(&["local", "HEAD:refs/heads/main"]);
-        self.git(wt, &args)
+        self.push_command(wt, extra).output().unwrap()
+    }
+
+    /// `git push local HEAD:main` from `wt`, ready to run on another thread.
+    pub fn push_command(&self, wt: &Path, extra: &[&str]) -> Command {
+        let mut cmd = Command::new("git");
+        cmd.arg("push")
+            .args(extra)
+            .args(["local", "HEAD:refs/heads/main"])
+            .current_dir(wt);
+        self.env(&mut cmd);
+        cmd
+    }
+
+    /// The service's per-push timings (`YONEDA_LOCAL_TIMINGS`), one JSON object per push.
+    pub fn timings(path: &Path) -> Vec<Value> {
+        std::fs::read_to_string(path)
+            .unwrap_or_default()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
     }
 
     pub fn status(&self) -> Value {
