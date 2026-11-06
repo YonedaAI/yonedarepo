@@ -6,6 +6,7 @@
 use crate::authority::{Authority, Cred};
 use crate::compute;
 use crate::layout::local_error;
+use crate::outbox::{self, Objects};
 use crate::store::Store;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::json;
@@ -37,8 +38,9 @@ pub fn build(
         cred,
         json!({ "op": "repo_merge_plan", "ref": refname, "commit": commit }),
     )?;
+    let objects = Objects { store, authority };
     let merged = compute::run(
-        store,
+        &objects,
         json!({ "op": "merge_trees", "base": plan["base_tree"], "ours": plan["head_tree"],
                 "theirs": plan["commit_tree"] }),
     )?;
@@ -53,15 +55,25 @@ pub fn build(
     }
     let branch = refname.trim_start_matches("refs/heads/");
     let short: String = commit.chars().take(10).collect();
-    let prepared = compute::supplied(store, |trees, blobs| {
+    let stage = outbox::staging();
+    let prepared = compute::supplied(&objects, |trees, blobs| {
         authority.call(
             &MERGER,
             json!({ "op": "repo_prepare_commit", "parent": plan["head"], "merge_parent": commit,
                     "base_version": plan["version"], "changes": merged["changes"], "read_set": [],
                     "trees": trees, "blobs": blobs, "message": format!("Merge {short} into {branch}"),
-                    "author": { "name": AUTHOR.0, "email": AUTHOR.1 } }),
+                    "author": { "name": AUTHOR.0, "email": AUTHOR.1 }, "stage": stage }),
         )
     })?;
+    let id = ObjectId::parse(prepared["commit"].as_str().unwrap_or_default())?;
+    if prepared["staged"] == true {
+        // Held durably by the authority; `outbox::drain` writes it to the store.
+        authority.call(
+            &MERGER,
+            json!({ "op": "repo_record_commit", "commit": id, "staged": true }),
+        )?;
+        return Ok(id);
+    }
     let push = STANDARD
         .decode(prepared["push_b64"].as_str().unwrap_or_default())
         .map_err(|_| local_error("The prepared merge has no pack"))?;
@@ -71,7 +83,6 @@ pub fn build(
             "The store refused the merge commit: {why}"
         )));
     }
-    let id = ObjectId::parse(prepared["commit"].as_str().unwrap_or_default())?;
     let read = store.read(&[id])?;
     let (_, data) = read
         .get(&id)

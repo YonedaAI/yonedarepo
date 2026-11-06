@@ -1,7 +1,7 @@
 //! The engine's stateless compute (`platform_compute`) and the prepare loop, answered from
 //! the store: they ask for trees and files by id, as they ask the Worker's object tiers.
 use crate::layout::local_error;
-use crate::store::Store;
+use crate::outbox::Objects;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Map, Value, json};
 use yoneda_core::{
@@ -21,9 +21,9 @@ fn ids(list: &Value) -> Result<Vec<ObjectId>> {
 }
 
 /// `{id: [{name, type, id}]}` for the trees `need` names.
-fn listings(store: &Store, need: &Value, into: &mut Map<String, Value>) -> Result<()> {
+fn listings(objects: &Objects, need: &Value, into: &mut Map<String, Value>) -> Result<()> {
     let wanted = ids(need)?;
-    let found = store.read(&wanted)?;
+    let found = objects.read(&wanted)?;
     for id in wanted {
         let (_, data) = found
             .get(&id)
@@ -38,9 +38,9 @@ fn listings(store: &Store, need: &Value, into: &mut Map<String, Value>) -> Resul
 }
 
 /// `{id: base64}` for the files `need` names.
-fn contents(store: &Store, need: &Value, into: &mut Map<String, Value>) -> Result<()> {
+fn contents(objects: &Objects, need: &Value, into: &mut Map<String, Value>) -> Result<()> {
     let wanted = ids(need)?;
-    let found = store.read(&wanted)?;
+    let found = objects.read(&wanted)?;
     for id in wanted {
         let (_, data) = found
             .get(&id)
@@ -52,16 +52,16 @@ fn contents(store: &Store, need: &Value, into: &mut Map<String, Value>) -> Resul
 
 /// Repeats `step` with the trees and files it asks for until it answers something else.
 pub fn supplied(
-    store: &Store,
+    objects: &Objects,
     mut step: impl FnMut(&Value, &Value) -> Result<Value>,
 ) -> Result<Value> {
     let (mut trees, mut blobs) = (Map::new(), Map::new());
     for _ in 0..ROUNDS {
         let answer = step(&json!(trees), &json!(blobs))?;
         if let Some(need) = answer.get("need_trees").filter(|n| n.is_array()) {
-            listings(store, need, &mut trees)?;
+            listings(objects, need, &mut trees)?;
         } else if let Some(need) = answer.get("need_blobs").filter(|n| n.is_array()) {
-            contents(store, need, &mut blobs)?;
+            contents(objects, need, &mut blobs)?;
         } else {
             return Ok(answer);
         }
@@ -70,8 +70,8 @@ pub fn supplied(
 }
 
 /// Runs compute `command` (e.g. `merge_trees`) to its answer.
-pub fn run(store: &Store, command: Value) -> Result<Value> {
-    supplied(store, |trees, blobs| {
+pub fn run(objects: &Objects, command: Value) -> Result<Value> {
+    supplied(objects, |trees, blobs| {
         let mut asked = command.clone();
         asked["trees"] = trees.clone();
         asked["blobs"] = blobs.clone();

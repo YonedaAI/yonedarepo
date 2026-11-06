@@ -19,6 +19,8 @@ pub struct Service {
     /// against the head is landed before anyone else moves it.
     pub landing: Mutex<()>,
     pub projecting: Mutex<()>,
+    /// One drain of staged objects into the store at a time (`outbox`).
+    pub draining: Mutex<()>,
     /// `main`'s log version after each landing on it: the seam cloud sync subscribes to.
     pub main_landed: watch::Sender<u64>,
     /// The running sync thread, told of each landing on `main` (none outside `serve`).
@@ -40,6 +42,7 @@ impl Service {
             layout: layout.clone(),
             landing: Mutex::new(()),
             projecting: Mutex::new(()),
+            draining: Mutex::new(()),
             main_landed: watch::channel(0).0,
             sync: Mutex::new(None),
             timings: Timings::from_env(),

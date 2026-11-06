@@ -25,8 +25,10 @@ mod layout;
 mod lock;
 mod merge;
 mod moves;
+mod outbox;
 mod pause;
 mod project;
+mod reader;
 mod receive;
 mod report;
 mod service;
@@ -84,7 +86,9 @@ fn serve(cwd: &std::path::Path) -> Result<()> {
     let _held = lock::take(&layout)?;
     let svc = Arc::new(Service::open(&layout)?);
     svc.store.configure()?;
-    // A crash may have fallen between the authority's commit and a ref update.
+    // A crash may have fallen between a staged landing and its objects reaching the store,
+    // or between the authority's commit and a ref update.
+    outbox::drain(&svc)?;
     project::project(&svc)?;
     let kicks = sync::start(svc.clone())?;
     *svc.sync.lock().unwrap_or_else(|e| e.into_inner()) = Some(kicks);

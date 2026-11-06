@@ -106,7 +106,7 @@ pub fn git(dir: &Path, origin: &str, args: &[&str]) -> Result<Output> {
         "credential.helper=!'{}' credential cloud",
         exe.display().to_string().replace('\'', r"'\''")
     );
-    Command::new("git")
+    Command::new(crate::store::git_bin())
         .arg("-C")
         .arg(dir)
         .args(["-c", "credential.helper=", "-c", &helper])

@@ -2,10 +2,12 @@
 //! written and fsynced (`core.fsync`) before the authority records them; refs here are a
 //! projection of the authority's (`project`), moved only with an expected old value.
 use crate::layout::local_error;
+use crate::reader::{self, Reader};
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, OnceLock};
 use yoneda_core::{
     Result,
     git_object::{ObjectId, ObjectKind, hash_object},
@@ -14,6 +16,23 @@ use yoneda_core::{
 #[derive(Clone, Debug)]
 pub struct Store {
     pub path: PathBuf,
+    reader: Arc<Reader>,
+}
+
+/// The Git binary, found once: on macOS `/usr/bin/git` is a shim that looks the developer
+/// tools up on every run (9.8 ms against 3.1 ms for `git --version`), so the binary it
+/// would run is used directly. Elsewhere, or if that lookup fails, `git` on `PATH`.
+pub fn git_bin() -> &'static str {
+    static BIN: OnceLock<String> = OnceLock::new();
+    BIN.get_or_init(|| {
+        let found = cfg!(target_os = "macos")
+            .then(|| Command::new("xcrun").args(["--find", "git"]).output().ok())
+            .flatten()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+            .filter(|p| !p.is_empty() && Path::new(p).is_file());
+        found.unwrap_or_else(|| "git".to_owned())
+    })
 }
 
 /// Settings of the store: objects and refs durable before Git returns, nothing ever
@@ -38,6 +57,7 @@ impl Store {
     pub fn at(path: &Path) -> Self {
         Self {
             path: path.to_owned(),
+            reader: Arc::new(Reader::new(path)),
         }
     }
 
@@ -67,8 +87,23 @@ impl Store {
         run_in(&self.path, &full, stdin)
     }
 
-    /// Objects by id (`None` for missing ones), through one `git cat-file --batch`.
+    /// Objects by id (missing ones left out), from the long-lived reader.
     pub fn read(&self, ids: &[ObjectId]) -> Result<HashMap<ObjectId, (ObjectKind, Vec<u8>)>> {
+        if !reader::on() {
+            return self.read_spawned(ids);
+        }
+        let answers = self.reader.ask(ids, true)?;
+        let mut found = HashMap::new();
+        for (id, answer) in ids.iter().zip(answers) {
+            if let Some((kind, Some(data))) = answer {
+                found.insert(*id, (kind_of(&kind)?, data));
+            }
+        }
+        Ok(found)
+    }
+
+    /// `read` through one `git cat-file --batch` process (`YONEDA_LOCAL_READER=spawn`).
+    fn read_spawned(&self, ids: &[ObjectId]) -> Result<HashMap<ObjectId, (ObjectKind, Vec<u8>)>> {
         let input: String = ids.iter().map(|id| format!("{id}\n")).collect();
         let out = self.git(&["cat-file", "--batch"], Some(input.as_bytes()))?;
         let mut found = HashMap::new();
@@ -101,6 +136,15 @@ impl Store {
 
     /// The ids among `ids` this store holds as `kind`.
     pub fn holds(&self, ids: &[ObjectId], kind: &str) -> Result<Vec<ObjectId>> {
+        if reader::on() {
+            let answers = self.reader.ask(ids, false)?;
+            return Ok(ids
+                .iter()
+                .zip(answers)
+                .filter(|(_, a)| a.as_ref().is_some_and(|(k, _)| k == kind))
+                .map(|(id, _)| *id)
+                .collect());
+        }
         let input: String = ids.iter().map(|id| format!("{id}\n")).collect();
         let out = self.git(
             &["cat-file", "--batch-check=%(objectname) %(objecttype)"],
@@ -152,6 +196,12 @@ impl Store {
 
     /// Whether the store holds object `id`.
     pub fn has(&self, id: &ObjectId) -> bool {
+        if reader::on() {
+            return self
+                .reader
+                .ask(&[*id], false)
+                .is_ok_and(|a| a.first().is_some_and(Option::is_some));
+        }
         self.git(&["cat-file", "-e", &id.to_string()], None).is_ok()
     }
 
@@ -209,7 +259,7 @@ fn kind_of(name: &str) -> Result<ObjectKind> {
 
 /// Runs `git args` in `cwd` with `stdin`, answering its output or its error text.
 pub fn run_in(cwd: &Path, args: &[&str], stdin: Option<&[u8]>) -> Result<Vec<u8>> {
-    let mut child = Command::new("git")
+    let mut child = Command::new(git_bin())
         .args(args)
         .current_dir(cwd)
         .env_remove("GIT_DIR")

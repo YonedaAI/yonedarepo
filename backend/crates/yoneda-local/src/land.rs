@@ -6,7 +6,7 @@ use crate::authority::Cred;
 use crate::moves::{Command, reason, short};
 use crate::service::Service;
 use crate::timing::{Clock, Phases};
-use crate::{checks, merge};
+use crate::{checks, merge, outbox};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use yoneda_core::{Error, git_object::ObjectId};
@@ -60,6 +60,10 @@ pub fn land(
         };
         if checked {
             let running = Clock::start();
+            // The check's checkout reads the merge commit from the store.
+            if let Err(e) = outbox::drain(svc) {
+                return Some(format!("checks could not start: {}", e.message));
+            }
             let refused = checks::gate(svc, cred, &merge.hex(), true, messages);
             phases.add("checks", running.ms());
             if refused.is_some() {

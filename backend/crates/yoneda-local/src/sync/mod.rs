@@ -99,6 +99,8 @@ fn steps(svc: &Service, layout: &Layout, sync: &mut Sync) -> Result<()> {
     let Some(cloud) = pair::pair(svc, layout, sync)? else {
         return Ok(());
     };
+    // Up pushes local `main` from the store, so its staged merges go there first.
+    crate::outbox::drain(svc)?;
     let ctx = Ctx {
         svc,
         layout,
