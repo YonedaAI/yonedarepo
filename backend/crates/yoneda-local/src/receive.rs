@@ -30,6 +30,7 @@ pub fn receive(svc: &Service, cred: &Cred, body: &[u8]) -> Result<Vec<u8>> {
         cred,
         json!({ "op": "repo_git_access", "service": "git-receive-pack" }),
     )?;
+    let actor = access["principal"].as_str().unwrap_or_default();
     let mut session = ReceiveSession::new();
     let mut failure = unpack(svc, &mut session, body)
         .err()
@@ -59,6 +60,7 @@ pub fn receive(svc: &Service, cred: &Cred, body: &[u8]) -> Result<Vec<u8>> {
         for c in &commands {
             outcomes.insert(c.refname.clone(), Some(why.clone()));
         }
+        svc.activity.record(actor, &commands, &outcomes, start_ms);
         return report(&commands, &outcomes, Some(&why), side_band, &messages);
     }
     let atomic = caps.iter().any(|c| c == "atomic") && commands.len() > 1;
@@ -86,6 +88,7 @@ pub fn receive(svc: &Service, cred: &Cred, body: &[u8]) -> Result<Vec<u8>> {
                     outcomes.insert(c.refname.clone(), Some(why.clone()));
                 }
                 let unpack = (e.code != "SECRET_DETECTED").then_some(why.as_str());
+                svc.activity.record(actor, &commands, &outcomes, start_ms);
                 return report(&commands, &outcomes, unpack, side_band, &messages);
             }
         }
@@ -129,6 +132,7 @@ pub fn receive(svc: &Service, cred: &Cred, body: &[u8]) -> Result<Vec<u8>> {
         );
     }
     let project_ms = projecting.ms();
+    svc.activity.record(actor, &commands, &outcomes, start_ms);
     let answer = report(&commands, &outcomes, None, side_band, &messages);
     if svc.timings.on() {
         let lines: Vec<Value> = commands

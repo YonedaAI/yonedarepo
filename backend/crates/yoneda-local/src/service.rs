@@ -27,6 +27,7 @@ pub struct Service {
     pub sync: Mutex<Option<mpsc::Sender<Kick>>>,
     /// Per-push timings, when switched on (`timing`).
     pub timings: Timings,
+    pub activity: crate::dashboard::activity::Activity,
 }
 
 /// The ref projector's platform role (`repo_refs`, `repo_commit`: read).
@@ -46,6 +47,7 @@ impl Service {
             branch_landed: watch::channel(0).0,
             sync: Mutex::new(None),
             timings: Timings::from_env(),
+            activity: crate::dashboard::activity::Activity::default(),
         })
     }
 
