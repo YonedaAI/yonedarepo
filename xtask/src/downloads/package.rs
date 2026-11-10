@@ -81,8 +81,8 @@ pub(super) fn manifest(site: &str, version: &str, built: &[(&str, u64, String)])
         .collect();
     json!({
         "version": version,
-        "install": format!("curl -fsSL {site}/install.sh | sh"),
-        "install_windows": format!("irm {site}/install.ps1 | iex"),
+        "install": format!("curl -fsSL {site}/downloads/cli/{version}/install.sh | sh"),
+        "install_windows": format!("irm {site}/downloads/cli/{version}/install.ps1 | iex"),
         "sha256sums": format!("{site}/downloads/cli/{version}/SHA256SUMS"),
         "targets": targets,
     })

@@ -1,7 +1,7 @@
 //! `cargo xtask downloads stage|assemble|upload --env dev|prod`: the public downloads the front
 //! Worker serves (cloudflare/worker/downloads.ts has the layout).
 //!
-//! `stage` builds the `yoneda` CLI for each target, packs `yoneda` and `git-remote-yoneda`
+//! `stage` builds the `yoneda` CLI for each target, packs `yoneda`, `git-remote-yoneda` and `yoneda-local`
 //! into `yoneda-<version>-<target>.tar.gz` (a `.zip` of the `.exe` files on Windows), writes
 //! SHA256SUMS, `cli/latest.json` and `cli/LATEST`, zips the Claude Code plugin (plugins/yoneda)
 //! and fills in the public marketplace (plugins/public-marketplace.json) with the zip's address

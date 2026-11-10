@@ -34,7 +34,7 @@ fn manifest_points_at_the_site_and_each_archive() {
     assert_eq!(m["version"], "0.1.0");
     assert_eq!(
         m["install"],
-        "curl -fsSL https://yonedarepo.com/install.sh | sh"
+        "curl -fsSL https://yonedarepo.com/downloads/cli/0.1.0/install.sh | sh"
     );
     assert_eq!(
         m["targets"]["linux-arm64"]["url"],
@@ -43,7 +43,7 @@ fn manifest_points_at_the_site_and_each_archive() {
     assert_eq!(m["targets"]["linux-arm64"]["size"], 7);
     assert_eq!(
         m["install_windows"],
-        "irm https://yonedarepo.com/install.ps1 | iex"
+        "irm https://yonedarepo.com/downloads/cli/0.1.0/install.ps1 | iex"
     );
 }
 
