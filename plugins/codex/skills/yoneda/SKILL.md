@@ -54,7 +54,7 @@ Landing checks more than overlapping writes. A push may declare the files its ch
 
 ## A local service: many sessions on one machine
 
-A clone can run its own YonedaRepo (`yoneda local serve`): the same landing rules, on this machine, for every session and agent working in that clone. Its remote is `local` (`http://127.0.0.1:<port>/git/<id>.git`; from a container, `http://host.docker.internal:<port>/git/<id>.git`).
+A clone can run its own YonedaRepo (`yoneda local serve`): the same landing rules, on this machine, for every session and agent working in that clone. Run `yoneda local ui` to get its read-only dashboard address. Its remote is `local` (`http://127.0.0.1:<port>/git/<id>.git`; from a container, `http://host.docker.internal:<port>/git/<id>.git`).
 
 1. **Discover the integration branch** with `yoneda local status` (`--json` reports `branch` and `head`); `git config --get yoneda.localBranch` also names it. Examples below use `dev`; use the reported branch (`main` on older/default setups).
 2. **Work in your own task worktree**, from `local/dev`: `git fetch local`, then `git worktree add -b feature/<task> .worktrees/<task> local/dev`. Never edit another session's worktree or the clone's own checkout.

@@ -24,6 +24,7 @@ const MAX_BODY: usize = yoneda_platform::platform_git_receive::MAX_PACK_BYTES + 
 
 pub fn router(svc: Arc<Service>) -> Router {
     Router::new()
+        .merge(crate::dashboard::routes())
         .route("/git/{repo}/info/refs", get(info_refs))
         .route("/git/{repo}/git-upload-pack", post(upload_pack))
         .route("/git/{repo}/git-receive-pack", post(receive_pack))

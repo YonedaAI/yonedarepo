@@ -19,6 +19,7 @@ mod cloud;
 mod compute;
 mod configure;
 mod credential;
+mod dashboard;
 mod http;
 mod init;
 mod land;
@@ -45,7 +46,7 @@ use service::Service;
 use std::sync::Arc;
 use yoneda_core::Result;
 
-const USAGE: &str = "usage: yoneda local <init [--branch <name>] [--no-cloud] | configure [--branch <name>] [--no-cloud | --cloud] | serve | status [--json] | sync [--json] | \
+const USAGE: &str = "usage: yoneda local <init [--branch <name>] [--no-cloud] | configure [--branch <name>] [--no-cloud | --cloud] | serve | ui | status [--json] | sync [--json] | \
                      token <create <name> | list | revoke <name>> | log [--json] | \
                      check <add | list | remove> | credential get>";
 
@@ -68,6 +69,7 @@ fn run(cwd: &std::path::Path, args: &[String]) -> Result<String> {
     match args.first().map(String::as_str) {
         Some("init") => init::init(cwd, &args[1..]),
         Some("configure") => configure::run(cwd, &args[1..]),
+        Some("ui") => Ok(Layout::find(cwd)?.config()?.origin()),
         Some("serve") => serve(cwd).map(|()| String::new()),
         Some("status") => report::status(cwd, args.iter().any(|a| a == "--json")),
         Some("sync") => report::sync_now(cwd, args.iter().any(|a| a == "--json")),

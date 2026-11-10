@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>YonedaRepo · Local</title>
+  <link rel="icon" type="image/svg+xml" href="/local/icon.svg">
+  <link rel="stylesheet" href="/local/theme.css">
+  <link rel="stylesheet" href="/local/base.css">
+  <link rel="stylesheet" href="/local/style.css">
+  <script type="module" src="/local/app.js"></script>
+</head>
+<body>
+  <a href="#main" class="skip-link">Skip to repository</a>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="YonedaRepo local home"><img src="/local/icon.svg" width="24" height="24" alt="">YonedaRepo <span class="local-tag">Local</span></a>
+    <div class="toolbar"><label class="sr-only" for="theme">Appearance</label><select id="theme"><option value="system">System theme</option><option value="light">Light theme</option><option value="dark">Dark theme</option></select><button type="button" class="quiet" id="refresh">Refresh</button></div>
+  </header>
+  <main id="main" tabindex="-1">
+    <div class="page-heading"><div><div class="service-state" id="connection"><span class="status-dot"></span>Connecting</div><h1 id="name">Local repository</h1><p class="repo-path" id="path" title="Repository location">Loading repository…</p></div><span id="updated" class="muted"></span></div>
+    <div id="error" class="error" role="alert" hidden><span>Could not refresh the local service.</span><button type="button" class="quiet" id="retry">Retry</button></div>
+    <div class="summary">
+      <section><h2>Local landings</h2><div class="summary-value"><span id="branch" class="branch">—</span><button type="button" class="hash" id="head" title="Copy accepted commit" disabled>—</button></div><p id="local-note">Checking the accepted revision…</p></section>
+      <section><h2>Cloud sync</h2><div class="summary-value"><span id="sync-state">—</span></div><p id="sync-note">Checking the connection…</p></section>
+    </div>
+    <section class="activity" aria-labelledby="activity-title">
+      <div class="section-header"><h2 id="activity-title">Activity</h2><div class="tabs" role="tablist" aria-label="Activity view"><button type="button" id="landings-tab" role="tab" aria-selected="true" aria-controls="landings-panel">Landings</button><button type="button" id="refusals-tab" role="tab" aria-selected="false" aria-controls="refusals-panel" tabindex="-1">Refused pushes</button></div></div>
+      <div id="landings-panel" role="tabpanel" aria-labelledby="landings-tab" class="activity-body"><div class="loading" id="loading" role="status" aria-label="Loading landings"><div></div><div></div><div></div><div></div></div><div id="landings"></div></div>
+      <div id="refusals-panel" role="tabpanel" aria-labelledby="refusals-tab" class="activity-body" hidden><p class="section-note">Since this service started.</p><div id="refusals"></div></div>
+    </section>
+    <div class="details-grid">
+      <section aria-labelledby="writers-title"><div class="section-header"><h2 id="writers-title">Recent writers</h2></div><div id="writers"><p class="muted">Loading writers…</p></div></section>
+      <section aria-labelledby="checks-title"><div class="section-header"><h2 id="checks-title">Landing checks</h2></div><div id="checks"><p class="muted">Loading checks…</p></div></section>
+    </div>
+    <section class="branches" aria-labelledby="branches-title"><div class="section-header"><h2 id="branches-title">Branches</h2><label class="sr-only" for="branch-search">Filter branches</label><input id="branch-search" type="search" placeholder="Filter branches" autocomplete="off"></div><div id="branches"><p class="muted">Loading branches…</p></div></section>
+    <footer><span id="scope">This service runs on this Mac.</span><details class="local-help"><summary>How local landings work</summary><p>Each writer commits in its own worktree. Compatible changes merge when they land; conflicts need resolution.</p><p id="publication-note">Cloud sync follows this repository’s settings.</p><div class="command"><code id="push-command">yoneda push local HEAD:dev</code><button type="button" class="quiet" id="copy-command">Copy</button></div></details></footer>
+  </main>
+  <div class="sr-only" role="status" id="announcement" aria-live="polite"></div>
+</body>
+</html>
