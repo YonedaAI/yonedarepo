@@ -1,7 +1,7 @@
 {
   "name": "yoneda",
   "displayName": "YonedaRepo",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Work in YonedaRepo repositories: the git workflow for yoneda:: remotes (push small commits, land with git push, server-side merges), the account MCP for cloud repositories, and a session-start status check.",
   "author": {
     "name": "YonedaAI",

@@ -213,14 +213,14 @@
 
     $unpacked = Join-Path $tmp 'unpacked'
     Expand-Archive -LiteralPath $archivePath -DestinationPath $unpacked
-    foreach ($program in @('yoneda.exe', 'git-remote-yoneda.exe')) {
+    foreach ($program in @('yoneda.exe', 'git-remote-yoneda.exe', 'yoneda-local.exe')) {
       if (-not (Test-Path -LiteralPath (Join-Path $unpacked $program))) {
         throw "yoneda install: $archive has no $program"
       }
     }
     Write-Host "Installing to $dir"
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    foreach ($program in @('yoneda.exe', 'git-remote-yoneda.exe')) {
+    foreach ($program in @('yoneda.exe', 'git-remote-yoneda.exe', 'yoneda-local.exe')) {
       Install-Program (Join-Path $unpacked $program) $program
     }
 

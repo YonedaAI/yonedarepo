@@ -63,9 +63,12 @@ fn windows_targets_ship_zips_of_exe_files_built_with_zig() {
     );
     assert_eq!(
         program_files("windows-x64"),
-        ["yoneda.exe", "git-remote-yoneda.exe"]
+        ["yoneda.exe", "git-remote-yoneda.exe", "yoneda-local.exe"]
     );
-    assert_eq!(program_files("linux-x64"), ["yoneda", "git-remote-yoneda"]);
+    assert_eq!(
+        program_files("linux-x64"),
+        ["yoneda", "git-remote-yoneda", "yoneda-local"]
+    );
     for name in ["windows-x64", "windows-arm64"] {
         assert!(
             TARGETS.iter().any(|(n, _, zig)| *n == name && *zig),

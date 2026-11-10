@@ -6,7 +6,7 @@
 #
 # Downloads the prebuilt binaries for this machine (macOS or Linux, arm64 or x86-64) from
 # the site's /downloads, checks the archive against the release's SHA256SUMS, and only
-# then installs both programs into ~/.local/bin. cloudflared is Cloudflare's own release at
+# then installs all three programs into ~/.local/bin. cloudflared is Cloudflare's own release at
 # the version pinned below, unless a working one is already on PATH. Without it HTTPS Git
 # still works, so a failed download only warns. Then a line in your shell's start file puts
 # the folder on PATH and another sets up completion, once each. Nothing runs as root.
@@ -119,14 +119,14 @@ printf 'Checksum verified\n'
 
 mkdir "$tmp/unpacked"
 tar -xzf "$tmp/$archive" -C "$tmp/unpacked"
-for program in yoneda git-remote-yoneda; do
+for program in yoneda git-remote-yoneda yoneda-local; do
   [ -f "$tmp/unpacked/$program" ] || fail "$archive has no $program"
 done
 printf 'Installing to %s\n' "$dir"
 mkdir -p "$dir"
 # Each program is copied beside its final name and moved over it, so a running copy is
 # never left half written.
-for program in yoneda git-remote-yoneda; do
+for program in yoneda git-remote-yoneda yoneda-local; do
   cp "$tmp/unpacked/$program" "$dir/.$program.new"
   chmod 755 "$dir/.$program.new"
   mv -f "$dir/.$program.new" "$dir/$program"

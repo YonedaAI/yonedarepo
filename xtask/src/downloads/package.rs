@@ -112,6 +112,11 @@ pub(super) fn stage_metadata(
 ) -> Result<()> {
     stage_plugin(staged, site)?;
     let release = staged.join("cli").join(version);
+    for name in ["install.sh", "install.ps1"] {
+        let script = std::fs::read_to_string(Path::new("frontend/public").join(name))?
+            .replace("__YONEDA_SITE__", site);
+        write(&release.join(name), script.as_bytes())?;
+    }
     let sums: Vec<(String, String)> = built
         .iter()
         .map(|(target, _, sum)| (archive_name(version, target), sum.clone()))

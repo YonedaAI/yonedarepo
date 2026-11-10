@@ -24,7 +24,7 @@ pub(crate) const TARGETS: [(&str, &str, bool); 6] = [
     ("windows-x64", "x86_64-pc-windows-gnu", true),
     ("windows-arm64", "aarch64-pc-windows-gnullvm", true),
 ];
-const PROGRAMS: [&str; 2] = ["yoneda", "git-remote-yoneda"];
+const PROGRAMS: [&str; 3] = ["yoneda", "git-remote-yoneda", "yoneda-local"];
 /// Keys that change between releases: uploaded after everything they point at.
 const POINTERS: [&str; 3] = ["cli/latest.json", "claude/marketplace.json", "cli/LATEST"];
 
@@ -132,6 +132,8 @@ fn stage(staged: &Path, site: &str, version: &str, targets: &[&(&str, &str, bool
                 "--locked",
                 "-p",
                 "yoneda-cli",
+                "-p",
+                "yoneda-local",
                 "--target",
                 triple,
             ],
