@@ -145,7 +145,7 @@ export function render(next) {
       }[data.cloud.state] ?? 'Checking')
     : 'Off';
   $('sync-note').textContent = !data.cloud.enabled
-    ? 'Landings stay on this Mac.'
+    ? 'Accepted changes are not sent automatically.'
     : data.cloud.state === 'synced'
       ? `Connected${data.cloud.host ? ` to ${data.cloud.host}` : ''}.`
       : data.cloud.state === 'unpaired'

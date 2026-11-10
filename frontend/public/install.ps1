@@ -1,10 +1,10 @@
-# Installs the YonedaRepo CLI on Windows: yoneda, its Git helper git-remote-yoneda, and
+# Installs the YonedaRepo CLI on Windows: yoneda, git-remote-yoneda, yoneda-local, and
 # cloudflared, which Git over SSH goes through (install.sh does the same on macOS and Linux).
 #
 #   irm https://yonedarepo.com/install.ps1 | iex
 #
 # Downloads the prebuilt binaries for this machine (x86-64 or arm64) from the site's
-# /downloads, checks the archive against the release's SHA256SUMS, and only then installs both
+# /downloads, checks the archive against the release's SHA256SUMS, and only then installs all three
 # programs into %LOCALAPPDATA%\Programs\yoneda, which it adds to the user PATH. cloudflared is
 # Cloudflare's own release at the version pinned below, unless a working one is already on
 # PATH. Without it HTTPS Git still works, so a failed download only warns. Your PowerShell
@@ -213,14 +213,14 @@
 
     $unpacked = Join-Path $tmp 'unpacked'
     Expand-Archive -LiteralPath $archivePath -DestinationPath $unpacked
-    foreach ($program in @('yoneda.exe', 'git-remote-yoneda.exe')) {
+    foreach ($program in @('yoneda.exe', 'git-remote-yoneda.exe', 'yoneda-local.exe')) {
       if (-not (Test-Path -LiteralPath (Join-Path $unpacked $program))) {
         throw "yoneda install: $archive has no $program"
       }
     }
     Write-Host "Installing to $dir"
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    foreach ($program in @('yoneda.exe', 'git-remote-yoneda.exe')) {
+    foreach ($program in @('yoneda.exe', 'git-remote-yoneda.exe', 'yoneda-local.exe')) {
       Install-Program (Join-Path $unpacked $program) $program
     }
 

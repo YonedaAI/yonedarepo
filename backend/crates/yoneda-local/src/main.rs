@@ -14,6 +14,7 @@ mod advertise;
 mod authority;
 mod backend;
 mod check_cmd;
+mod check_process;
 mod checks;
 mod cloud;
 mod compute;

@@ -29,13 +29,13 @@ function release() {
   for (const target of ['darwin-arm64', 'darwin-x64', 'linux-x64', 'linux-arm64']) {
     const dir = join(work, `build-${target}`);
     mkdirSync(dir, { recursive: true });
-    for (const bin of ['yoneda', 'git-remote-yoneda']) {
+    for (const bin of ['yoneda', 'git-remote-yoneda', 'yoneda-local']) {
       // A build older than `completion` is the variable's to play.
       writeFileSync(join(dir, bin), `#!/bin/sh\n[ "$1 $YONEDA_TEST_OLD" = "completion 1" ] && exit 64\necho ${bin} ${target}\n`);
       chmodSync(join(dir, bin), 0o755);
     }
     const name = `yoneda-${VERSION}-${target}.tar.gz`;
-    execFileSync('tar', ['-czf', join(work, name), '-C', dir, 'yoneda', 'git-remote-yoneda']);
+    execFileSync('tar', ['-czf', join(work, name), '-C', dir, 'yoneda', 'git-remote-yoneda', 'yoneda-local']);
     const bytes = readFileSync(join(work, name));
     files.set(`/downloads/cli/${VERSION}/${name}`, bytes);
     sums.push(`${sha256(bytes)}  ${name}`);
@@ -44,9 +44,9 @@ function release() {
   for (const target of ['windows-x64', 'windows-arm64']) {
     const dir = join(work, `build-${target}`);
     mkdirSync(dir, { recursive: true });
-    for (const bin of ['yoneda.exe', 'git-remote-yoneda.exe']) writeFileSync(join(dir, bin), `${bin} ${target}\n`);
+    for (const bin of ['yoneda.exe', 'git-remote-yoneda.exe', 'yoneda-local.exe']) writeFileSync(join(dir, bin), `${bin} ${target}\n`);
     const name = `yoneda-${VERSION}-${target}.zip`;
-    execFileSync('zip', ['-q', '-j', join(work, name), join(dir, 'yoneda.exe'), join(dir, 'git-remote-yoneda.exe')]);
+    execFileSync('zip', ['-q', '-j', join(work, name), join(dir, 'yoneda.exe'), join(dir, 'git-remote-yoneda.exe'), join(dir, 'yoneda-local.exe')]);
     const bytes = readFileSync(join(work, name));
     files.set(`/downloads/cli/${VERSION}/${name}`, bytes);
     sums.push(`${sha256(bytes)}  ${name}`);
@@ -118,11 +118,11 @@ test('is valid POSIX sh with the site placeholder the Worker fills in', () => {
   assert.equal(text.split('__YONEDA_SITE__').length, 2);
 });
 
-test('installs both programs for the target, at the latest version', async () => {
+test('installs all three programs for the target, at the latest version', async () => {
   for (const target of ['linux-x64', 'darwin-arm64']) {
     const run = await install({ YONEDA_TARGET: target });
     assert.equal(run.status, 0, run.stderr);
-    for (const bin of ['yoneda', 'git-remote-yoneda']) {
+    for (const bin of ['yoneda', 'git-remote-yoneda', 'yoneda-local']) {
       const out = execFileSync(join(run.dir, bin), { encoding: 'utf8' });
       assert.equal(out, `${bin} ${target}\n`);
     }
@@ -345,12 +345,12 @@ test('install.ps1 is ASCII, parses, and carries one site placeholder', pwsh, () 
   assert.equal(execFileSync('pwsh', ['-NoProfile', '-Command', parse], { encoding: 'utf8' }).trim(), '0');
 });
 
-test('install.ps1 installs both programs and the pinned cloudflared', pwsh, async () => {
+test('install.ps1 installs all three programs and the pinned cloudflared', pwsh, async () => {
   files.set(cloudflaredPath('cloudflared-windows-amd64.exe'), CLOUDFLARED);
   for (const target of ['windows-x64', 'windows-arm64']) {
     const run = await installOnWindows({ YONEDA_TARGET: target }, CLOUDFLARED);
     assert.equal(run.status, 0, run.stderr);
-    for (const bin of ['yoneda.exe', 'git-remote-yoneda.exe'])
+    for (const bin of ['yoneda.exe', 'git-remote-yoneda.exe', 'yoneda-local.exe'])
       assert.equal(readFileSync(join(run.dir, bin), 'utf8'), `${bin} ${target}\n`);
     assert.deepEqual(readFileSync(join(run.dir, 'cloudflared.exe')), CLOUDFLARED);
     assert.deepEqual(readdirSync(run.dir).filter((f) => f.startsWith('.')), []);

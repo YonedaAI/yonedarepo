@@ -34,7 +34,7 @@ fn manifest_points_at_the_site_and_each_archive() {
     assert_eq!(m["version"], "0.1.0");
     assert_eq!(
         m["install"],
-        "curl -fsSL https://yonedarepo.com/install.sh | sh"
+        "curl -fsSL https://yonedarepo.com/downloads/cli/0.1.0/install.sh | sh"
     );
     assert_eq!(
         m["targets"]["linux-arm64"]["url"],
@@ -43,7 +43,7 @@ fn manifest_points_at_the_site_and_each_archive() {
     assert_eq!(m["targets"]["linux-arm64"]["size"], 7);
     assert_eq!(
         m["install_windows"],
-        "irm https://yonedarepo.com/install.ps1 | iex"
+        "irm https://yonedarepo.com/downloads/cli/0.1.0/install.ps1 | iex"
     );
 }
 
@@ -63,9 +63,12 @@ fn windows_targets_ship_zips_of_exe_files_built_with_zig() {
     );
     assert_eq!(
         program_files("windows-x64"),
-        ["yoneda.exe", "git-remote-yoneda.exe"]
+        ["yoneda.exe", "git-remote-yoneda.exe", "yoneda-local.exe"]
     );
-    assert_eq!(program_files("linux-x64"), ["yoneda", "git-remote-yoneda"]);
+    assert_eq!(
+        program_files("linux-x64"),
+        ["yoneda", "git-remote-yoneda", "yoneda-local"]
+    );
     for name in ["windows-x64", "windows-arm64"] {
         assert!(
             TARGETS.iter().any(|(n, _, zig)| *n == name && *zig),

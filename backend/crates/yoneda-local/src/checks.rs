@@ -15,12 +15,10 @@ use crate::service::Service;
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use yoneda_core::Result;
 
 const CHECKS: Cred = Cred::System("checks");
-/// The output a refusal and the recorded evidence keep: its last bytes.
-const TAIL_BYTES: usize = 2048;
 /// Output lines shown to the pusher from a failing check.
 const TAIL_LINES: usize = 12;
 
@@ -132,7 +130,8 @@ fn execute(svc: &Service, id: &str) -> Result<Verdict> {
             .collect();
         let image = check_cmd::image_of(claim["command"].as_array().map_or(&[][..], Vec::as_slice));
         let started = Instant::now();
-        let (code, tail) = spawn(&command, &dir, timeout, image.is_some().then_some(&run))?;
+        let (code, tail) =
+            crate::check_process::run(&command, &dir, timeout, image.is_some().then_some(&run))?;
         Ok((
             digest,
             code,
@@ -222,64 +221,4 @@ fn checkout(
     lines.sort();
     let text: String = lines.into_iter().map(|(_, line)| line).collect();
     Ok(yoneda_core::digest(text.as_bytes()))
-}
-
-/// Runs `command` in `dir` in its own process group; `None` exit code: it timed out and
-/// was stopped (the group by its recorded id, a container by its run name).
-fn spawn(
-    command: &[String],
-    dir: &Path,
-    timeout: u64,
-    container: Option<&String>,
-) -> Result<(Option<i32>, String)> {
-    use std::os::unix::process::CommandExt;
-    let (program, args) = command
-        .split_first()
-        .ok_or_else(|| local_error("The check has no command"))?;
-    let log = dir.with_extension("log");
-    let out = std::fs::File::create(&log).map_err(|e| local_error(format!("No check log: {e}")))?;
-    let err = out
-        .try_clone()
-        .map_err(|e| local_error(format!("No check log: {e}")))?;
-    let mut child = Command::new(program)
-        .args(args)
-        .current_dir(dir)
-        .env_remove("YONEDA_TOKEN")
-        .env_remove("YONEDA_LOCAL_TIMINGS")
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .stdin(Stdio::null())
-        .stdout(out)
-        .stderr(err)
-        .process_group(0)
-        .spawn()
-        .map_err(|e| local_error(format!("Cannot start {program}: {e}")))?;
-    let deadline = Instant::now() + Duration::from_secs(timeout);
-    let code = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status.code().unwrap_or(-1)),
-            Ok(None) if Instant::now() >= deadline => {
-                if let Some(name) = container {
-                    let _ = Command::new("docker")
-                        .args(["kill", &format!("yoneda-check-{name}")])
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .status();
-                }
-                let _ = Command::new("kill")
-                    .args(["-KILL", &format!("-{}", child.id())])
-                    .stderr(Stdio::null())
-                    .status();
-                let _ = child.wait();
-                break None;
-            }
-            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
-            Err(e) => return Err(local_error(format!("The check was lost: {e}"))),
-        }
-    };
-    let bytes = std::fs::read(&log).unwrap_or_default();
-    let _ = std::fs::remove_file(&log);
-    let tail =
-        String::from_utf8_lossy(&bytes[bytes.len().saturating_sub(TAIL_BYTES)..]).into_owned();
-    Ok((code, tail))
 }
