@@ -100,6 +100,7 @@ pub fn run(cwd: &Path, args: &[String]) -> Result<String> {
     svc.store
         .git(&["symbolic-ref", "HEAD", &config.refname()], None)?;
     crate::project::project(&svc)?;
+    crate::init::exclude_worktrees(cwd)?;
     // This hint lets agents discover the branch without parsing a local state file.
     run_in(cwd, &["config", "yoneda.localBranch", &config.branch], None)?;
     Ok(format!(
