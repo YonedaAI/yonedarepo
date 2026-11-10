@@ -10,6 +10,12 @@ fn dev_landings_merge_and_refuse_conflicts_without_moving_main() {
     let main = l.store_ref("main");
     l.git_ok(&l.clone, &["switch", "-qc", "dev"]);
     l.run_ok(&l.clone, &["configure", "--branch", "dev", "--no-cloud"]);
+    assert!(
+        l.git(&l.clone, &["check-ignore", ".worktrees/probe"])
+            .status
+            .success(),
+        "local configuration must exclude task worktrees without changing .gitignore"
+    );
     l.serve();
     let state = l.status();
     assert_eq!(state["branch"], "dev");
@@ -70,8 +76,25 @@ fn init_imports_dev_and_never_pairs_when_cloud_is_disabled() {
     let main = l.git_ok(&l.clone, &["rev-parse", "main"]);
     l.git_ok(&l.clone, &["switch", "-qc", "dev"]);
     let dev = l.commit(&l.clone, "a.txt", "dev only\n");
+    let excludes = l.clone.join(".git/info/exclude");
+    std::fs::write(&excludes, "private-notes/").unwrap();
     l.run_ok(&l.clone, &["init", "--branch", "dev", "--no-cloud"]);
+    assert_eq!(
+        std::fs::read_to_string(&excludes).unwrap(),
+        "private-notes/\n/.worktrees/\n"
+    );
+    l.run_ok(&l.clone, &["configure", "--branch", "dev", "--no-cloud"]);
+    assert_eq!(
+        std::fs::read_to_string(&excludes).unwrap(),
+        "private-notes/\n/.worktrees/\n"
+    );
     let state = l.status();
+    assert!(
+        l.git(&l.clone, &["check-ignore", ".worktrees/probe"])
+            .status
+            .success(),
+        "new repositories must exclude task worktrees without changing .gitignore"
+    );
     assert_eq!(state["branch"], "dev");
     assert_eq!(state["head"], dev);
     assert_eq!(state["sync"]["state"], "disabled");

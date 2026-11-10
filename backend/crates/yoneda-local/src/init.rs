@@ -69,6 +69,7 @@ pub fn init(cwd: &Path, args: &[String]) -> Result<String> {
         .git(&["symbolic-ref", "HEAD", &config.refname()], None)?;
     let imported = import_branch(&svc, cwd, &config.branch, &Cred::Token(token))?;
     configure_clone(cwd, &config)?;
+    exclude_worktrees(cwd)?;
     let sync = Sync {
         name: Some(name_of(&top)),
         paired: paired.is_some(),
@@ -226,4 +227,43 @@ fn configure_clone(cwd: &Path, config: &Config) -> Result<()> {
     run_in(cwd, &["config", &key, &helper], None)?;
     run_in(cwd, &["config", "yoneda.localBranch", &config.branch], None)?;
     Ok(())
+}
+
+/// Task worktrees are local tooling, not project content. Keep the exclusion in the
+/// common Git directory, leaving the project's tracked ignore rules untouched.
+pub(crate) fn exclude_worktrees(cwd: &Path) -> Result<()> {
+    let path = git_text(
+        cwd,
+        &[
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            "info/exclude",
+        ],
+    )?;
+    let path = Path::new(&path);
+    let mut text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => {
+            return Err(local_error(format!(
+                "Cannot read Git's local exclusions: {e}"
+            )));
+        }
+    };
+    if text
+        .lines()
+        .any(|line| line == "/.worktrees/" || line == ".worktrees/")
+    {
+        return Ok(());
+    }
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text.push_str("/.worktrees/\n");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| local_error(format!("Cannot create Git's info directory: {e}")))?;
+    }
+    write_private(path, text.as_bytes())
 }
