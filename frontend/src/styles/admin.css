@@ -748,7 +748,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.875rem;
+  font-size: var(--text-control);
 }
 .admin-filters select {
   min-height: var(--control-h);

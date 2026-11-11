@@ -24,6 +24,11 @@ const neutral = new Set([
   // The logger and the request's scope; they import only each other and types.
   './log',
   './request-scope',
+  // Passive request correlation and timing shared by adapters; no agent policy or new reads.
+  './operation-carrier',
+  './operation-context',
+  './operation-links',
+  './operation-observation',
   // Dependency-free queue scheduling metadata and eligible-age measurement, no domain rules.
   './queue-timing',
   // Streaming service-binding transport and cancellation; imports nothing.
@@ -74,6 +79,8 @@ const neutral = new Set([
   '../../shared/raster-image',
   // What's measured for service targets, and its point; imports nothing.
   '../../shared/service-levels',
+  // Operation measurement wire shapes and point encoding; no authoritative decisions.
+  '../../shared/operation-metrics',
   // The Insights page's and admin reports' wire shapes; types only.
   '../../shared/repo-insights',
   // Contribution drill-down pages and cursors, shared with the browser; types only.
