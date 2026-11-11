@@ -78,7 +78,10 @@ function routedPlatform(env: Env, platform: Fetcher): Fetcher {
           const cell = cellFetcher(env, cellOfRegion(env, details?.region)) ?? target;
           return (cell as unknown as NewAccounts).accountCreated(account, details, observation);
         };
-      return typeof method === 'function' ? method.bind(target) : method;
+      // RPC functions are capabilities: reading `.bind` becomes a remote method lookup.
+      return typeof method === 'function'
+        ? (...args: unknown[]) => Reflect.apply(method, target, args)
+        : method;
     },
   });
 }

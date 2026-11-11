@@ -86,7 +86,14 @@ or expired values do not enable full capture. Delayed messages cannot extend an 
 capture. Metric points and failure/slow detail retention are independent of the normal detail
 sample. The five-second cutoff selects diagnostics; it is not a service target or email rule.
 
-Set the production expiry only after dev acceptance, immediately before the production wave,
-using the generated environment specs. Verify the deployed timestamp, service revisions and
-new points after activation; record the actual capture interval. Neither a committed config nor
-a passing test proves that production is collecting anything.
+Arm production capture once after the accepted production wave: set `OPERATION_FULL_UNTIL`
+to a UTC timestamp 48 hours ahead on each metrics-enabled Worker, using `wrangler secret bulk`
+with its generated production config and a JSON payload on stdin. The binding contains only
+the expiry, never request data. Declaring it optional keeps normal deploys independent of
+capture; existing bindings persist, so another deploy does not restart the window. Missing or
+expired bindings use the normal sample rate. Do not add the expiry to the shared deploy
+credentials file, which would rearm new Workers with an old setting.
+
+Verify the runtime report's expiry, binding inventory, service revisions and new points after
+activation; record the actual capture interval. A successful config update alone does not prove
+that measurements arrived.
