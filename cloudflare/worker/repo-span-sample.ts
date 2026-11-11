@@ -13,6 +13,8 @@
 import { requestPoint, SERVICE_EVERY, serviceOperation } from '../../shared/service-levels';
 import { deferred } from './background';
 import { log, operationOf } from './log';
+import { capturePolicy } from './operation-context';
+import { operationLinks } from './operation-links';
 import { type Phases, withTimings } from './repo-timing';
 import { currentScope } from './request-scope';
 import { isOwnTraffic } from './site-events';
@@ -71,7 +73,8 @@ export function sampleSpans(
   status: number,
   random = Math.random,
 ) {
-  const every = spanEvery(env.SPAN_SAMPLE);
+  const policy = capturePolicy(env);
+  const every = policy.enabled ? policy.detailEvery : spanEvery(env.SPAN_SAMPLE);
   const measuring = env.SERVICE_LEVELS === 'on';
   if (!every && !measuring) return;
   try {
@@ -82,7 +85,13 @@ export function sampleSpans(
     const draw = random();
     const weight = service && draw * SERVICE_EVERY[service] < 1 ? SERVICE_EVERY[service] : 0;
     const slow = (phases.get('total')?.ms ?? 0) >= SLOW_MS;
-    const line = every > 0 && (slow || draw * every < 1);
+    const line =
+      every > 0 &&
+      (slow ||
+        status >= 500 ||
+        (policy.enabled
+          ? (operationLinks.getStore()?.selected ?? draw * every < 1)
+          : draw * every < 1));
     if (!weight && !line) return;
     scope.spansTaken = true;
     deferred(async () => {

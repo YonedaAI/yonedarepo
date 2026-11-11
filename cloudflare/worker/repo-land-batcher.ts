@@ -1,19 +1,29 @@
 // The land combiner's logic (repo-land-combiner.ts), apart from the Durable Object so tests can run
 // it in-process with their own bindings: submissions and tickets, each step landing what waits.
+
 import { noteFull } from './durable';
 import { log, warned } from './log';
+import { type OperationCarrier, operationCarrier, withCarrier } from './operation-carrier';
+import { operationLinks } from './operation-links';
+import { measuredOutcome, observeOperation, operationRecorder } from './operation-observation';
 import { kickProjection, landChangesets } from './repo-changesets';
 import { refreshHead } from './repo-head';
 import { claimCommand } from './repo-land-poll';
 import { landBatch, type Settled } from './repo-merge';
 import { caller, type Json, RepoContext } from './repo-ops';
+import { inScope } from './request-scope';
 import type { Env } from './types';
 
 const SETTLED_KEPT = 10_000;
 const RETRY_MS = 250;
 const SUBMIT_BATCH = 256;
 export type Target = { repo: string; ref: string };
-type Submission = { item: Json; at: number; resolve: (outcome: Json | null) => void };
+type Submission = {
+  observation?: OperationCarrier;
+  item: Json;
+  at: number;
+  resolve: (outcome: Json | null) => void;
+};
 
 // Superfan counts land.timed_out and the land.*_failed events below by name.
 
@@ -65,11 +75,11 @@ export class LandBatcher {
    * Batch mode: lands `item` (a lander's credentials and its commit's shard records) in
    * the next batch; resolves with its outcome, or null after `timeoutMs` (resubmit).
    */
-  async submit(target: Target, item: Json, timeoutMs: number) {
+  async submit(target: Target, item: Json, timeoutMs: number, observation?: OperationCarrier) {
     this.target = target;
     let deadline: ReturnType<typeof setTimeout> | null = null;
     const outcome = new Promise<Json | null>((resolve) => {
-      const submission = { item, at: Date.now(), resolve };
+      const submission = { item, observation, at: Date.now(), resolve };
       this.#submissions.push(submission);
       deadline = setTimeout(() => {
         if (this.#submissions.includes(submission))
@@ -91,9 +101,32 @@ export class LandBatcher {
   async #landSubmitted(merger: RepoContext, ref: string) {
     const batch = this.#submissions.splice(0, SUBMIT_BATCH);
     let out: Json;
+    let batchLink: OperationCarrier | undefined;
     const started = Date.now();
     try {
-      out = await merger.call({ op: 'repo_land_submitted', ref, items: batch.map((s) => s.item) });
+      out = await operationLinks.run(undefined, () =>
+        inScope({ env: this.env, source: 'queue' }, () =>
+          observeOperation(
+            this.env,
+            {
+              kind: 'repository',
+              operation: 'landing.batch',
+              repo: merger.repo,
+              actor: 'system',
+              origin: 'landing.batch',
+            },
+            async () => {
+              batchLink = operationCarrier();
+              const result = await merger.call({
+                op: 'repo_land_submitted',
+                ref,
+                items: batch.map((s) => s.item),
+              });
+              return result;
+            },
+          ),
+        ),
+      );
     } catch (e: any) {
       // A full database refuses them again however often they are sent: answer each now.
       if (e?.code === 'REPO_FULL') {
@@ -109,6 +142,20 @@ export class LandBatcher {
     if (out.items.some((r: Json) => r.code === 'REPO_FULL'))
       noteFull(merger.repo, 'repo_land_submitted');
     for (const [i, submission] of batch.entries()) {
+      withCarrier(this.env, submission.observation, () => {
+        operationRecorder(this.env, {
+          kind: 'repository',
+          operation: 'landing.result',
+          repo: merger.repo,
+          queueWaitMs: started - submission.at,
+        })(Date.now() - submission.at, measuredOutcome(out.items[i]));
+        if (this.env.OPERATION_METRICS === 'on' && batchLink && submission.observation)
+          log.info('landing.batch_link', {
+            span_id: batchLink.span,
+            parent_span_id: submission.observation.span,
+            parent_request_id: submission.observation.requestId,
+          });
+      });
       if (out.items[i].status === 'deferred') again.push(submission);
       else
         submission.resolve({ ...out.items[i], batch: timing, queued_ms: started - submission.at });

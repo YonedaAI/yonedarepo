@@ -2,6 +2,8 @@
 // attempt). Steps retry on their own and a restarted instance resumes after its last finished
 // step; the harness container keeps running between polls, so a lost isolate costs nothing.
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
+import { withCarrier } from '../worker/operation-carrier';
+import { observeOperation } from '../worker/operation-observation';
 import type { ManagedEnv, RunParams } from './config';
 import { runAgent, type Steps } from './run';
 
@@ -21,9 +23,26 @@ export class ManagedReviewWorkflow extends WorkflowEntrypoint<ManagedEnv, RunPar
   async run(event: WorkflowEvent<RunParams>, step: WorkflowStep) {
     const steps: Steps = {
       // Step results are plain JSON objects; the cast drops workers-types' Serializable bound.
-      do: (name, fn) => (step.do as any)(name, name.startsWith('start-') ? START_STEP : STEP, fn),
+      do: (name, fn) =>
+        (step.do as any)(name, name.startsWith('start-') ? START_STEP : STEP, () =>
+          withCarrier(this.env, event.payload.observation, () =>
+            observeOperation(
+              this.env,
+              {
+                kind: 'background',
+                source: 'workflow',
+                actor: 'system',
+                operation: `managed.${['admit', 'prepare', 'start', 'poll', 'collect', 'post', 'pause'].includes(name.split('-')[0]) ? name.split('-')[0] : 'step'}`,
+                attempt: event.payload.attempt,
+              },
+              fn,
+            ),
+          ),
+        ),
       sleep: (name, ms) => step.sleep(name, ms),
     };
-    return runAgent(this.env, event.payload, steps);
+    return withCarrier(this.env, event.payload.observation, () =>
+      runAgent(this.env, event.payload, steps),
+    );
   }
 }

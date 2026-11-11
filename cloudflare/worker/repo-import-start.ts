@@ -7,6 +7,7 @@
 
 import { deferred } from './background';
 import { log } from './log';
+import { operationCarrier } from './operation-carrier';
 import type { CloneParams } from './repo-clone';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 import type { Env } from './types';
@@ -35,6 +36,7 @@ const created = (env: Env, id: string, params: CloneParams) =>
 /** Starts the Workflow of `params`, and answers its name: behind the answer when what starts
  * it again is durable, so that a failure here leaves nothing lost. */
 export async function startWorkflow(env: Env, params: CloneParams, id = workflowId(params.repo)) {
+  params = { ...params, observation: params.observation ?? operationCarrier() };
   const asked: Asked = { ...params, workflow: id };
   const kept = await env.OBJECTS.put(askedKey(params.repo), JSON.stringify(asked)).catch((e) => {
     log.warn('import.not_kept', { repo: params.repo, error: e });

@@ -9,6 +9,18 @@
 import { currentScope, inScope, requestId, type Seed, withRequestId } from './request-scope';
 
 const FIELDS = [
+  'component',
+  'source',
+  'traffic',
+  'actor',
+  'origin',
+  'span_id',
+  'parent_span_id',
+  'parent_request_id',
+  'queue_wait_ms',
+  'authority_region',
+  'region',
+  'navigation_id',
   'account',
   'after',
   'at',

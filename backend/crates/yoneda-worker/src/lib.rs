@@ -21,6 +21,7 @@ mod git_http;
 mod read_copy;
 mod source_repository;
 pub use read_copy::RepositoryReadCopy;
+mod operation_observation;
 mod stack;
 mod telemetry;
 pub use commit_shard::CommitShard;

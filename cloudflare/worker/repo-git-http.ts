@@ -12,6 +12,7 @@
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { noteAccount } from './internal-accounts';
 import { logFailure } from './log';
+import { operationRecorder } from './operation-observation';
 import { sshBearer, verifySshToken } from './platform-ssh';
 import { credentials } from './repo-api';
 import { compute } from './repo-compute';
@@ -164,11 +165,24 @@ async function serve(req: Request, env: Env): Promise<Response> {
       const body = new Blob([sent]).stream();
       // A client asking for timings gets them after the pack (PackStats).
       const timing = req.headers.get('x-yoneda-timing') === '1';
-      const stats = timing || repoAnalytics(env) ? new PackStats(timing) : undefined;
+      const stats =
+        timing || repoAnalytics(env) || env.OPERATION_METRICS === 'on'
+          ? new PackStats(timing)
+          : undefined;
       if (stats) notePack(env, stats);
-      return v2
+      const record = operationRecorder(env, { kind: 'transfer', operation: 'git.fetch', repo });
+      const response = v2
         ? await uploadPackV2(ctx, objects, body, stats)
         : await uploadPack(ctx, objects, body, stats);
+      if (stats?.ended)
+        void stats.ended.then(() =>
+          record(stats.elapsedMs, stats.outcome, {
+            operation: stats.fresh ? 'git.clone' : 'git.fetch',
+            bytes: stats.sentBytes,
+            firstByteMs: stats.firstByteMs,
+          }),
+        );
+      return response;
     });
   } catch (e: any) {
     const code = failureCode(e);

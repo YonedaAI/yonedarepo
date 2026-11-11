@@ -6,12 +6,15 @@
 import { type ManagedAgentId, managedAgent, readyForReview } from '../../shared/managed-agents';
 import { resolveSettings, triggerMatches } from '../../shared/managed-settings';
 import { log, warned } from '../worker/log';
+import { operationCarrier } from '../worker/operation-carrier';
+import { markOperationOutcome } from '../worker/operation-observation';
 import { reconcileAccount, reconcileAll } from './admin-reconcile';
 import { runRefund } from './admin-refund';
 import { runTopUp } from './billing';
 import { COMMIT_ID, type ManagedEnv, type QueueMessage, type RunParams } from './config';
 import { ledgerStub } from './ledger';
 import { Platform, PlatformError } from './platform';
+import { enqueueManaged, observeManagedMessage } from './queue-observation';
 import { repoStub } from './repo-agents';
 import { instanceId } from './workflow';
 import { workspaceStub } from './workspace-agents';
@@ -45,11 +48,11 @@ export async function receiveHook(req: Request, env: ManagedEnv, repo: string): 
   if (event.repo !== repo) return json({ error: { code: 'INVALID_INPUT' } }, 400);
   const name = String(event.event ?? '');
   if (name === 'repo.purged' || (name === 'repo.deleted' && !event.purge_at)) {
-    await env.RUNS.send({ kind: 'deleted', repo });
+    await enqueueManaged(env, { kind: 'deleted', repo });
     return json({ queued: true }, 202);
   }
   if (name === 'repo.resumed') {
-    await env.RUNS.send({ kind: 'resumed', repo });
+    await enqueueManaged(env, { kind: 'resumed', repo });
     return json({ queued: true }, 202);
   }
   const family = name.split('.')[0];
@@ -61,7 +64,7 @@ export async function receiveHook(req: Request, env: ManagedEnv, repo: string): 
   if (!wanted || !commit) return json({ ignored: true }, 202);
   const number = Number(event.change?.number);
   const at = Date.parse(String(event.at));
-  await env.RUNS.send({
+  await enqueueManaged(env, {
     kind: 'event',
     repo,
     event: family,
@@ -125,6 +128,7 @@ async function onDeleted(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'dele
 
 /** Starts a run's Workflow instance; an instance that already exists is left alone. */
 async function startInstance(env: ManagedEnv, params: RunParams) {
+  params = { ...params, observation: operationCarrier() };
   try {
     await env.REVIEWS.create({ id: instanceId(params.run, params.attempt), params });
   } catch (e: any) {
@@ -283,21 +287,25 @@ async function onResume(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'resum
 
 export async function consume(batch: MessageBatch<QueueMessage>, env: ManagedEnv) {
   for (const message of batch.messages) {
-    try {
-      const m = message.body;
-      if (m.kind === 'event') await onEvent(env, m);
-      else if (m.kind === 'resume') await onResume(env, m);
-      else if (m.kind === 'resumed') await onResumed(env, m);
-      else if (m.kind === 'deleted') await onDeleted(env, m);
-      else if (m.kind === 'topup') await runTopUp(env, m);
-      else if (m.kind === 'refund') await runRefund(env, m.account, m.id);
-      else if (m.kind === 'reconcile-all') await reconcileAll(env);
-      else if (m.kind === 'reconcile') await reconcileAccount(env, m.account);
-      else if (m.kind === 'rollup') await ledgerStub(env, m.account).rollupRebuild();
-      message.ack();
-    } catch (e: any) {
-      log.error('managed.queue', { code: e?.code ?? 'ERROR', error: e });
-      message.retry({ delaySeconds: 30 });
-    }
+    await observeManagedMessage(env, message, async () => {
+      try {
+        const m = message.body;
+        if (m.kind === 'event') await onEvent(env, m);
+        else if (m.kind === 'resume') await onResume(env, m);
+        else if (m.kind === 'resumed') await onResumed(env, m);
+        else if (m.kind === 'deleted') await onDeleted(env, m);
+        else if (m.kind === 'topup') await runTopUp(env, m);
+        else if (m.kind === 'refund') await runRefund(env, m.account, m.id);
+        else if (m.kind === 'reconcile-all') await reconcileAll(env);
+        else if (m.kind === 'reconcile') await reconcileAccount(env, m.account);
+        else if (m.kind === 'rollup') await ledgerStub(env, m.account).rollupRebuild();
+        message.ack();
+        markOperationOutcome('ok');
+      } catch (e: any) {
+        log.error('managed.queue', { code: e?.code ?? 'ERROR', error: e });
+        message.retry({ delaySeconds: 30 });
+        markOperationOutcome('retry');
+      }
+    });
   }
 }

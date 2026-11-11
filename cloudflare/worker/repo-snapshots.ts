@@ -10,6 +10,7 @@
 // must see a write made elsewhere passes its version as `min_version`.
 
 import { type DurableFlightOwner, Flights } from './flights';
+import { type OperationCarrier, operationCarrier } from './operation-carrier';
 import { readFromHead } from './repo-head';
 import { ApiError, caller, type Json, type RepoContext, target, writesTo } from './repo-ops';
 import { repoRpcValue } from './repo-rpc';
@@ -125,7 +126,9 @@ type HeldRefs = { refs: Json; at: number; writes: number };
 const refsSnapshots = new Map<string, HeldRefs>();
 const servedVersions = new Map<string, number>();
 
-type Holder = { refs(repo: string, minVersion: number): Promise<Json> };
+type Holder = {
+  refs(repo: string, minVersion: number, observation?: OperationCarrier): Promise<Json>;
+};
 function holder(env: Env, repo: string): Holder | null {
   const namespace = env.LAND_COMBINERS;
   if (!namespace) return null;
@@ -185,7 +188,7 @@ async function refsSnapshot(env: Env, repo: string, minVersion: number): Promise
   const shared = wrote ? null : holder(env, repo);
   const floor = Math.max(minVersion, servedVersions.get(repo) ?? 0);
   let refs = shared
-    ? await once(`refs:${repo}`, () => repoRpcValue(shared.refs(repo, floor)))
+    ? await once(`refs:${repo}`, () => repoRpcValue(shared.refs(repo, floor, operationCarrier())))
     : null;
   if (!refs || refs.version < floor)
     refs = await once(`refs:${repo}:${writes}`, () => platform(env, repo)({ op: 'repo_refs' }));

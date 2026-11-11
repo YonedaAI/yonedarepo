@@ -2,6 +2,7 @@
 // what the synthetic checks see from outside. It shows values only: no target exists until 30 days
 // of data do (docs/observability-plan.md). It reads its own route and has no part in the tab's other
 // sections, so one that fails leaves the others up.
+
 import { useState } from 'react';
 import {
   MEASURING_DAYS,
@@ -14,6 +15,7 @@ import {
 import { duration } from '../source-platform/insightsModel';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { useSource } from '../source-platform/useSource';
+import { AdminOperationMetrics } from './AdminOperationMetrics';
 import { figure } from './trafficModel';
 
 type Who = 'people' | 'ours';
@@ -180,5 +182,10 @@ export function AdminServiceLevels() {
     ) : (
       <p className="source-empty">Service levels aren't measured here.</p>
     );
-  return <ServiceLevelsView report={answer.data.report} who={who} onWho={setWho} />;
+  return (
+    <>
+      <AdminOperationMetrics />
+      <ServiceLevelsView report={answer.data.report} who={who} onWho={setWho} />
+    </>
+  );
 }

@@ -9,11 +9,13 @@ import { accountRoute, sessionAccount } from './accounts';
 import { frontEnv, signInEnv } from './cell-edge';
 import { cellsOn } from './cells';
 import { clientError } from './client-errors';
+import { clientPerformance } from './client-performance';
 import { isInstaller, serveDownload, serveInstallScript } from './downloads';
 import { forwardRequest } from './forward-request';
 import { error, response } from './http';
 import { logFailure } from './log';
 import { oauthRoute } from './oauth';
+import { rememberPublicPage } from './page-ping-evidence';
 import { GIT_PATH, legacyRedirect } from './readable-paths';
 import { carriedRequest } from './request-scope';
 import { isSeoFile, seoFile } from './seo-files';
@@ -56,11 +58,26 @@ export async function frontFetch(req: Request, bound: Env): Promise<Response> {
       : null;
     if (moved) return moved;
     const { response: page, canonical } = await websitePage(req, env);
+    if (canonical && page.ok && page.headers.get('content-type')?.includes('text/html'))
+      rememberPublicPage(canonical, url.origin);
     recordPageView(req, page, canonical, env);
-    return withWebAnalytics(req, page, env);
+    const measured =
+      env.CLIENT_PERFORMANCE === 'on' &&
+      env.OPERATION_METRICS === 'on' &&
+      page.headers.get('content-type')?.includes('text/html')
+        ? new HTMLRewriter()
+            .on('head', {
+              element(h) {
+                h.append('<meta name="yoneda-performance" content="on">', { html: true });
+              },
+            })
+            .transform(page)
+        : page;
+    return withWebAnalytics(req, measured, env);
   }
   if (url.pathname === '/api/e') return sitePing(req, env);
   if (url.pathname === '/api/client-error') return clientError(req, env);
+  if (url.pathname === '/api/client-performance') return clientPerformance(req, env);
   if (url.pathname.startsWith('/api/v1/'))
     return env.PLATFORM
       ? forwardRequest(env.PLATFORM, carriedRequest(req))

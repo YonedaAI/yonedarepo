@@ -5,6 +5,8 @@
 import { Container } from '@cloudflare/containers';
 import { cellEnv } from './cell-env';
 import { type CheckInstance, startCheck } from './check-container';
+import { withCarrier } from './operation-carrier';
+import { observeOperation } from './operation-observation';
 import { type CloneParams, CloneSession, type Stage } from './repo-clone';
 import { inScope } from './request-scope';
 import type { Env } from './types';
@@ -33,7 +35,20 @@ export class ImportContainer extends Container<Env> {
     const env = cellEnv(this.env);
     this.#clone ??= cloneSession(this, env);
     const clone = this.#clone;
-    return inScope({ env, job }, () => clone.step(stage, params, credential));
+    return inScope({ env, job }, () =>
+      withCarrier(env, params.observation, () =>
+        observeOperation(
+          env,
+          {
+            kind: 'background',
+            operation: `import.${stage.stage}`,
+            actor: 'system',
+            repo: params.repo,
+          },
+          () => clone.step(stage, params, credential),
+        ),
+      ),
+    );
   }
 
   /** An instance left idle (its caller vanished mid-run) is killed, not asked to stop. */

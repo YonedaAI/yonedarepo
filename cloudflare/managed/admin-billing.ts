@@ -1,6 +1,7 @@
 // `/admin/accounts/<account>/billing/*`: what operators see of an account's billing and do to
 // it, called only by the platform Worker's admin routes (which check the operator, scan the
 // reason and write admin_audit) with the admin bearer. Behind ADMIN_BILLING.
+
 import type { AdminBilling } from '../../shared/admin-billing';
 import { actorOf, idOf, microOf, reasonOf } from './admin-input';
 import { refund, refundDay, refundLimits, refundView } from './admin-refund';
@@ -9,6 +10,7 @@ import { workspaceName } from './api';
 import { BillingRefusal, removeCard, resumeAll } from './billing';
 import { limitMicrousd, type ManagedEnv, type QueueMessage } from './config';
 import { ledgerStub } from './ledger';
+import { enqueueManaged } from './queue-observation';
 
 const usd = (micro: number) => micro / 1_000_000;
 
@@ -172,7 +174,7 @@ export async function adminPlatform(req: Request, env: ManagedEnv, action: strin
     return revenue(env, new URL(req.url).searchParams);
   if (action === 'rollup' && req.method === 'POST') return queueRollups(req, env);
   if (action === 'reconcile' && req.method === 'POST') {
-    await env.RUNS.send({ kind: 'reconcile-all' });
+    await enqueueManaged(env, { kind: 'reconcile-all' });
     return { queued: true };
   }
   throw new BillingRefusal('NOT_FOUND', 'Unknown billing path', 404);

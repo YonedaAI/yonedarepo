@@ -269,6 +269,7 @@ export function accountMcp(req: Request, env: Env, auth: Credentials, route: Rou
     );
   }
   return serveMcp(req, {
+    env,
     name: 'yonedarepo-account',
     instructions:
       'YonedaRepo across your repositories. repo_list/repo_create/repo_delete manage them; every git_* and symbol_* tool takes repo (id or name). Write with git_commit (server-side), land with git_land: disjoint concurrent changes merge on the server, a CONFLICT returns base/ours/theirs to resolve and commit again.',

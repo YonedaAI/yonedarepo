@@ -48,6 +48,7 @@ import { operatorOrgHold, operatorRepoHold } from './platform-holds';
 import { infraReport } from './platform-infra-report';
 import { currentHold } from './platform-legal-hold';
 import { exportSubscribers } from './platform-newsletter';
+import { operationReport } from './platform-operation-report';
 import { adminReports, operationsReport } from './platform-operations-report';
 import {
   auditedPurge,
@@ -148,6 +149,7 @@ async function operatorRoute(
     await audit(env, actor, 'accounts.backfill', after || '-', done);
     return done;
   }
+  if (section === 'operation-metrics' && !id && get) return operationReport(env, query);
   if (section === 'service-levels' && !id && get) return serviceLevels(env);
   if (section === 'erase-backfill' && !id && post) return backfillObject(env, actor, await body());
   if (section === 'search-backfill' && !id && post)

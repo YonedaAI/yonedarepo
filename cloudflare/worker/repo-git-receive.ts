@@ -12,6 +12,7 @@
 
 import { deferred } from './background';
 import { transient } from './durable';
+import { markOperationOutcome, operationRecorder } from './operation-observation';
 import { bundlesOn, storeBundle } from './repo-bundles';
 import { dispatchRuns } from './repo-checks';
 import { queueClassify } from './repo-classify';
@@ -59,6 +60,13 @@ export async function receivePack(
   body: ReadableStream<Uint8Array>,
   secretAllow: Json[],
 ): Promise<Response> {
+  const started = performance.now();
+  const completed = operationRecorder(ctx.env, {
+    kind: 'transfer',
+    operation: 'git.push',
+    repo: ctx.repo,
+  });
+  let result: 'ok' | 'refused' | 'failed' | 'unknown' = 'unknown';
   const session = ReceiveSession.open();
   const files = new SpilledFiles(ctx.env, ctx.repo, (id) => objects.rawKey(id));
   const pack = { bytes: 0 };
@@ -69,6 +77,8 @@ export async function receivePack(
     sideBand: boolean,
     messages: string[],
   ) => {
+    result = unpack ? 'failed' : [...outcomes.values()].some(Boolean) ? 'refused' : 'ok';
+    markOperationOutcome(result);
     notePush(ctx.env, commands, outcomes, pack.bytes);
     return report(commands, outcomes, unpack, sideBand, messages);
   };
@@ -84,7 +94,10 @@ export async function receivePack(
     }
     const { commands, capabilities, reads } = session.call({ op: 'commands' });
     // An empty command list is Git's probe before a large push.
-    if (!failure && commands.length === 0) return new Response(null, { headers: RESULT });
+    if (!failure && commands.length === 0) {
+      result = 'ok';
+      return new Response(null, { headers: RESULT });
+    }
     const sideBand = capabilities.includes('side-band-64k') || capabilities.includes('side-band');
     const outcomes: Outcome = new Map(commands.map((c: Command) => [c.ref, null]));
     const messages: string[] = [];
@@ -121,7 +134,11 @@ export async function receivePack(
     // Webhooks for every ref the push moved (branch moves never reach the derive job).
     if (going.some((c) => !outcomes.get(c.ref))) await notifyHooks(ctx.env, ctx.repo);
     return answer(commands, outcomes, null, sideBand, messages);
+  } catch (e) {
+    result = 'failed';
+    throw e;
   } finally {
+    completed(performance.now() - started, result, { bytes: pack.bytes });
     session.close();
     await files.abort();
   }
