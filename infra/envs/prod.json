@@ -189,7 +189,8 @@
         "ANALYTICS_READ_TOKEN",
         "MANAGED_ADMIN_TOKEN",
         "GITHUB_APP_PRIVATE_KEY",
-        "NEWSLETTER_KEY"
+        "NEWSLETTER_KEY",
+        "OPERATION_FULL_UNTIL"
       ],
       "health": "yonedarepo-platform",
       "always_on": {
@@ -598,7 +599,8 @@
         "MANAGED_ADMIN_TOKEN",
         "STRIPE_REFUND_KEY",
         "STRIPE_SECRET_KEY",
-        "STRIPE_WEBHOOK_SECRET"
+        "STRIPE_WEBHOOK_SECRET",
+        "OPERATION_FULL_UNTIL"
       ],
       "health": "yonedarepo-agents-managed",
       "ephemeral": false,
@@ -798,7 +800,8 @@
         "GITHUB_OAUTH_CLIENT_ID",
         "GITHUB_OAUTH_CLIENT_SECRET",
         "GOOGLE_OAUTH_CLIENT_ID",
-        "GOOGLE_OAUTH_CLIENT_SECRET"
+        "GOOGLE_OAUTH_CLIENT_SECRET",
+        "OPERATION_FULL_UNTIL"
       ],
       "health": "yonedarepo",
       "config": {

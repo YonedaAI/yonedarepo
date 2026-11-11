@@ -107,3 +107,13 @@ it('carries attribution through the regional account-created RPC without changin
   await (routed.PLATFORM as any).accountCreated('alice',{region:'weur'},observation);
   expect(seen).toEqual([['alice',{region:'weur'},observation]]);
 });
+
+it('invokes routed RPC methods without looking up Function.bind on the remote capability', async () => {
+  const called: unknown[] = [];
+  const method = function(this: unknown, ...args: unknown[]) { called.push(this, args); return Promise.resolve(['operator']); };
+  Object.defineProperty(method, 'bind', { get() { throw new Error('RPC property access would call internalAccounts.bind'); } });
+  const target = { internalAccounts: method } as unknown as Fetcher;
+  const front = frontEnv({ ...env, PLATFORM: target });
+  expect(await (front.PLATFORM as any).internalAccounts()).toEqual(['operator']);
+  expect(called).toEqual([target, []]);
+});

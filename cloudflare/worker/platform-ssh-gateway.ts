@@ -164,15 +164,38 @@ export async function sshFrontDoor(socket: Socket, env: Env) {
  * otherwise. Called by the platform's cron and, at most once a minute per isolate, by
  * /health (sshWake), so a deploy's health check starts it without waiting for the cron. */
 export async function sshKeepAlive(env: Env, by: 'cron' | 'health') {
-  const stub = frontDoor(env) === 'tunnel' && gateway(env);
-  if (!stub) return;
+  if (frontDoor(env) !== 'tunnel' || !env.SSH_GATEWAYS) return;
   const started = Date.now();
-  try {
-    const result = await stub.keepAlive();
-    if (by === 'health' || result.started)
-      log.info('ssh.keepalive', { by, started: result.started, ms: Date.now() - started });
-  } catch (e) {
-    log.error('ssh.keepalive_failed', { by, error: e });
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      // A disconnected RPC stub cannot recover. Resolve the same gateway again; renewing
+      // its activity timeout and ensuring its container is running are idempotent.
+      const stub = gateway(env);
+      if (!stub) return;
+      const result = await stub.keepAlive();
+      if (by === 'health' || result.started || attempt > 1)
+        log.info('ssh.keepalive', {
+          by,
+          attempt,
+          started: result.started,
+          ms: Date.now() - started,
+        });
+      return { status: 'ok' as const, started: result.started };
+    } catch (error) {
+      const failure = error as { message?: string; retryable?: boolean; overloaded?: boolean };
+      const reset = /no longer active|Network connection lost|reset because its code was updated/i;
+      if (
+        attempt === 1 &&
+        !failure?.overloaded &&
+        (failure?.retryable === true || reset.test(String(failure?.message ?? error)))
+      ) {
+        log.info('ssh.keepalive_retry', { by, attempt, error });
+        await new Promise((resolve) => setTimeout(resolve, 50 + Math.random() * 100));
+        continue;
+      }
+      log.error('ssh.keepalive_failed', { by, attempt, error });
+      return { status: 'failed' as const };
+    }
   }
 }
 
