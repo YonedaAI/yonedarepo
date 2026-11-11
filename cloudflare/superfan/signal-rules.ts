@@ -3,11 +3,7 @@
 
 import type { Analytics, QueueStats } from './analytics';
 import type { Stall } from './delivery';
-import {
-  LATENCY_BASELINE_SPAN_MS,
-  LATENCY_BASELINE_WINDOWS,
-  LATENCY_MIN_REQUESTS,
-} from './http-latency';
+import { LATENCY_MIN_REQUESTS } from './http-latency';
 import type { Health } from './probes';
 import type { ReleaseComparison } from './release';
 import { NAMED_SEPARATOR, type TailComponent, type TailSample, type TailStats } from './tail';
@@ -74,9 +70,6 @@ export type Baselines = Record<
 export const MIN_INVOCATIONS = 20;
 export const MAX_ERROR_RATE = 0.02;
 export const DRIFT_FACTOR = 2;
-/** A p95 rise smaller than this is noise even when it doubles. */
-export const DRIFT_FLOOR_MS = 100;
-const MIN_BASELINE_SAMPLES = 3;
 const MAX_EXCEPTIONS = 3;
 const MAX_ERROR_LOGS = 5;
 const MAX_BACKLOG = 50;
@@ -88,7 +81,7 @@ export function threshold(name: string, value: number | null, unit: string, max:
   return { name, value, unit, anomalous: value !== null && value > max, rule: `> ${max}` };
 }
 
-function drift(
+function invocationLifetime(
   component: Component,
   t: TailStats,
   baselines: Baselines,
@@ -102,32 +95,16 @@ function drift(
     name: calibrated ? 'p95_execution_ms' : 'p95_wall_ms',
     value,
     unit: 'ms',
-    anomalous: Boolean(
-      enough &&
-        base &&
-        (calibrated
-          ? (base.windows ?? 0) >= LATENCY_BASELINE_WINDOWS &&
-            (base.spanMs ?? 0) >= LATENCY_BASELINE_SPAN_MS &&
-            base.ceiling !== undefined &&
-            value > base.ceiling
-          : base.samples >= MIN_BASELINE_SAMPLES &&
-            value > base.value * DRIFT_FACTOR &&
-            value - base.value >= DRIFT_FLOOR_MS),
-    ),
-    rule: calibrated
-      ? `Invocation lifetime: >= ${LATENCY_MIN_REQUESTS} requests; ${LATENCY_BASELINE_WINDOWS} independent hourly references spanning 24 hours; above measured band ${base?.ceiling ?? 'not established'} ms`
-      : `> ${DRIFT_FACTOR}x baseline (+${DRIFT_FLOOR_MS} ms) after ${MIN_BASELINE_SAMPLES} quiet runs`,
-    ...(calibrated
-      ? {
-          detail: `${t.invocations} executions in the last hour; ${base?.windows ?? 0} independent baseline hours. Includes I/O and background work.`,
-        }
-      : {}),
+    // Durable Object invocation lifetimes include I/O, idle sessions and background work.
+    // Keep the measurement, but never treat it as a user-response incident.
+    anomalous: false,
+    rule: 'Diagnostic only: invocation lifetime includes I/O and background work',
     ...(base ? { baseline: Math.round(base.value) } : {}),
     ...(enough ? { sample: value } : {}),
   };
 }
 
-/** Error rate, exceptions, error logs and p95 drift from one component's tail events. */
+/** Error rate, exceptions, error logs and diagnostic invocation lifetime from one component's tail events. */
 export function invocationSignals(
   component: Component,
   s: Snapshot,
@@ -151,7 +128,7 @@ export function invocationSignals(
     threshold('error_logs', t.errorLogs, 'count', MAX_ERROR_LOGS),
     ...(component === 'front_worker' && s.latencyCalibration
       ? []
-      : [drift(component, t, baselines, s.latencyCalibration)]),
+      : [invocationLifetime(component, t, baselines, s.latencyCalibration)]),
   ];
 }
 

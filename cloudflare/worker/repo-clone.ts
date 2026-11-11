@@ -37,6 +37,7 @@ type Credential = () => Promise<string | undefined>;
 
 /** `branch`: the remote's branch to land as main; none: its default branch. */
 export type CloneParams = {
+  observation?: import('./operation-carrier').OperationCarrier;
   repo: string;
   url: string;
   branch?: string;

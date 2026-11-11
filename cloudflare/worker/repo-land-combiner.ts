@@ -12,6 +12,9 @@
 import { DurableObject } from 'cloudflare:workers';
 import { cellEnv } from './cell-env';
 import { log } from './log';
+import { type OperationCarrier, withCarrier } from './operation-carrier';
+import { operationLinks } from './operation-links';
+import { observeOperation } from './operation-observation';
 import { ProjectionRunner } from './repo-changesets';
 import { HeadHolder } from './repo-head-holder';
 import { LandBatcher, type Target } from './repo-land-batcher';
@@ -20,7 +23,20 @@ import { placedHere } from './repo-region-hint';
 import { servedHere } from './repo-region-serve';
 import { repoRpcAnswer } from './repo-rpc';
 import { RefsHolder } from './repo-snapshots';
+import { inScope } from './request-scope';
 import type { Env } from './types';
+
+/** Adds trace metadata to the existing write; the legacy projector key stays a string. */
+export function rememberProjection(
+  storage: DurableObjectStorage,
+  env: Env,
+  repo: string,
+  observation?: OperationCarrier,
+) {
+  return env.OPERATION_METRICS === 'on'
+    ? storage.put({ projector: repo, projection_observation: observation ?? null })
+    : storage.put('projector', repo);
+}
 
 export class LandCombiner extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -43,12 +59,25 @@ export class LandCombiner extends DurableObject<Env> {
       this.#again = true;
       return;
     }
-    this.#running = (async () => {
-      do {
-        this.#again = false;
-        await this.#batcher.step();
-      } while (this.#again);
-    })()
+    this.#running = operationLinks
+      .run(undefined, () =>
+        inScope({ env: this.env, source: 'queue' }, async () => {
+          do {
+            this.#again = false;
+            await observeOperation(
+              this.env,
+              {
+                kind: 'background',
+                source: 'queue',
+                actor: 'system',
+                operation: 'landing.step',
+                origin: 'landing.queue',
+              },
+              () => this.#batcher.step(),
+            );
+          } while (this.#again);
+        }),
+      )
       .catch((e) => log.warn('land.step_failed', { repo: this.#batcher.target?.repo, error: e }))
       .finally(() => {
         this.#running = null;
@@ -58,43 +87,99 @@ export class LandCombiner extends DurableObject<Env> {
   #head = new HeadHolder(this.env, this.ctx);
   #refs = new RefsHolder(this.env, this.ctx);
 
-  async wait(repo: string, ref: string, ticket: number, timeoutMs: number) {
+  async wait(
+    repo: string,
+    ref: string,
+    ticket: number,
+    timeoutMs: number,
+    observation?: OperationCarrier,
+  ) {
     await this.ctx.storage.put('target', { repo, ref });
-    return this.#batcher.wait({ repo, ref }, ticket, timeoutMs);
+    return this.#batcher.wait({ repo, ref }, ticket, timeoutMs, observation);
   }
 
-  async submit(repo: string, ref: string, item: Json, timeoutMs: number) {
+  async submit(
+    repo: string,
+    ref: string,
+    item: Json,
+    timeoutMs: number,
+    observation?: OperationCarrier,
+  ) {
     await this.ctx.storage.put('target', { repo, ref });
-    return this.#batcher.submit({ repo, ref }, item, timeoutMs);
+    return this.#batcher.submit({ repo, ref }, item, timeoutMs, observation);
   }
 
   /** Head role: main's published head, at least at `minVersion` (with the access snapshot
    * when it differs from the caller's `accessVersion`). */
-  head(repo: string, minVersion: number, since?: number, accessVersion?: string | null) {
-    return repoRpcAnswer(this.#head.head(repo, minVersion, since, accessVersion));
+  head(
+    repo: string,
+    minVersion: number,
+    since?: number,
+    accessVersion?: string | null,
+    observation?: OperationCarrier,
+  ) {
+    return withCarrier(this.env, observation, () =>
+      observeOperation(
+        this.env,
+        { kind: 'repository', operation: 'holder.head', repo, actor: 'system' },
+        async () => repoRpcAnswer(this.#head.head(repo, minVersion, since, accessVersion)),
+      ),
+    );
   }
 
   /** Head role: the trees along `paths` from root tree `root` (see HeadHolder.trees). */
-  trees(repo: string, root: string, paths: string[], commit?: string) {
-    return this.#head.trees(repo, root, paths, commit);
+  trees(
+    repo: string,
+    root: string,
+    paths: string[],
+    commit?: string,
+    observation?: OperationCarrier,
+  ) {
+    return withCarrier(this.env, observation, () =>
+      observeOperation(
+        this.env,
+        { kind: 'repository', operation: 'holder.trees', repo, actor: 'system' },
+        async () => this.#head.trees(repo, root, paths, commit),
+      ),
+    );
   }
 
   /** Head role: the access snapshot (live token digests), versioned by `access_version`. */
-  access(repo: string) {
-    return repoRpcAnswer(this.#head.access(repo));
+  access(repo: string, observation?: OperationCarrier) {
+    return withCarrier(this.env, observation, () =>
+      observeOperation(
+        this.env,
+        { kind: 'repository', operation: 'holder.access', repo, actor: 'system' },
+        async () => repoRpcAnswer(this.#head.access(repo)),
+      ),
+    );
   }
 
   /** Head role: every ref, read from the authority at most `REFS_MS` ago and at least at
    * `minVersion` (repo-snapshots.ts). */
-  refs(repo: string, minVersion: number) {
-    return repoRpcAnswer(this.#refs.refs(repo, minVersion));
+  refs(repo: string, minVersion: number, observation?: OperationCarrier) {
+    return withCarrier(this.env, observation, () =>
+      observeOperation(
+        this.env,
+        { kind: 'repository', operation: 'holder.refs', repo, actor: 'system' },
+        async () => repoRpcAnswer(this.#refs.refs(repo, minVersion)),
+      ),
+    );
   }
 
   /** Head role: the head is stale (a landing, projection or access change; after an access
    * change it answers once the held head is dropped and reloaded). */
-  refresh(repo: string, access = false) {
-    this.#refs.forget();
-    return this.#head.refresh(repo, access);
+  refresh(repo: string, access = false, observation?: OperationCarrier) {
+    return withCarrier(this.env, observation, () =>
+      observeOperation(
+        this.env,
+        { kind: 'repository', operation: 'holder.refresh', repo, actor: 'system' },
+        async () => {
+          this.#refs.forget();
+          return this.#head.refresh(repo, access);
+        },
+      ),
+    );
   }
 
   /** REGION_HINT_TEST only: the platform's routes, run here (repo-region-serve.ts). */
@@ -119,21 +204,54 @@ export class LandCombiner extends DurableObject<Env> {
   }
 
   /** Projector role: waits until this repository's changesets are projected. */
-  async catchUp(repo: string) {
-    await this.ctx.storage.put('projector', repo);
-    return this.#projection.catchUp(repo);
+  async catchUp(repo: string, observation?: OperationCarrier) {
+    await this.#projectionTrigger(repo, observation);
+    return withCarrier(this.env, observation, () =>
+      observeOperation(
+        this.env,
+        { kind: 'repository', operation: 'holder.catchUp', repo, actor: 'system' },
+        async () => this.#projection.catchUp(repo),
+      ),
+    );
   }
 
   /** Projector role: projects in the background (an alarm, so it survives the caller). */
-  async kick(repo: string) {
-    await this.ctx.storage.put('projector', repo);
+  async kick(repo: string, observation?: OperationCarrier) {
+    await this.#projectionTrigger(repo, observation);
     if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now());
   }
 
+  #projectionTrigger(repo: string, observation?: OperationCarrier) {
+    return rememberProjection(this.ctx.storage, this.env, repo, observation);
+  }
+
   async alarm() {
-    const repo = await this.ctx.storage.get<string>('projector');
+    const saved = await this.ctx.storage.get<string | OperationCarrier>([
+      'projector',
+      'projection_observation',
+    ]);
+    const value = saved.get('projector');
+    const repo = typeof value === 'string' ? value : undefined;
+    const carrier = saved.get('projection_observation');
+    const observation = carrier && typeof carrier === 'object' ? carrier : undefined;
     if (repo) {
-      await this.#projection.catchUp(repo);
+      await withCarrier(this.env, observation, () =>
+        inScope(
+          { env: this.env, source: 'alarm', job: { request_id: observation?.requestId } },
+          () =>
+            observeOperation(
+              this.env,
+              {
+                kind: 'background',
+                source: 'alarm',
+                operation: 'projection.alarm',
+                actor: 'system',
+                repo,
+              },
+              () => this.#projection.catchUp(repo),
+            ),
+        ),
+      );
       return;
     }
     this.#batcher.target ??= await this.ctx.storage.get<Target>('target');

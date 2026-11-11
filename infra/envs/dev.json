@@ -202,7 +202,8 @@
         "REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.",
         "SPAN_SAMPLE=<N> keeps the Server-Timing phases of 1 request in N, and of every request over 5 seconds, as a request.spans log line and one SITE_EVENTS point, after the answer (worker/repo-span-sample.ts). off keeps none.",
         "SERVICE_LEVELS=on writes one SITE_EVENTS point per landing, clone, push and repository create and per 10 API reads, after the answer, for the admin page (shared/service-levels.ts). Set it on this Worker and Superfan together. Budget: docs/observability-plan.md.",
-        "REPO_ANALYTICS=on records admitted repository usage in the existing SITE_EVENTS point and enables Insights; TRAFFIC_EVENTS and TRAFFIC_REPORT must also be on. No historical usage is backfilled."
+        "REPO_ANALYTICS=on records admitted repository usage in the existing SITE_EVENTS point and enables Insights; TRAFFIC_EVENTS and TRAFFIC_REPORT must also be on. No historical usage is backfilled.",
+        "OPERATION_METRICS=on observes existing work only. OPERATION_DETAIL_EVERY selects private details (dev 1, prod 10); OPERATION_FULL_UNTIL is an explicit UTC expiry for a 48-hour production capture, set only after dev acceptance. Aggregate operation.v1 points are independent of detail selection. No latency alerts are added (docs/repository-observability.md)."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -292,7 +293,7 @@
           "SUPPORT_EMAIL": "support@yonedalabs.ai",
           "SPAN_SAMPLE": "off",
           "SERVICE_LEVELS": "on",
-          "REQUEST_IDS": "off",
+          "REQUEST_IDS": "on",
           "AUTOMATIC_LOCALITY": "on",
           "CELLS": "on",
           "GLOBAL_AUTH_LIMITS": "on",
@@ -309,7 +310,10 @@
           "RECENT_VERSIONS": "on",
           "REGIONAL_API": "on",
           "REPO_ANALYTICS": "on",
-          "ADMIN_READ_CACHE": "on"
+          "ADMIN_READ_CACHE": "on",
+          "OPERATION_METRICS": "on",
+          "OPERATION_DETAIL_EVERY": "1",
+          "OPERATION_COMPONENT": "platform"
         },
         "secrets_store_secrets": [
           {
@@ -626,7 +630,8 @@
         "vars": {
           "CELLS": "on",
           "AUTOMATIC_LOCALITY": "on",
-          "REGIONAL_API": "on"
+          "REGIONAL_API": "on",
+          "REQUEST_IDS": "on"
         },
         "services": [
           {
@@ -734,8 +739,11 @@
           "PROMO_CREDIT_USD": "100",
           "REFUND_MAX_USD": "500",
           "REFUND_DAILY_USD": "1000",
-          "REQUEST_IDS": "off",
-          "FAST_AGENTS_LIST": "on"
+          "REQUEST_IDS": "on",
+          "FAST_AGENTS_LIST": "on",
+          "OPERATION_METRICS": "on",
+          "OPERATION_DETAIL_EVERY": "1",
+          "OPERATION_COMPONENT": "managed"
         },
         "secrets_store_secrets": [
           {
@@ -842,6 +850,12 @@
             "binding": "REVIEWS",
             "class_name": "ManagedReviewWorkflow"
           }
+        ],
+        "analytics_engine_datasets": [
+          {
+            "binding": "SITE_EVENTS",
+            "dataset": "yonedarepo_dev_site_events"
+          }
         ]
       }
     },
@@ -874,7 +888,8 @@
         "ADMIN_ACCOUNTS: the platform Worker's operator list, repeated here for the session answer's is_admin (the admin entry in the sidebar); keep the two equal.",
         "REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.",
         "CLIENT_ERRORS=on: POST /api/client-error logs what browsers report, message and route only, rate limited by AUTH_LIMITER (worker/client-errors.ts). Off, it answers 204 and does nothing.",
-        "Built assets are served where the request arrives, without this Worker: /assets/* and /brand/* are out of run_worker_first. Pages, /api and everything else run it first."
+        "Built assets are served where the request arrives, without this Worker: /assets/* and /brand/* are out of run_worker_first. Pages, /api and everything else run it first.",
+        "Operation and browser measurements observe existing work only (docs/repository-observability.md). OPERATION_FULL_UNTIL is an explicit UTC capture expiry; normal production detail is 1 in 10, dev retains full detail. No repository lookup validates a beacon."
       ],
       "secrets": [
         "OWNER_TOKEN"
@@ -939,8 +954,8 @@
           "PUBLIC_APP_ORIGIN": "{origin}",
           "WEB_ANALYTICS_TOKEN": "70b90cc7e849429fa25cc64897ebfd2b",
           "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
-          "REQUEST_IDS": "off",
-          "CLIENT_ERRORS": "off",
+          "REQUEST_IDS": "on",
+          "CLIENT_ERRORS": "on",
           "CELLS": "on",
           "AUTOMATIC_LOCALITY": "on",
           "GLOBAL_AUTH_LIMITS": "on",
@@ -948,7 +963,11 @@
           "FAST_APP_HEAD": "on",
           "OVERVIEW_MARKDOWN_PRELOAD": "on",
           "EARLY_READS": "on",
-          "REGIONAL_API": "on"
+          "REGIONAL_API": "on",
+          "OPERATION_METRICS": "on",
+          "OPERATION_COMPONENT": "front",
+          "OPERATION_DETAIL_EVERY": "1",
+          "CLIENT_PERFORMANCE": "on"
         },
         "services": [
           {

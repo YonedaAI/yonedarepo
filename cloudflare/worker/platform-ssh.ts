@@ -12,6 +12,7 @@
 import { jwtVerify } from 'jose';
 import { error, response } from './http';
 import { log } from './log';
+import { operationCarrier } from './operation-carrier';
 import { orgAccess } from './platform-org-access';
 import { checkKey, lookupKey } from './platform-ssh-keys';
 import type { PatGrant, PatScope } from './repo-pat';
@@ -57,7 +58,15 @@ function tokenKey(secret: string) {
   return keyCache.key;
 }
 
-type Session = { a: string; k: string; f: string; r: string; s: string; e: number };
+type Session = {
+  a: string;
+  k: string;
+  f: string;
+  r: string;
+  s: string;
+  e: number;
+  o?: { requestId?: string; span: string };
+};
 
 async function mint(secret: string, session: Session) {
   const payload = base64url(enc.encode(JSON.stringify(session)));
@@ -106,6 +115,15 @@ export async function verifySshToken(
   if (!(session.e > Date.now()) || session.r !== repo || session.s !== service) return null;
   const checked = await checkKey(env, session.a, session.k, session.f);
   if (!checked) return null;
+  if (
+    env.OPERATION_METRICS === 'on' &&
+    /^[A-Za-z0-9._-]{8,64}$/.test(session.o?.requestId ?? '') &&
+    /^[A-Za-z0-9._-]{8,64}$/.test(session.o?.span ?? '')
+  )
+    log.info('ssh.session_link', {
+      parent_request_id: session.o?.requestId,
+      parent_span_id: session.o?.span,
+    });
   const orgs = await orgAccess(env, session.a, checked.orgs);
   return {
     _pat: {
@@ -170,7 +188,16 @@ export async function sshInternal(req: Request, env: Env): Promise<Response> {
     if (!(await checkKey(env, account, keyId, fingerprint)))
       return error('UNAUTHORIZED', 'Unknown or removed SSH key', 401);
     const expires = Date.now() + TOKEN_TTL_MS;
-    const session = { a: account, k: keyId, f: fingerprint, r: repo, s: service, e: expires };
+    const carrier = env.OPERATION_METRICS === 'on' ? operationCarrier() : undefined;
+    const session = {
+      a: account,
+      k: keyId,
+      f: fingerprint,
+      r: repo,
+      s: service,
+      e: expires,
+      ...(carrier ? { o: { requestId: carrier.requestId, span: carrier.span } } : {}),
+    };
     return response({ token: await mint(secret, session), expires_at: expires });
   }
   return error('NOT_FOUND', 'Not found', 404);

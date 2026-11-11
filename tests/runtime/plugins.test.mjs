@@ -1,5 +1,6 @@
-// The agent plugins (plugins/): the Claude Code plugin is the source of the skill, and the
-// Codex and Gemini copies that `yoneda setup` installs must stay identical to it. Every
+// The agent plugins (plugins/): `skills/yoneda/SKILL.md` is the one skill, the source that
+// `npx skills add YonedaAI/yonedarepo` installs into any agent; the Claude Code plugin's,
+// Codex's and Gemini's copies (which `yoneda setup` installs) must stay identical to it. Every
 // client points at the production account MCP (dev only by an explicit override) and takes
 // its token from YONEDA_TOKEN. The public marketplace (served from the site, no Git host
 // needed) lists the same plugin.
@@ -12,9 +13,11 @@ const read = (path) => readFileSync(new URL(path, root), 'utf8');
 const json = (path) => JSON.parse(read(path));
 const MCP = 'https://api.yonedarepo.com/api/v1/mcp';
 
-test('the Codex skill and Gemini context are the Claude Code skill', () => {
-  const skill = read('plugins/yoneda/skills/yoneda/SKILL.md');
-  assert.match(skill, /^---\nname: yoneda\ndescription: .+\n---\n/);
+test('every plugin carries the one skill', () => {
+  const skill = read('skills/yoneda/SKILL.md');
+  // Quoted: the text holds `: `, which strict YAML parsers (`npx skills`) reject unquoted.
+  assert.match(skill, /^---\nname: yoneda\ndescription: "[^"]+"\n---\n/);
+  assert.equal(read('plugins/yoneda/skills/yoneda/SKILL.md'), skill);
   assert.equal(read('plugins/codex/skills/yoneda/SKILL.md'), skill);
   assert.equal(read('plugins/gemini/GEMINI.md'), skill.replace(/^---\n[\s\S]*?\n---\n\n/, ''));
 });
@@ -54,8 +57,16 @@ const files = (dir) =>
     return statSync(new URL(path, root)).isDirectory() ? files(path) : [path];
   });
 
+test('`npx skills add` finds exactly one skill, and it is not internal', () => {
+  const found = readdirSync(new URL('skills', root)).filter((name) =>
+    statSync(new URL(`skills/${name}/SKILL.md`, root), { throwIfNoEntry: false })?.isFile(),
+  );
+  assert.deepEqual(found, ['yoneda']);
+  assert.doesNotMatch(read('skills/yoneda/SKILL.md').split('\n---\n')[0], /^\s*internal:\s*true/m);
+});
+
 test('no plugin file defaults to the dev platform', () => {
-  for (const path of [...files('plugins'), '.claude-plugin/marketplace.json'])
+  for (const path of [...files('plugins'), ...files('skills'), '.claude-plugin/marketplace.json'])
     assert.doesNotMatch(read(path), /dev\.yonedarepo\.com/, path);
 });
 

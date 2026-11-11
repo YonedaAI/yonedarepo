@@ -14,6 +14,7 @@ import type { AccountCreated, SignupProvider } from './account-index';
 import { afterAnswer } from './background';
 import { error, readJson, response } from './http';
 import { log } from './log';
+import { type OperationCarrier, operationCarrier } from './operation-carrier';
 import type { SignupRegion } from './region';
 import type { SignupSource } from './site-events';
 import { sha } from './storage';
@@ -23,9 +24,13 @@ import { workspace } from './workspace';
 type Outcome = { sent: true } | { sent: false; reason: string };
 /** The platform entrypoint's RPC surface used here. */
 type Platform = {
-  accountCreated(account: string, details: AccountCreated): Promise<void>;
-  verifyEmail(account: string, change?: string): Promise<Outcome>;
-  passwordReset(account: string): Promise<void>;
+  accountCreated(
+    account: string,
+    details: AccountCreated,
+    observation?: OperationCarrier,
+  ): Promise<void>;
+  verifyEmail(account: string, change?: string, observation?: OperationCarrier): Promise<Outcome>;
+  passwordReset(account: string, observation?: OperationCarrier): Promise<void>;
 };
 export const platformOf = (env: Env) =>
   (env.PLATFORM ?? env.SELF) as unknown as Platform | undefined;
@@ -60,7 +65,11 @@ export function accountCreated(
       return;
     }
     try {
-      await platform.accountCreated(account, { provider, welcome: Boolean(email), ...region });
+      await platform.accountCreated(
+        account,
+        { provider, welcome: Boolean(email), ...region },
+        operationCarrier(),
+      );
     } catch (e: any) {
       const error = String(e?.message ?? e).slice(0, 200);
       log.error('account.created.enqueue_failed', { error });
@@ -121,7 +130,7 @@ export async function emailRoute(
   const platform = platformOf(env);
   if (typeof platform?.verifyEmail !== 'function')
     return error('EMAIL_UNAVAILABLE', 'Email is not available right now', 503);
-  const outcome = await platform.verifyEmail(who.workspace, change);
+  const outcome = await platform.verifyEmail(who.workspace, change, operationCarrier());
   if (outcome.sent) return response({ sent: true });
   const [code, message, status] = REFUSED[outcome.reason] ?? ['EMAIL_REFUSED', 'Not sent', 409];
   return error(code, message, status);

@@ -24,6 +24,7 @@
 // ADMIN_ACCOUNTS: the platform Worker's operator list, repeated here for the session answer's is_admin (the admin entry in the sidebar); keep the two equal.
 // REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.
 // CLIENT_ERRORS=on: POST /api/client-error logs what browsers report, message and route only, rate limited by AUTH_LIMITER (worker/client-errors.ts). Off, it answers 204 and does nothing.
+// Operation and browser measurements observe existing work only (docs/repository-observability.md). OPERATION_FULL_UNTIL is an explicit UTC capture expiry; normal production detail is 1 in 10, dev retains full detail. No repository lookup validates a beacon.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -179,15 +180,19 @@
     "AUDIT_LOG": "off",
     "AUTOMATIC_LOCALITY": "on",
     "CELLS": "on",
-    "CLIENT_ERRORS": "off",
+    "CLIENT_ERRORS": "on",
+    "CLIENT_PERFORMANCE": "on",
     "EARLY_READS": "on",
     "FAST_APP_HEAD": "on",
     "GLOBAL_AUTH_LIMITS": "on",
+    "OPERATION_COMPONENT": "front",
+    "OPERATION_DETAIL_EVERY": "10",
+    "OPERATION_METRICS": "on",
     "OVERVIEW_MARKDOWN_PRELOAD": "on",
     "PUBLIC_APP_ORIGIN": "https://yonedarepo.com",
     "REGIONAL_API": "on",
     "REGION_SIGNALS": "on",
-    "REQUEST_IDS": "off",
+    "REQUEST_IDS": "on",
     "RESPONSE_LATENCY": "on",
     "SEO_INDEXING": "on",
     "STATIC_ASSET_CACHE": "on",

@@ -4,6 +4,7 @@ import { App } from './App';
 import { AppErrorBoundary, reloadAfterStaleChunk } from './components/AppErrorBoundary';
 import { applyTheme, readTheme } from './features/shell/theme';
 import { reportClientError } from './features/site/clientErrors';
+import { startClientPerformance } from './features/site/clientPerformance';
 import { rememberLanding, tabStorage } from './features/site/landingSource';
 import { sendPagePing } from './features/site/pagePing';
 import { prepareSiteEntry } from './features/site/SiteEntry';
@@ -42,6 +43,7 @@ rememberLanding(tabStorage(), window.location.href, document.referrer);
 // index.html's inline script already set the theme before the first paint; this keeps a
 // stale attribute from surviving a choice made in another tab before load.
 applyTheme(readTheme());
+startClientPerformance();
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Application root is missing');

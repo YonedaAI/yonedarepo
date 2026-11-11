@@ -9,6 +9,8 @@ import type { AccountCreated } from './account-index';
 import { cellEnv } from './cell-env';
 import { internalAccounts } from './internal-accounts';
 import { log, served } from './log';
+import { type OperationCarrier, withCarrier } from './operation-carrier';
+import { markOperationOutcome, observeOperation, observeRequest } from './operation-observation';
 import { closeCell, unlist } from './platform-account-close';
 import { closurePart } from './platform-account-close-part';
 import { accountCreated, SIGNUP_NOTICE } from './platform-accounts';
@@ -60,6 +62,15 @@ export function oneAtATimeInBatch() {
   };
 }
 
+function acknowledge(message: Message<Envelope>) {
+  message.ack();
+  markOperationOutcome('ok');
+}
+function retryMessage(message: Message<Envelope>, options: { delaySeconds?: number }) {
+  message.retry(options);
+  markOperationOutcome('retry');
+}
+
 export async function platformJob(
   env: Env,
   message: Message<Envelope>,
@@ -68,66 +79,66 @@ export async function platformJob(
   const envelope = message.body;
   if (envelope.kind === 'platform_check') {
     await executeCheckRun(env, envelope);
-    message.ack();
+    acknowledge(message);
   } else if (envelope.kind === 'platform_objects') {
     await oneAtATime(() => projectObjects(env, envelope.repo_id, envelope.job_id));
-    message.ack();
+    acknowledge(message);
   } else if (envelope.kind === 'platform_derive') {
     await oneAtATime(() => deriveAfterLanding(env, envelope));
-    message.ack();
+    acknowledge(message);
   } else if (envelope.kind === SUMMARY_JOB) {
     await oneAtATime(() => summaryJob(env, envelope));
-    message.ack();
+    acknowledge(message);
   } else if (envelope.kind === CLASSIFY) {
     await oneAtATime(() => classifyJob(env, envelope));
-    message.ack();
+    acknowledge(message);
   } else if (envelope.kind === PACK_BUILD) {
     await oneAtATime(() => packBuildJob(env, envelope));
-    message.ack();
+    acknowledge(message);
   } else if (envelope.kind === COMPACT_JOB) {
     await oneAtATime(() => compactionJob(env, envelope));
-    message.ack();
+    acknowledge(message);
   } else if (envelope.kind === 'platform_hooks') {
     const outcome = await hookJob(env, envelope);
-    if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
-    else message.ack();
+    if (outcome.retry) retryMessage(message, { delaySeconds: outcome.retry });
+    else acknowledge(message);
   } else if (envelope.kind === LAND_CHECK) {
     const outcome = await landCheckJob(env, envelope, message.attempts);
-    if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
-    else message.ack();
+    if (outcome.retry) retryMessage(message, { delaySeconds: outcome.retry });
+    else acknowledge(message);
   } else if (envelope.kind === 'platform_lfs_sweep') {
     await lfsSweepJob(env, envelope);
-    message.ack();
+    acknowledge(message);
   } else if (envelope.kind === 'platform_quarantine') {
     await laterIfHeld(env, envelope, () => quarantineJob(env, envelope));
-    message.ack();
+    acknowledge(message);
   } else if (envelope.kind === 'platform_purge') {
     await purgeJob(env, envelope);
-    message.ack();
+    acknowledge(message);
   } else if (envelope.kind === ERASE) {
     await laterIfHeld(env, envelope, () => eraseJob(env, envelope));
-    message.ack();
+    acknowledge(message);
   } else if (envelope.kind === SIGNUP_NOTICE) {
     const outcome = await signupNoticeJob(env, envelope, message.attempts);
-    if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
-    else message.ack();
+    if (outcome.retry) retryMessage(message, { delaySeconds: outcome.retry });
+    else acknowledge(message);
   } else if (envelope.kind === 'org_member_notification') {
     const outcome = await memberNotificationJob(env, envelope);
-    if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
-    else message.ack();
+    if (outcome.retry) retryMessage(message, { delaySeconds: outcome.retry });
+    else acknowledge(message);
   } else if (envelope.kind === 'account_welcome' || envelope.kind === 'account_verify') {
     const outcome = await welcomeJob(env, envelope, message.attempts);
-    if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
-    else message.ack();
+    if (outcome.retry) retryMessage(message, { delaySeconds: outcome.retry });
+    else acknowledge(message);
   } else if (envelope.kind === 'account_password_reset') {
     const outcome = await passwordResetJob(env, envelope, message.attempts);
-    if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
-    else message.ack();
+    if (outcome.retry) retryMessage(message, { delaySeconds: outcome.retry });
+    else acknowledge(message);
   } else if (envelope.kind === NEWSLETTER_JOB) {
     const outcome = await newsletterJob(env, envelope, message.attempts);
-    if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
-    else message.ack();
-  } else message.ack(); // not a platform job
+    if (outcome.retry) retryMessage(message, { delaySeconds: outcome.retry });
+    else acknowledge(message);
+  } else acknowledge(message); // not a platform job
 }
 
 export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
@@ -137,7 +148,9 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
 
   fetch(req: Request) {
     const waitUntil = (work: Promise<unknown>) => this.ctx.waitUntil(work);
-    return served({ env: this.env, req, waitUntil }, () => platformFetch(req, this.env));
+    return served({ env: this.env, req, waitUntil }, () =>
+      observeRequest(this.env, req, () => platformFetch(req, this.env)),
+    );
   }
   /** Inbound TCP: Git over SSH, through the SSH gateway container. */
   connect(socket: Socket) {
@@ -150,8 +163,12 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   handleChosen(account: string, handle: string) {
     return projectHandle(this.env, account, handle);
   }
-  accountCreated(account: string, details?: AccountCreated) {
-    return accountCreated(this.env, account, details);
+  accountCreated(account: string, details?: AccountCreated, observation?: OperationCarrier) {
+    return withCarrier(this.env, observation, () =>
+      observeOperation(this.env, { kind: 'request', operation: 'account.accountCreated' }, () =>
+        accountCreated(this.env, account, details),
+      ),
+    );
   }
   /** The accounts that are ours (RPC from the front Worker, which has no D1), for leaving them
    * out of the site's figures. */
@@ -164,8 +181,12 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   }
   /** Settings' resend (no `change`) or address change for a signed-in account (RPC, as
    * above): a new confirmation token and email, or why not. */
-  verifyEmail(account: string, change?: string) {
-    return verifyEmail(this.env, account, change);
+  verifyEmail(account: string, change?: string, observation?: OperationCarrier) {
+    return withCarrier(this.env, observation, () =>
+      observeOperation(this.env, { kind: 'request', operation: 'account.verifyEmail' }, () =>
+        verifyEmail(this.env, account, change),
+      ),
+    );
   }
   /** What deleting an account takes in this cell, and doing it (RPC from the cell closing it). */
   closurePart(account: string) {
@@ -178,8 +199,12 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
     return unlist(this.env, account);
   }
   /** A forgotten password's link, or nothing (RPC, as above). */
-  passwordReset(account: string) {
-    return passwordReset(this.env, account);
+  passwordReset(account: string, observation?: OperationCarrier) {
+    return withCarrier(this.env, observation, () =>
+      observeOperation(this.env, { kind: 'request', operation: 'account.passwordReset' }, () =>
+        passwordReset(this.env, account),
+      ),
+    );
   }
   /** Every minute: keeps the SSH gateway (and its tunnel) running, sends the purges that
    * came due and this minute's compaction jobs; once a night, starts the billing reconcile and
@@ -187,17 +212,33 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
    * None stops the others. */
   async scheduled(controller: ScheduledController) {
     const logged = (event: string) => (e: unknown) => log.error(event, { error: e });
-    await inScope({ env: this.env }, () =>
+    await inScope({ env: this.env, source: 'cron' }, () =>
       Promise.all([
-        sshKeepAlive(this.env, 'cron'),
-        sweepDeleted(this.env).catch(logged('undo.sweep_failed')),
-        sweepCompaction(this.env).catch(logged('compaction.sweep_failed')),
-        nightlyReconcile(this.env, controller.scheduledTime).catch(
-          logged('billing.reconcile_failed'),
+        observeOperation(
+          this.env,
+          { kind: 'background', source: 'cron', actor: 'system', operation: 'ssh_keepalive' },
+          () => sshKeepAlive(this.env, 'cron'),
         ),
-        sweepNewsletter(this.env, controller.scheduledTime).catch(
-          logged('newsletter.sweep_failed'),
-        ),
+        observeOperation(
+          this.env,
+          { kind: 'background', source: 'cron', actor: 'system', operation: 'purge_due' },
+          () => sweepDeleted(this.env),
+        ).catch(logged('undo.sweep_failed')),
+        observeOperation(
+          this.env,
+          { kind: 'background', source: 'cron', actor: 'system', operation: 'compaction_due' },
+          () => sweepCompaction(this.env),
+        ).catch(logged('compaction.sweep_failed')),
+        observeOperation(
+          this.env,
+          { kind: 'background', source: 'cron', actor: 'system', operation: 'billing_reconcile' },
+          () => nightlyReconcile(this.env, controller.scheduledTime),
+        ).catch(logged('billing.reconcile_failed')),
+        observeOperation(
+          this.env,
+          { kind: 'background', source: 'cron', actor: 'system', operation: 'newsletter_cleanup' },
+          () => sweepNewsletter(this.env, controller.scheduledTime),
+        ).catch(logged('newsletter.sweep_failed')),
       ]),
     );
   }
@@ -211,9 +252,21 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
           const waited = readyWait(message);
           if (waited !== null && waited > QUEUE_WAIT_BUDGET_MS)
             log.warn('queue.late', { ms: waited });
-          return platformJob(this.env, message, oneAtATime).catch((e) =>
-            settleFailedJob(message, e),
-          );
+          return withCarrier(this.env, message.body.observation, () =>
+            observeOperation(
+              this.env,
+              {
+                kind: 'background',
+                source: 'queue',
+                actor: 'system',
+                operation: message.body.kind,
+                repo: message.body.repo_id,
+                attempt: message.attempts,
+                queueWaitMs: waited ?? undefined,
+              },
+              () => platformJob(this.env, message, oneAtATime),
+            ),
+          ).catch((e) => settleFailedJob(message, e));
         }),
       ),
     );

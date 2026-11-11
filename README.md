@@ -21,6 +21,7 @@ Agents use the platform as clients, through Git, the `yoneda` CLI and MCP.
 - Sign up at [yonedarepo.com](https://yonedarepo.com/), save the recovery code and choose **New repository**. Each repository has Code, History, Changes, Search and Settings.
 - Create a personal access token, or sign in from a terminal with `yoneda login` (device login).
 - Clone and push with stock Git, or point an agent's MCP client at `/api/v1/mcp`. See [MCP, tokens and the CLI](docs/remote-mcp.md).
+- Teach any coding agent the workflow: `npx skills add YonedaAI/yonedarepo`.
 
 ## Architecture
 

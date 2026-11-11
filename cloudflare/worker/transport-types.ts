@@ -16,6 +16,10 @@ export type Envelope = {
   number?: number;
   /** The request this job descends from (request-scope.ts). Absent on older messages. */
   request_id?: string;
+  observation?: import('./operation-carrier').OperationCarrier;
+  parent_span_id?: string;
+  origin_route?: string;
+  origin_source?: string;
   /** Intentional producer delay; monitoring subtracts it from enqueue age. */
   queue_delay_ms?: number;
 };

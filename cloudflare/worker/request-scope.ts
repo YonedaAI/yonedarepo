@@ -8,6 +8,7 @@
 // a service binding that forwards the same Request; a Durable Object call, a queue message, an
 // RPC call and a container request all start with no ray of their own (docs/logging.md).
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { operationHeaders } from './operation-links';
 import { queueDelay } from './queue-timing';
 import type { Envelope } from './types';
 
@@ -21,13 +22,30 @@ const ID = /^[A-Za-z0-9._-]{8,64}$/;
 type Waiter = (work: Promise<unknown>) => void;
 type Switches = { REQUEST_IDS?: string; BUILD_REVISION?: string };
 /** The job in scope; its fields come from a queue message, so none is trusted to exist. */
-type Job = Pick<Partial<Envelope>, 'repo_id' | 'job_id' | 'kind' | 'request_id'>;
+type Job = Pick<
+  Partial<Envelope>,
+  | 'repo_id'
+  | 'job_id'
+  | 'kind'
+  | 'request_id'
+  | 'parent_span_id'
+  | 'origin_route'
+  | 'origin_source'
+  | 'observation'
+>;
 
-export type Seed = { env?: Switches; req?: Request; waitUntil?: Waiter; job?: Job };
+export type Seed = {
+  env?: Switches;
+  req?: Request;
+  waitUntil?: Waiter;
+  job?: Job;
+  source?: import('../../shared/operation-metrics').OperationSource;
+};
 type Scope = Seed & {
   id?: string;
   /** This request's phases are kept already: one sample a request (repo-span-sample.ts). */
   spansTaken?: boolean;
+  metricFailureLogged?: boolean;
 };
 
 const scopes = new AsyncLocalStorage<Scope>();
@@ -65,7 +83,9 @@ const carrying = (scope: Scope | undefined): scope is Scope => scope?.env?.REQUE
 /** What an outgoing Durable Object, binding or container request adds (REQUEST_IDS). */
 export function carriedHeaders(): Record<string, string> | undefined {
   const scope = scopes.getStore();
-  return carrying(scope) ? { [REQUEST_ID_HEADER]: requestId(scope) as string } : undefined;
+  return carrying(scope)
+    ? { [REQUEST_ID_HEADER]: requestId(scope) as string, ...operationHeaders() }
+    : undefined;
 }
 
 /** `req` to forward over a service binding, naming this request (REQUEST_IDS). */
@@ -73,7 +93,7 @@ export function carriedRequest(req: Request): Request {
   const headers = carriedHeaders();
   if (!headers) return req;
   const forwarded = new Request(req, { cf: req.cf });
-  forwarded.headers.set(REQUEST_ID_HEADER, headers[REQUEST_ID_HEADER]);
+  for (const [name, value] of Object.entries(headers)) forwarded.headers.set(name, value);
   return forwarded;
 }
 
@@ -85,7 +105,31 @@ export function carriedQueue<T extends Queue<Envelope>>(queue: T): T {
   const stamp = (body: Envelope, options?: { delaySeconds?: number }) => ({
     ...body,
     queue_delay_ms: queueDelay(options),
-    ...(carrying(scope) ? { request_id: requestId(scope) } : {}),
+    ...(operationHeaders()['x-yoneda-parent-span']
+      ? {
+          observation: {
+            requestId: requestId(scope),
+            span: operationHeaders()['x-yoneda-parent-span'],
+            origin: operationHeaders()['x-yoneda-origin'],
+            source: operationHeaders()['x-yoneda-source'],
+            traffic: operationHeaders()['x-yoneda-traffic'],
+            selected: operationHeaders()['x-yoneda-capture'] === '1',
+            fullUntil: operationHeaders()['x-yoneda-capture-until'] || undefined,
+          },
+        }
+      : {}),
+    ...(carrying(scope)
+      ? {
+          request_id: requestId(scope),
+          ...(operationHeaders()['x-yoneda-parent-span']
+            ? {
+                parent_span_id: operationHeaders()['x-yoneda-parent-span'],
+                origin_route: operationHeaders()['x-yoneda-origin'],
+                origin_source: operationHeaders()['x-yoneda-source'],
+              }
+            : {}),
+        }
+      : {}),
   });
   return {
     send: (body: Envelope, options?: QueueSendOptions) => queue.send(stamp(body, options), options),

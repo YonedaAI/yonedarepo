@@ -78,7 +78,8 @@ it('selected historical and staged commits keep their exact root and revision', 
   isolateTrees.clear();
   const historical = await read(r.id, r.cookie, target, `/blob?path=folder/a.txt&commit=${r.head.head.id}`);
   expect([historical.status, historical.body.content, historical.body.commit]).toEqual([200, 'before\n', r.head.head.id]);
-  expect(seen[1].slice(1)).toEqual([r.head.head.tree, ['folder/a.txt'], r.head.head.id]);
+  const [, root, paths, revision] = seen[1];
+  expect({ root, paths, revision }).toEqual({ root: r.head.head.tree, paths: ['folder/a.txt'], revision: r.head.head.id });
   isolateTrees.clear();
   expect((await read(r.id, r.cookie, target, '/tree?path=folder')).body.entries.map((entry: any) => entry.name)).toEqual(['a.txt']);
   expect(seen[2][2]).toEqual(['folder/']);

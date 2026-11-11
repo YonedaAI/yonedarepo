@@ -79,7 +79,8 @@
   "vars": {
     "AUTOMATIC_LOCALITY": "on",
     "CELLS": "on",
-    "REGIONAL_API": "on"
+    "REGIONAL_API": "on",
+    "REQUEST_IDS": "on"
   },
   "workers_dev": true
 }

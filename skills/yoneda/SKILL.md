@@ -1,0 +1,130 @@
+---
+name: yoneda
+description: "Use when the current Git repository has a yoneda:: remote (git remote -v shows yoneda::https://...) or a local YonedaRepo remote (`local`, http://127.0.0.1:<port>/git/<id>.git or http://host.docker.internal:<port>/git/<id>.git), or when asked to create, clone, read, land or review YonedaRepo repositories, or to use the yoneda CLI or YonedaRepo MCP tools. Not for ordinary GitHub/GitLab remotes."
+---
+
+# Working in a YonedaRepo repository
+
+YonedaRepo is a Git server built for many agents at once. Locally it is plain Git, with the platform's own commit ids. The difference is on the server: when you push to the integration branch (`main` by default), it **merges disjoint concurrent changes for you**, and each push is one transaction. Check the remote first:
+
+```sh
+git remote -v            # yoneda::https://api.yonedarepo.com/r… or local http://127.0.0.1:…/git/r….git means this skill applies
+yoneda status --brief    # one line, no network: repository, branch, commits not on the platform yet
+```
+
+No `yoneda` command? Install it (with the `git-remote-yoneda` helper): `curl -fsSL https://yonedarepo.com/install.sh | sh`, then `yoneda login`. `yoneda setup claude|codex|gemini|opencode` adds what a skill cannot: the account MCP server, and in Claude Code and opencode the hooks that record your reads and sessions. Without them, everything below still works by hand.
+
+## Cloning: fetch only what you need
+
+`git clone yoneda::https://…/<repo-id>` (or `yoneda clone <repo-id>`) is lazy: it brings the history's commits and trees, and Git fetches a file's contents the first time anything needs them (checkout, diff, blame, a build). Git works as in a full clone.
+
+- Take only the directories your task is in: `yoneda clone <repo-id> --sparse src/app,docs` (the files at the top come too). Nothing outside them is fetched or on disk: `yoneda sparse --add lib` brings a directory in, and `git show HEAD:<path>` reads one file without checking it out.
+- `yoneda clone <repo-id> --full` (or `git clone -c yoneda.lazy=false …`) fetches every object up front, e.g. before working offline.
+- Each session record reports what the clone fetched against the bytes of the files you read.
+
+## The loop
+
+**If a `local` remote exists, follow the local service loop below first.** Its integration branch may be `dev`. `origin` may be GitHub: the cloud examples here never authorize pushing GitHub `main` or bypassing the project's release process.
+
+Before you start, file a flight plan: `yoneda flight-plan -m <goal> [--scope <text>]` (or MCP `git_flight_plan` with `branch` and `session_id` set to `$YONEDA_SESSION_ID`). One or two sentences on what this work sets out to do, for this branch, pushed or not. The landing shows the goal to whoever reviews it, and the Intent drift agent, where it is on, compares it with the diff. Nothing refuses a push without one; a landing with none just reads "No flight plan". Never put a secret in it (a plan holding a credential is refused).
+
+1. **Commit small and often.** One logical change per commit. Small commits merge cleanly on the server; large ones conflict.
+2. **Land with `git push origin main`.** You do not need to pull first:
+   - the helper prints `landed <commit> on main at version <n>`.
+   - other agents' changes to *different files or lines* are merged on the server, and your push succeeds with `server merged concurrent changes`, and `git pull` fast-forwards to the merge.
+   - main may get a platform commit on top of yours (a merge, or the record of your landing). Run `git pull` so your next commit starts from main; it fast-forwards.
+3. **If the push reports a conflict** (the same lines changed on main):
+   1. `yoneda conflicts` lists the paths of the refused landing
+   2. `git pull`, resolve the files and commit
+   3. `git push origin main` again
+4. **Never force-push `main`** (`git push --force`, `+main`). Main only moves forward through landing.
+5. **Use a feature branch when the work needs review:**
+   1. `git switch -c feature/x`, commit, then `git push origin feature/x`
+   2. a reviewer runs `yoneda review approve <sha>` (or `yoneda review reject <sha> -m <reason>`); `yoneda check run <name>` and `yoneda check status` handle the checks the repository's policy requires
+   3. `yoneda land --branch feature/x` lands it once its checks and approvals pass
+6. `git push --atomic origin a b` moves several branches in one transaction: all or none.
+
+## Declared reads: a push says what it relied on
+
+Landing checks more than overlapping writes. A push may declare the files its change **read**; if any of them changed on main after your base, the landing is refused as a read conflict (`read conflict on <path>: run git pull`), even when your own edits touch other files. Then `git pull`, check your change still holds against the new file, and push again.
+
+1. The session's reads live in `.git/yoneda/reads` (never committed). In Claude Code the yoneda plugin records every Read and Grep result there. Elsewhere, declare the files your change relies on: `yoneda reads add <path>` (a directory as `dir/`). `yoneda reads list` shows them, `yoneda reads clear` drops them.
+2. Push. With a `yoneda::` remote, `git push` declares them by itself. With an HTTPS remote (`https://…/git/r….git`), use `yoneda push <git push arguments>` (e.g. `yoneda push origin main`): it adds `-o yoneda.reads=…`. Either clears them after a clean push. In Claude Code, a plain `git push` to an HTTPS remote is stopped while reads are recorded.
+3. Record the session. The Claude Code and opencode plugins do it at the end of each turn that pushed: the CLI, model, your last message (truncated) and the session's transcript with the context it started with. The platform redacts credentials in the transcript and the repository's readers can see it. Elsewhere, after pushing: `yoneda session record --cli <cli> --summary <text> --model <m> [--transcript <file>]` for HEAD (a short summary, never secrets). `yoneda session list` shows a commit's records.
+
+## A local service: many sessions on one machine
+
+A clone can run its own YonedaRepo (`yoneda local serve`): the same landing rules, on this machine, for every session and agent working in that clone. Run `yoneda local ui` to get its read-only dashboard address. Its remote is `local` (`http://127.0.0.1:<port>/git/<id>.git`; from a container, `http://host.docker.internal:<port>/git/<id>.git`).
+
+1. **Discover the integration branch** with `yoneda local status` (`--json` reports `branch` and `head`); `git config --get yoneda.localBranch` also names it. Examples below use `dev`; use the reported branch (`main` on older/default setups).
+2. **Work in your own task worktree**, from `local/dev`: `git fetch local`, then `git worktree add -b feature/<task> .worktrees/<task> local/dev`. Never edit another session's worktree or the clone's own checkout.
+3. **Land with `git push local HEAD:dev`.** It either lands as is, lands with a server merge of compatible concurrent work, or refuses with a conflict, stale read or failed check. On refusal: `git pull local dev`, resolve in your worktree, commit and push again. Never force-push the integration branch.
+4. **Declare reads the same way**: `yoneda reads add <path>`, then `yoneda push local HEAD:dev`. Fetch `local/dev` after acceptance and verify any merged result before integration.
+5. **Respect the project's publication path.** For a project with development and production branches, use **task branches → local/dev → dev → release PR → main**. Local acceptance is separate from updating checkout `dev`, pushing GitHub and deploying. The coordinating session handles integration after checks.
+6. **Cloud sync is explicit configuration.** The owner can initialize with `yoneda local init --branch dev --no-cloud`, or stop the service and run `yoneda local configure --branch dev --no-cloud` for an existing clone. This preserves existing refs and prevents cloud publication, even with a stored login. `--cloud` enables automatic sync to the **same named branch** of the paired Yoneda cloud repository; it does not handle GitHub release PRs. Never enable it for a release-controlled clone without the owner's instruction.
+7. **No answer from the remote** (connection refused)? Ask the clone's owner to start `yoneda local serve`; do not start a second service in a session.
+8. **In a container**, use the token made for you (`yoneda local token create <name>`, by the owner); never another agent's. `yoneda local log` shows each landing and who made it.
+
+## Go-around: findings come back to you
+
+Review agents and reviewers leave findings on lines of a change. Nothing wakes you for them: they are in the context of the next session on that branch, in a `Go-around` section with file and line, and in `yoneda change show <n>` (MCP: `go_around` in `git_context` and `git_change_show`).
+
+1. Read them first, and check the file: one marked "on older commit" may be fixed already.
+2. Fix them and push. A push re-runs the review on the new head, and a reviewer token's older findings drop out once it has looked again.
+3. If a finding is wrong, say why on it: `yoneda change comment <n> -m <why> --path <p> --line <n> --side new --resolve`.
+
+Each push drops the head's approvals, so bundle your fixes into one push.
+
+## Memories: what the code does not say
+
+The repository keeps memories that agents and people leave for later sessions. You are shown them without asking: the relevant ones at session start, the ones on a file when you read it, and those matching your prompt (each once per session; one marked "the code changed since" may be out of date, so verify it).
+
+1. **Add one when you learn something a later session would otherwise rediscover:**
+   - a **decision** and why (`chose retries over a queue: the queue loses order`)
+   - a **constraint** the code does not enforce (`src/gen/ is generated; edit the template`)
+   - a **gotcha**: a non-obvious fix or trap (`the land queue replays retry(); keep it idempotent`)
+   - a **howto** that took effort to find (`run the eval with --serial; it shares one port`)
+   - a **convention**, a **risk**, a **fact** or a **preference**; or a short word of your own if none fits, which adds that kind to the repository
+2. Not for what the code, a commit message or the session summary already says, and never secrets (a memory holding a credential is refused).
+3. Anchor it to the files, directories (`dir/`) or symbols (`path#symbol`) it is about. It reaches the next agent who reads them, and reads as stale once that code changes on main.
+4. `yoneda memory add <kind> -m <text> --anchors src/net.rs#retry,docs/` (at most 2 KiB of text; or MCP `git_memory_add` with `session_id` set to `$YONEDA_SESSION_ID`). If an old memory is wrong, pass `--supersedes <n>`; `yoneda memory retire <n> -m <why>` when it no longer holds.
+5. `yoneda memory list [--path <p>]` and `yoneda memory show <n>` read them; MCP `git_context_relevant` ranks memories, contracts, sessions and open changes for files or a question.
+
+When a session added a memory, its end-of-turn summary is also offered as a draft memory for a person to publish or discard.
+
+## Read on the server instead of opening many files
+
+The server answers these from its index, with no checkout. Prefer them to reading file after file:
+
+| Need | Command |
+|---|---|
+| Where a name or string is used | `yoneda grep <query> [--path <p>] [-i]` |
+| Definitions in a file | `yoneda symbols <path>` |
+| Who changed each line, and in which commit | `yoneda blame <path> [--ref <b>]` |
+| History of the repository or a path | `yoneda log [path] [--ref <b>] [--limit <n>]` |
+| What changed between two commits | `yoneda diff <base> <head> [--path <p>]` |
+| Any of these as of an earlier landed version | add `--at <version>`, e.g. `yoneda grep <query> --at <version>` |
+
+`yoneda help` lists every command and flag.
+
+## Landing gates and other commands
+
+- `yoneda land --branch <b>` lands a pushed branch's head on main (inside a clone, `yoneda land` uses the current branch). The repository's policy decides whether it needs approvals or checks. A refusal names what is missing (`NOT_READY`, failing checks, approvals).
+- `yoneda repo create <name>`, `yoneda repo list`, `yoneda repo delete <id> --confirm <name>`: repositories created from the CLI land solo (no approvals).
+- `yoneda login` signs in through the browser and stores a token. `YONEDA_TOKEN` overrides the stored token.
+- Outside a clone, add `--repo <id>` (and `--origin <url>`) to repository commands.
+
+## Without a checkout: the MCP tools
+
+The `yoneda` MCP server (the account endpoint `/api/v1/mcp`) offers the same operations to agents without a local clone:
+
+- `repo_list`, `repo_create`, `repo_delete`
+- every `git_*` and `symbol_*` tool, each with a `repo` argument (id or name)
+
+The write path is `git_commit` (it commits on the server, so there is nothing to push), then `git_land`. A `CONFLICT` result carries base/ours/theirs: resolve them, commit again and land. Read with `git_grep`, `git_blame`, `symbol_list`, `git_log` (`at` for time travel) before falling back to `git_cat_file` on many files.
+
+## Rules
+
+- Keep each commit scoped to its task. Never rewrite published history.
+- Treat a conflict as information: re-read the merged main before resolving it.
+- Never put tokens in commands, files or commit messages. They come from `YONEDA_TOKEN` or `yoneda login`.

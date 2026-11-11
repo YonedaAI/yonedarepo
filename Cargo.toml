@@ -1,10 +1,10 @@
 [workspace]
-members = ["backend/crates/yoneda-core", "backend/crates/yoneda-store", "backend/crates/yoneda-platform", "backend/crates/yoneda-cloudflare", "backend/crates/yoneda-worker", "backend/crates/yoneda-runtime", "backend/crates/yoneda-cli", "backend/crates/yoneda-refmodel", "xtask"]
+members = ["backend/crates/yoneda-core", "backend/crates/yoneda-store", "backend/crates/yoneda-platform", "backend/crates/yoneda-cloudflare", "backend/crates/yoneda-worker", "backend/crates/yoneda-runtime", "backend/crates/yoneda-cli", "backend/crates/yoneda-local", "backend/crates/yoneda-refmodel", "xtask"]
 exclude = ["fixtures/retry-client"]
 resolver = "2"
 
 [workspace.package]
-version = "0.3.3"
+version = "0.3.4"
 edition = "2024"
 license = "Apache-2.0"
 rust-version = "1.99"

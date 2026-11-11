@@ -81,8 +81,8 @@ pub(super) fn manifest(site: &str, version: &str, built: &[(&str, u64, String)])
         .collect();
     json!({
         "version": version,
-        "install": format!("curl -fsSL {site}/install.sh | sh"),
-        "install_windows": format!("irm {site}/install.ps1 | iex"),
+        "install": format!("curl -fsSL {site}/downloads/cli/{version}/install.sh | sh"),
+        "install_windows": format!("irm {site}/downloads/cli/{version}/install.ps1 | iex"),
         "sha256sums": format!("{site}/downloads/cli/{version}/SHA256SUMS"),
         "targets": targets,
     })
@@ -112,6 +112,11 @@ pub(super) fn stage_metadata(
 ) -> Result<()> {
     stage_plugin(staged, site)?;
     let release = staged.join("cli").join(version);
+    for name in ["install.sh", "install.ps1"] {
+        let script = std::fs::read_to_string(Path::new("frontend/public").join(name))?
+            .replace("__YONEDA_SITE__", site);
+        write(&release.join(name), script.as_bytes())?;
+    }
     let sums: Vec<(String, String)> = built
         .iter()
         .map(|(target, _, sum)| (archive_name(version, target), sum.clone()))

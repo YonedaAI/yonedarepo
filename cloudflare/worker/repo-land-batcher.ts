@@ -1,19 +1,29 @@
 // The land combiner's logic (repo-land-combiner.ts), apart from the Durable Object so tests can run
 // it in-process with their own bindings: submissions and tickets, each step landing what waits.
+
 import { noteFull } from './durable';
 import { log, warned } from './log';
+import { type OperationCarrier, operationCarrier, withCarrier } from './operation-carrier';
+import { operationLinks } from './operation-links';
+import { measuredOutcome, observeOperation, operationRecorder } from './operation-observation';
 import { kickProjection, landChangesets } from './repo-changesets';
 import { refreshHead } from './repo-head';
 import { claimCommand } from './repo-land-poll';
 import { landBatch, type Settled } from './repo-merge';
 import { caller, type Json, RepoContext } from './repo-ops';
+import { inScope } from './request-scope';
 import type { Env } from './types';
 
 const SETTLED_KEPT = 10_000;
 const RETRY_MS = 250;
 const SUBMIT_BATCH = 256;
 export type Target = { repo: string; ref: string };
-type Submission = { item: Json; at: number; resolve: (outcome: Json | null) => void };
+type Submission = {
+  observation?: OperationCarrier;
+  item: Json;
+  at: number;
+  resolve: (outcome: Json | null) => void;
+};
 
 // Superfan counts land.timed_out and the land.*_failed events below by name.
 
@@ -22,6 +32,7 @@ type Submission = { item: Json; at: number; resolve: (outcome: Json | null) => v
  * their own bindings. `schedule(ms)` asks for one `step()` after `ms`.
  */
 export class LandBatcher {
+  #ticketParents = new Map<number, OperationCarrier[]>();
   #waiters = new Map<number, ((settled: Settled | null) => void)[]>();
   #settled = new Map<number, Settled>();
   #submissions: Submission[] = [];
@@ -38,9 +49,17 @@ export class LandBatcher {
    * Resolves with `ticket`'s outcome once a batch settles it, or null after `timeoutMs`
    * (the caller checks the authority and waits again).
    */
-  async wait(target: Target, ticket: number, timeoutMs: number) {
+  async wait(target: Target, ticket: number, timeoutMs: number, observation?: OperationCarrier) {
+    if (this.env.OPERATION_METRICS === 'on' && observation) {
+      const parents = this.#ticketParents.get(ticket) ?? [];
+      if (!parents.some((p) => p.span === observation.span))
+        this.#ticketParents.set(ticket, [...parents, observation].slice(-20));
+    }
     const done = this.#settled.get(ticket);
-    if (done) return done;
+    if (done) {
+      this.#ticketParents.delete(ticket);
+      return done;
+    }
     this.target = target;
     let deadline: ReturnType<typeof setTimeout> | null = null;
     const settled = new Promise<Settled | null>((resolve) => {
@@ -53,7 +72,10 @@ export class LandBatcher {
           log.warn('land.timed_out', { repo: target.repo, phase: 'wait' });
         const left = waiting.filter((r) => r !== resolve);
         if (left.length) this.#waiters.set(ticket, left);
-        else this.#waiters.delete(ticket);
+        else {
+          this.#waiters.delete(ticket);
+          this.#ticketParents.delete(ticket);
+        }
         resolve(null);
       }, timeoutMs);
     }).finally(() => clearTimeout(deadline));
@@ -65,11 +87,11 @@ export class LandBatcher {
    * Batch mode: lands `item` (a lander's credentials and its commit's shard records) in
    * the next batch; resolves with its outcome, or null after `timeoutMs` (resubmit).
    */
-  async submit(target: Target, item: Json, timeoutMs: number) {
+  async submit(target: Target, item: Json, timeoutMs: number, observation?: OperationCarrier) {
     this.target = target;
     let deadline: ReturnType<typeof setTimeout> | null = null;
     const outcome = new Promise<Json | null>((resolve) => {
-      const submission = { item, at: Date.now(), resolve };
+      const submission = { item, observation, at: Date.now(), resolve };
       this.#submissions.push(submission);
       deadline = setTimeout(() => {
         if (this.#submissions.includes(submission))
@@ -91,9 +113,32 @@ export class LandBatcher {
   async #landSubmitted(merger: RepoContext, ref: string) {
     const batch = this.#submissions.splice(0, SUBMIT_BATCH);
     let out: Json;
+    let batchLink: OperationCarrier | undefined;
     const started = Date.now();
     try {
-      out = await merger.call({ op: 'repo_land_submitted', ref, items: batch.map((s) => s.item) });
+      out = await operationLinks.run(undefined, () =>
+        inScope({ env: this.env, source: 'queue' }, () =>
+          observeOperation(
+            this.env,
+            {
+              kind: 'repository',
+              operation: 'landing.batch',
+              repo: merger.repo,
+              actor: 'system',
+              origin: 'landing.batch',
+            },
+            async () => {
+              batchLink = operationCarrier();
+              const result = await merger.call({
+                op: 'repo_land_submitted',
+                ref,
+                items: batch.map((s) => s.item),
+              });
+              return result;
+            },
+          ),
+        ),
+      );
     } catch (e: any) {
       // A full database refuses them again however often they are sent: answer each now.
       if (e?.code === 'REPO_FULL') {
@@ -109,6 +154,20 @@ export class LandBatcher {
     if (out.items.some((r: Json) => r.code === 'REPO_FULL'))
       noteFull(merger.repo, 'repo_land_submitted');
     for (const [i, submission] of batch.entries()) {
+      withCarrier(this.env, submission.observation, () => {
+        operationRecorder(this.env, {
+          kind: 'repository',
+          operation: 'landing.result',
+          repo: merger.repo,
+          queueWaitMs: started - submission.at,
+        })(Date.now() - submission.at, measuredOutcome(out.items[i]));
+        if (this.env.OPERATION_METRICS === 'on' && batchLink && submission.observation)
+          log.info('landing.batch_link', {
+            span_id: batchLink.span,
+            parent_span_id: submission.observation.span,
+            parent_request_id: submission.observation.requestId,
+          });
+      });
       if (out.items[i].status === 'deferred') again.push(submission);
       else
         submission.resolve({ ...out.items[i], batch: timing, queued_ms: started - submission.at });
@@ -117,10 +176,10 @@ export class LandBatcher {
     // The projector and the head holder hear about it without holding up the next batch.
     if (out.items.some((r: Json) => r.status === 'landed')) {
       const notified = Promise.all([
-        kickProjection(merger.env, merger.repo).catch((e) =>
+        kickProjection(merger.env, merger.repo, batchLink).catch((e) =>
           log.warn('projection.kick_failed', { error: e }),
         ),
-        refreshHead(merger.env, merger.repo),
+        refreshHead(merger.env, merger.repo, false, batchLink),
       ]).finally(() => this.#background.delete(notified));
       this.#background.add(notified);
     }
@@ -196,6 +255,15 @@ export class LandBatcher {
 
   #settle(settled: Settled[]) {
     for (const s of settled) {
+      const batch = operationCarrier();
+      if (batch)
+        for (const parent of this.#ticketParents.get(s.ticket) ?? [])
+          log.info('landing.ticket_link', {
+            span_id: batch.span,
+            parent_span_id: parent.span,
+            parent_request_id: parent.requestId,
+          });
+      this.#ticketParents.delete(s.ticket);
       this.#settled.set(s.ticket, s);
       for (const resolve of this.#waiters.get(s.ticket) ?? []) resolve(s);
       this.#waiters.delete(s.ticket);

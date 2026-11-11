@@ -1,11 +1,12 @@
 // A repository's front page: the latest commit, the way to its files, the past month's activity,
 // who wrote it and its README. A repository with no commits yet gets the Files page's first steps.
 import { ChevronRight } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { useNearViewport } from '../../hooks/useNearViewport';
 import { TimeChart } from '../admin/TimeChart';
 import { Avatar, avatarOf } from '../shell/Avatar';
 import { linkTo, type Navigate } from '../shell/useRoute';
+import { contentReady } from '../site/clientPerformance';
 import { BranchPicker, CloneButton, LatestCommit } from './CodeParts';
 import { useListing } from './codeData';
 import { currentApiOrigin } from './connect';
@@ -153,6 +154,9 @@ export function RepoOverview({
     : waiting
       ? {}
       : ordinary;
+  useEffect(() => {
+    if (!waiting && (bootstrap || listing.value || listing.empty || listing.error)) contentReady();
+  }, [waiting, bootstrap, listing.value, listing.empty, listing.error]);
   const files = { view: 'files', repo, path: '', ref: refName } as const;
   if (listing.empty)
     return (

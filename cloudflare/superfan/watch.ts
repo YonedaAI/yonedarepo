@@ -6,7 +6,7 @@
 import { type AnalyticsSource, CloudflareAnalytics, TelemetryError, WINDOW_MS } from './analytics';
 import { dailyCap, probesOn, type SuperfanEnv, type WatchSite, watchSite, wideOn } from './config';
 import { readDelivery } from './delivery';
-import { LEGACY_LATENCY_KEYS, watchHttp } from './http-watch';
+import { RETIRED_LIFETIME_KEYS, watchHttp } from './http-watch';
 import type { Observed, SuperfanLedger } from './ledger';
 import { FlashModel, type ModelClient, ModelError } from './model';
 import { notifyFindings, notifyUrgent } from './notify';
@@ -195,7 +195,7 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
   }
   const evaluated = [
     ...TELEMETRY_REASONS.map((r) => `telemetry:${r}`),
-    ...(env.RESPONSE_LATENCY === 'on' ? LEGACY_LATENCY_KEYS : []),
+    ...(env.RESPONSE_LATENCY === 'on' ? RETIRED_LIFETIME_KEYS : []),
   ];
   const tailLive = tail.events > 0 && !(deps.target instanceof Error);
   if (!site || (!tailLive && !analytics)) {

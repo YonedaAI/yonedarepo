@@ -7,11 +7,10 @@
 // and the page is looked up without the cookie, so a private repository and the app never match.
 // With TRAFFIC_REPORT on, a reader whose session names an account that's ours leaves no point.
 // With VISITORS on, the point also holds a hash that lasts one day (site-visitors.ts).
-import { normalizeHandle } from '../../shared/account';
 import { sessionAccount } from './accounts';
 import { isInternal } from './internal-accounts';
-import { carriedHeaders } from './request-scope';
-import { appHead, siteHead } from './seo-head';
+import { publicPageEvidence } from './page-ping-evidence';
+import { siteHead } from './seo-head';
 import {
   APP_PAGES,
   hasSession,
@@ -51,7 +50,7 @@ async function record(req: Request, env: Env) {
   if (text.length > BODY_LIMIT) return;
   const body = JSON.parse(text) as { path?: unknown; referrer?: unknown };
   if (typeof body?.path !== 'string' || !PATH.test(body.path)) return;
-  const path = await knownPage(body.path, url.origin, address, env);
+  const path = await knownPage(body.path, url.origin, env);
   if (!path || (await isOurs(req, env))) return;
   const hash = visitorsOn(env) ? await visitorHash(req, env) : null;
   const agent = req.headers.get('user-agent') ?? '';
@@ -81,28 +80,12 @@ function write(
   });
 }
 
-/** The page's own address, or null: a site route, Explore, a public repository (from any page
- * inside it) or a profile. Unlike a page request, a ping may ask the platform: it is rate limited
- * and nobody waits for it. */
-async function knownPage(path: string, origin: string, address: string, env: Env) {
+/** The static manifest or recent public page evidence. Missing evidence never causes I/O
+ * to a repository or account authority, and private names never enter a point. */
+async function knownPage(path: string, origin: string, env: Env) {
   const app = APP_PAGES.get(path);
   if (app) return app;
-  const headers = { 'cf-connecting-ip': address, ...carriedHeaders() };
   const site = await siteHead(new Request(`${origin}${path}`), env);
   if (site) return site.canonical ?? null;
-  const parts = path.split('/').filter(Boolean);
-  if (parts.length === 1) return (await isProfile(parts[0], origin, headers, env)) ? path : null;
-  const page = new Request(`${origin}/${parts.slice(0, 2).join('/')}`, { headers });
-  return (await appHead(page, env)).canonical ?? null;
-}
-
-async function isProfile(
-  handle: string,
-  origin: string,
-  headers: Record<string, string>,
-  env: Env,
-) {
-  if (!env.PLATFORM || !normalizeHandle(handle)) return false;
-  const asked = new Request(`${origin}/api/v1/profiles/${handle}`, { headers });
-  return (await env.PLATFORM.fetch(asked)).ok;
+  return publicPageEvidence(path, origin);
 }

@@ -2,17 +2,21 @@
 // per-repository server (`/api/v1/repos/:id/mcp`) and the account server (`/api/v1/mcp`,
 // account-mcp.ts) share this JSON-RPC handling. Authentication is the same credential as
 // the REST API, and every platform tool dispatches to the same operation table.
+
 import tools from '../../backend/crates/yoneda-core/src/platform_tools.json';
 import { RETRY_AFTER_SECONDS, transient } from './durable';
 import { error, readJson, response } from './http';
+import { observeOperation } from './operation-observation';
 import type { Json, RepoContext } from './repo-ops';
 import { forViewer } from './repo-principal-privacy';
 import { operations } from './repo-tools';
+import type { Env } from './types';
 
 const versions = ['2025-06-18', '2025-03-26'];
 
 /** One MCP server: its identity, its tools and how a tool call is answered. */
 export type McpServer = {
+  env?: Env;
   name: string;
   instructions: string;
   tools: Json[];
@@ -64,7 +68,15 @@ export async function serveMcp(req: Request, server: McpServer): Promise<Respons
     try {
       if (!args || typeof args !== 'object' || Array.isArray(args))
         throw new Error('Tool arguments must be an object');
-      const value = await server.call(name, args);
+      const run = () => server.call(name, args);
+      const known = server.tools.some((tool) => tool.name === name);
+      const value = await (server.env
+        ? observeOperation(
+            server.env,
+            { kind: 'request', source: 'mcp', operation: `mcp.${known ? name : 'unknown'}` },
+            run,
+          )
+        : run());
       return reply({
         content: [{ type: 'text', text: JSON.stringify(value) }],
         structuredContent: value,
@@ -98,6 +110,7 @@ export function operation(name: string) {
 export function repoMcp(req: Request, ctx: RepoContext): Promise<Response> {
   return serveMcp(req, {
     name: 'yonedarepo-source',
+    env: ctx.env,
     instructions:
       'Git semantics over an API: read with git_log/git_ls_tree/git_cat_file/git_diff, write with git_commit (server-side, nothing to push), then checks, review and git_land.',
     tools,

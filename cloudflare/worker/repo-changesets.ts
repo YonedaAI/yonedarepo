@@ -5,7 +5,9 @@
 // run in the background, on demand for a read, or twice at once without harm. Main's
 // history keeps the pushed commits: a lone changeset on main's head becomes main as
 // itself, anything else a merge of main and the landed commits (platform_project.rs).
+
 import { log } from './log';
+import { type OperationCarrier, operationCarrier } from './operation-carrier';
 import { dispatchRuns } from './repo-checks';
 import { dispatchDerive } from './repo-derived';
 import { refreshHead } from './repo-head';
@@ -177,8 +179,8 @@ export class ProjectionRunner {
 }
 
 type Projector = {
-  catchUp(repo: string): Promise<number>;
-  kick(repo: string): Promise<void>;
+  catchUp(repo: string, observation?: OperationCarrier): Promise<number>;
+  kick(repo: string, observation?: OperationCarrier): Promise<void>;
 };
 
 /** The repository's projector (one per repository), when the deployment has one. */
@@ -195,14 +197,16 @@ function projector(env: Env, repo: string): Projector | null {
  * needs its Git commit). Concurrent waiters share one projection. */
 export async function awaitProjection(env: Env, repo: string) {
   const shared = projector(env, repo);
-  await timed('project.wait', () => (shared ? shared.catchUp(repo) : projectChangesets(env, repo)));
+  await timed('project.wait', () =>
+    shared ? shared.catchUp(repo, operationCarrier()) : projectChangesets(env, repo),
+  );
 }
 
 /** Starts projecting in the background after changesets landed (without a projector,
  * as locally, the lander projects before it answers). */
-export async function kickProjection(env: Env, repo: string) {
+export async function kickProjection(env: Env, repo: string, observation = operationCarrier()) {
   const shared = projector(env, repo);
-  if (shared) return shared.kick(repo);
+  if (shared) return shared.kick(repo, observation);
   await projectChangesets(env, repo);
 }
 

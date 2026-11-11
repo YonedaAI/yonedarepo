@@ -164,7 +164,7 @@ export async function sendPack(
           await storing.finish();
           logPack('git.pack.end', objects.repo, tally);
           end(controller, band, tally);
-          tally.finish();
+          tally.finish('ok');
         } else {
           const sent = band ? sideBand(1, next.value, band) : next.value;
           storing.add(sent);
@@ -174,13 +174,13 @@ export async function sendPack(
         logPack('git.pack.failed', objects.repo, tally, { code: e?.code, error: e });
         await storing.abort();
         failed(controller, band, e);
-        tally.finish();
+        tally.finish('failed');
       }
     },
     async cancel() {
       // The client went away (or the pack was cut off) before the end.
       logPack('git.pack.cancelled', objects.repo, tally);
-      tally.finish();
+      tally.finish('cancelled');
       await storing.abort();
       await chunks.return(undefined);
     },

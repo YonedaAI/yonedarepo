@@ -1,7 +1,7 @@
 //! `cargo xtask downloads stage|assemble|upload --env dev|prod`: the public downloads the front
 //! Worker serves (cloudflare/worker/downloads.ts has the layout).
 //!
-//! `stage` builds the `yoneda` CLI for each target, packs `yoneda` and `git-remote-yoneda`
+//! `stage` builds the `yoneda` CLI for each target, packs `yoneda`, `git-remote-yoneda` and `yoneda-local`
 //! into `yoneda-<version>-<target>.tar.gz` (a `.zip` of the `.exe` files on Windows), writes
 //! SHA256SUMS, `cli/latest.json` and `cli/LATEST`, zips the Claude Code plugin (plugins/yoneda)
 //! and fills in the public marketplace (plugins/public-marketplace.json) with the zip's address
@@ -24,7 +24,7 @@ pub(crate) const TARGETS: [(&str, &str, bool); 6] = [
     ("windows-x64", "x86_64-pc-windows-gnu", true),
     ("windows-arm64", "aarch64-pc-windows-gnullvm", true),
 ];
-const PROGRAMS: [&str; 2] = ["yoneda", "git-remote-yoneda"];
+const PROGRAMS: [&str; 3] = ["yoneda", "git-remote-yoneda", "yoneda-local"];
 /// Keys that change between releases: uploaded after everything they point at.
 const POINTERS: [&str; 3] = ["cli/latest.json", "claude/marketplace.json", "cli/LATEST"];
 
@@ -132,6 +132,8 @@ fn stage(staged: &Path, site: &str, version: &str, targets: &[&(&str, &str, bool
                 "--locked",
                 "-p",
                 "yoneda-cli",
+                "-p",
+                "yoneda-local",
                 "--target",
                 triple,
             ],

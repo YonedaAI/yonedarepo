@@ -26,6 +26,10 @@ impl DurableObject for SourceRepository {
         }
         let body: Value = request.json().await?;
         crate::telemetry::serving(&request);
+        let observation = crate::operation_observation::CommandObservation::from_request(
+            &request,
+            !self.migrated.get(),
+        );
         let store = CloudStore::new(self.state.storage());
         // Schema digests are verified once per instance, not on every request.
         if !self.migrated.get() {
@@ -42,14 +46,14 @@ impl DurableObject for SourceRepository {
             };
             let results: Vec<Value> = commands
                 .into_iter()
-                .map(|command| run(&store, command).unwrap_or_else(|e| failure(&e)))
+                .map(|command| run(&store, command, &observation).unwrap_or_else(|e| failure(&e)))
                 .collect();
             return Response::from_json(&results);
         }
         if !body.is_object() {
             return invalid("Command must be an object");
         }
-        match run(&store, body) {
+        match run(&store, body, &observation) {
             Ok(value) => Response::from_json(&value),
             Err(e) => Response::from_json(&failure(&e)).map(|r| r.with_status(409)),
         }
@@ -57,7 +61,11 @@ impl DurableObject for SourceRepository {
 }
 
 /// `_principal` and `_workspace` come from the authenticating adapter; time is ours.
-fn run(store: &CloudStore, mut command: Value) -> yoneda_core::Result<Value> {
+fn run(
+    store: &CloudStore,
+    mut command: Value,
+    observation: &crate::operation_observation::CommandObservation,
+) -> yoneda_core::Result<Value> {
     if !command.is_object() {
         return Err(yoneda_core::Error::new(
             "INVALID_INPUT",
@@ -65,7 +73,15 @@ fn run(store: &CloudStore, mut command: Value) -> yoneda_core::Result<Value> {
         ));
     }
     command["now"] = json!(Date::now().as_millis() as i64);
-    yoneda_platform::execute_migrated(store, command).inspect_err(crate::telemetry::command_failed)
+    let operation = command
+        .get("op")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown")
+        .to_owned();
+    let result = yoneda_platform::execute_migrated(store, command)
+        .inspect_err(crate::telemetry::command_failed);
+    observation.completed(&operation, result.as_ref().err());
+    result
 }
 
 fn failure(e: &yoneda_core::Error) -> Value {

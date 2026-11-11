@@ -14,10 +14,12 @@
 import { rpcValue } from './durable';
 import { Flights } from './flights';
 import { log, warned } from './log';
+import { type OperationCarrier, operationCarrier } from './operation-carrier';
 import { teamEntries } from './platform-org-access';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { accessOf, fetchHead, withoutTokens } from './repo-head-holder';
+import { headHolder as holder } from './repo-head-rpc';
 import type { TreeEntry } from './repo-objects';
 import { ApiError, caller, type Json, noteWrite, type RepoContext } from './repo-ops';
 import { repoRpcValue } from './repo-rpc';
@@ -40,25 +42,6 @@ const built = new Map<string, string[]>();
 const BUILT = 1024;
 const accesses = new Map<string, Json>();
 const loading = new Flights<Json>();
-
-type Holder = {
-  head(repo: string, minVersion: number, since?: number, access?: string | null): Promise<Json>;
-  access(repo: string): Promise<Json>;
-  refresh(repo: string, access?: boolean): Promise<void>;
-  trees(
-    repo: string,
-    root: string,
-    paths: string[],
-    commit?: string,
-  ): Promise<Record<string, TreeEntry[]>>;
-};
-
-function holder(env: Env, repo: string): Holder | null {
-  const namespace = env.LAND_COMBINERS;
-  if (!namespace) return null;
-  const stub = namespace.get(namespace.idFromName(`${repo}#head`)) as unknown as Partial<Holder>;
-  return typeof stub.head === 'function' ? (stub as Holder) : null;
-}
 
 /** The member entries a session or personal token acts by: its account's and its teams'. */
 function entriesOf(credentials: Json): string[] {
@@ -111,7 +94,13 @@ async function fetchInto(env: Env, repo: string, minVersion: number) {
     }
     const base = heads.get(repo)?.head;
     const { access, ...next } = await repoRpcValue(
-      shared.head(repo, minVersion, base?.version, accesses.get(repo)?.version ?? null),
+      shared.head(
+        repo,
+        minVersion,
+        base?.version,
+        accesses.get(repo)?.version ?? null,
+        operationCarrier(),
+      ),
     );
     if (access) accesses.set(repo, access);
     if (!base || next.overlay_since === null || next.overlay_since === undefined)
@@ -133,7 +122,9 @@ async function accessFor(env: Env, repo: string, head: Json): Promise<Json> {
   if (cached && cached.version === head.access_version) return cached;
   const shared = holder(env, repo);
   const access = await once(`access:${repo}`, async () =>
-    shared ? repoRpcValue(shared.access(repo)) : accessOf(await fetchHead(env, repo)),
+    shared
+      ? repoRpcValue(shared.access(repo, operationCarrier()))
+      : accessOf(await fetchHead(env, repo)),
   );
   accesses.set(repo, access);
   return access;
@@ -192,10 +183,17 @@ function beginFloor(repo: string, paths: string[]) {
 /** Marks the published head stale after a landing, projection or access change. After an
  * access change (`access`) it returns once the holder reloaded from a read that started
  * after the change, so no reader is admitted by the access snapshot that change replaced. */
-export async function refreshHead(env: Env, repo: string, access = false) {
+export async function refreshHead(
+  env: Env,
+  repo: string,
+  access = false,
+  observation: OperationCarrier | undefined = operationCarrier(),
+) {
   noteWrite(repo);
   heads.delete(repo);
-  await holder(env, repo)?.refresh(repo, access).catch(warned('head.refresh_failed', { repo }));
+  await holder(env, repo)
+    ?.refresh(repo, access, observation)
+    .catch(warned('head.refresh_failed', { repo }));
 }
 
 /** After the authority became a tombstone: drops main's published head everywhere before
@@ -212,7 +210,7 @@ export async function dropDeletedHead(env: Env, repo: string) {
 export async function accessEverywhere(env: Env, repo: string) {
   noteWrite(repo);
   heads.delete(repo);
-  await holder(env, repo)?.refresh(repo, true);
+  await holder(env, repo)?.refresh(repo, true, operationCarrier());
   await new Promise((resolve) => setTimeout(resolve, ACCESS_MS));
 }
 
@@ -241,7 +239,7 @@ export async function headTrees(
 ): Promise<Record<string, TreeEntry[]> | null> {
   const shared = holder(env, repo);
   if (!shared) return null;
-  return rpcValue(shared.trees(repo, root, paths, commit)).catch((e) => {
+  return rpcValue(shared.trees(repo, root, paths, commit, operationCarrier())).catch((e) => {
     log.warn('head.trees_failed', { error: e });
     return null;
   });

@@ -1,4 +1,6 @@
 // A directory's README, rendered under its files and on the repository's Overview.
+import { useEffect } from 'react';
+import { readmeReady } from '../site/clientPerformance';
 import { readQuery } from './codeData';
 import { RepoMarkdown } from './RepoMarkdown';
 import { repositoryContentKey } from './repositoryContentScope';
@@ -29,8 +31,11 @@ function ReadmeContent({ repo, ref, path, at, preloaded }: ReadmeProps) {
   const file = useSource<{ encoding: string; content: string }>(
     preloaded ? null : `/repos/${repo}/blob?${readQuery(ref, path, at)}`,
   );
-  if (file.error) return <Failure error={file.error} onRetry={file.reload} />;
   const data = preloaded ?? file.data;
+  useEffect(() => {
+    if (data || file.error) readmeReady(Boolean(file.error));
+  }, [data, file.error]);
+  if (file.error) return <Failure error={file.error} onRetry={file.reload} />;
   if (!data) return <Loading what="README" />;
   if (data.encoding !== 'utf-8') return null;
   return (

@@ -6,6 +6,7 @@ import type { TrafficBucket, TrafficRange } from './site-traffic';
 /** Which optional admin tabs this platform has. */
 export interface AdminReports {
   operations: boolean;
+  measurements?: boolean;
   visitors: boolean;
   agents: boolean;
 }
