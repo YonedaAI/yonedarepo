@@ -174,7 +174,7 @@ export function AdminOperationMetrics() {
         <h2 className="home-label" id="operation-measurements">
           Operation measurements
         </h2>
-        <div className="admin-filters">
+        <div className="admin-filters operation-metrics-filters">
           {select('Service', component, setComponent, {
             '': 'All services',
             front: 'Website',

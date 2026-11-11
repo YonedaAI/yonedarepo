@@ -758,3 +758,18 @@
 .operation-metrics-note {
   max-width: 76ch;
 }
+
+@media (max-width: 600px) {
+  .operation-metrics-filters {
+    display: grid;
+    width: 100%;
+  }
+  .operation-metrics-filters label {
+    display: grid;
+    grid-template-columns: 4rem minmax(0, 1fr);
+  }
+  .operation-metrics-filters select {
+    width: 100%;
+    min-width: 0;
+  }
+}
