@@ -53,11 +53,13 @@ Counted log events stay open for 20 hours after the last one, because some are l
 
 ## Digest alerts
 
+Invocation lifetime is diagnostic telemetry only. It includes I/O, background work and long-lived sessions, so it does not create findings or send emails. Existing lifetime warnings are retired without deleting their history.
+
 | Alert | Means | First check | Way out |
 |---|---|---|---|
 | Calls failing, or errors (`<component> error_rate`, `exceptions`, `error_logs`) | More than 2% of 20+ invocations failed, or errors are piling up | The finding's narrative, then that Worker's Observability | New since the last deploy: roll back |
-| Calls slowed (`<component> p95_wall_ms`) | p95 doubled from its baseline, by 100 ms or more | Observability, the slowest operations | A burst on dev explains most of these |
-| Calls fail more, or are slower, since the deploy (`<component> release_error_rate`, `release_p95_ms`) | With `RELEASE_COMPARE=on`: this release is worse than the one before, in equal windows either side of the deploy. API, website, repository, landing and commit calls only | `GET /deploys` for the two releases, then the finding's `revision`. A burst on dev explains most slowdowns | The release: roll back, or fix forward if it migrated |
+| Page or API responses slowed (`front_worker page_response_p95_ms`, `api_response_p95_ms`) | Response-ready p95 exceeds its measured band in two distinct five-minute windows, each with 100+ successful comparable requests and 24 independent baseline hours | Superfan status and request timing logs; health checks, scanners and marked automation are excluded | Investigate the affected route and upstream calls |
+| Calls fail more since the deploy (`<component> release_error_rate`) | With `RELEASE_COMPARE=on`: the error rate increased in equal windows either side of the deploy | `GET /deploys` for the two releases, then the finding's revision and failure logs | Investigate the release and fix forward or roll back after checking migrations |
 | Calls killed for CPU or memory (`<component> resource_kills`) | Killed for CPU or memory | Observability, `exceededCpu` or `exceededMemory` | Find the repository or job; a large one needs a bound |
 | Repository past 8 GB (`storage storage_8gb`) | A repository's database is past 8 GB | As `storage_9gb` | Plan compaction or a split now |
 | Repository log compaction stalled (`derived_jobs compaction_stalls`) | A hold has stalled a repository's log | `GET /repos/:id/compaction`: `held` says why | `docs/runbook.md`, "A stalled log raises an alarm" |
