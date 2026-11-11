@@ -1,5 +1,6 @@
 // Route known repository IDs directly. Readable names are resolved once by the API,
 // whose unpinned Worker runs near the caller and forwards to the repository authority.
+
 import { authCounterEnv } from './auth-counter';
 import { hinted } from './cell-env';
 import { HOME_COOKIE } from './cell-names';
@@ -15,6 +16,7 @@ import {
 } from './cells';
 import { forwardRequest } from './forward-request';
 import { error, response } from './http';
+import type { OperationCarrier } from './operation-carrier';
 import { GIT_PATH } from './readable-paths';
 import { regionOfRequest } from './region';
 import { regionalDispatch } from './regional-api';
@@ -60,7 +62,9 @@ export async function toCell(req: Request, env: Env, url = new URL(req.url)) {
   return forwardRequest(fetcher, carriedRequest(req));
 }
 
-type NewAccounts = { accountCreated(account: string, details: object): Promise<void> };
+type NewAccounts = {
+  accountCreated(account: string, details: object, observation?: OperationCarrier): Promise<void>;
+};
 
 /** What the front's `PLATFORM` stands for with cells on: a request goes to its cell, a new
  * account's notice to the cell of its region, and anything else to `enam`, as it always did. */
@@ -70,9 +74,9 @@ function routedPlatform(env: Env, platform: Fetcher): Fetcher {
       if (key === 'fetch') return (req: Request) => toCell(req, env);
       const method = (target as unknown as Record<PropertyKey, unknown>)[key];
       if (key === 'accountCreated')
-        return (account: string, details: { region?: string }) => {
+        return (account: string, details: { region?: string }, observation?: OperationCarrier) => {
           const cell = cellFetcher(env, cellOfRegion(env, details?.region)) ?? target;
-          return (cell as unknown as NewAccounts).accountCreated(account, details);
+          return (cell as unknown as NewAccounts).accountCreated(account, details, observation);
         };
       return typeof method === 'function' ? method.bind(target) : method;
     },
