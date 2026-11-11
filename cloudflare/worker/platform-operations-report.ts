@@ -19,6 +19,7 @@ export const opsOn = (env: Env) => env.OPS_REPORT === 'on';
 /** Which optional tabs the admin pages offer here. */
 export const adminReports = (env: Env): AdminReports => ({
   operations: opsOn(env),
+  ...(env.OPERATION_METRICS === 'on' ? { measurements: true } : {}),
   visitors: env.VISITORS === 'on',
   agents: agentReport(env),
 });

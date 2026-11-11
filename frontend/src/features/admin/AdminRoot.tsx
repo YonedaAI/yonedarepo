@@ -85,7 +85,7 @@ export function AdminRoot({
         {section === 'operations' && <AdminOperations />}
         {section === 'infrastructure' && (
           <>
-            <AdminInfrastructure />
+            {signups.data?.reports?.operations && <AdminInfrastructure />}
             <AdminServiceLevels />
           </>
         )}

@@ -44,3 +44,15 @@ it('labels cohorts and estimates while missing latency stays unknown', () => {
   expect(page).toContain('—');
   expect(page).not.toContain('SLO');
 });
+
+it('makes measurements discoverable without enabling unconfigured operations reports', async () => {
+  const { shownSections } = await import('./adminModel');
+  const tabs = shownSections({
+    operations: false,
+    measurements: true,
+    visitors: false,
+    agents: false,
+  });
+  expect(tabs).toContain('infrastructure');
+  expect(tabs).not.toContain('operations');
+});

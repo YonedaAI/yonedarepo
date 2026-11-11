@@ -167,7 +167,7 @@ export function ServiceLevelsView({
   );
 }
 
-export function AdminServiceLevels() {
+function LegacyServiceLevels() {
   const answer = useSource<ServiceLevelsResult>('/admin/service-levels');
   const [who, setWho] = useState<Who>('people');
   if (answer.loading && !answer.data) return <Loading what="service levels" />;
@@ -182,10 +182,14 @@ export function AdminServiceLevels() {
     ) : (
       <p className="source-empty">Service levels aren't measured here.</p>
     );
+  return <ServiceLevelsView report={answer.data.report} who={who} onWho={setWho} />;
+}
+
+export function AdminServiceLevels() {
   return (
     <>
       <AdminOperationMetrics />
-      <ServiceLevelsView report={answer.data.report} who={who} onWho={setWho} />
+      <LegacyServiceLevels />
     </>
   );
 }

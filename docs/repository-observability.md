@@ -63,7 +63,11 @@ two parallel Analytics Engine queries and never queries a repository for this re
 
 Private log ids connect these events. Aggregate dimensions contain no user, repository, file,
 request, navigation, SSH-key or token identity. Payloads and credentials are not recorded.
-Metadata is not authorization. Telemetry emission is best effort: a sink error does not fail the
+Metadata is not authorization. Projector triggers carry it in the existing control write,
+with the unchanged legacy key and one additive key; alarms read both in one existing storage
+call. Older Workers ignore the additional key, and older alarms without it remain attributable
+to a projector alarm with an unknown initiating request. A coalesced alarm records the most
+recent trigger, rather than attributing all its work exclusively to one request. Telemetry emission is best effort: a sink error does not fail the
 operation, and a bounded `operation.metric_lost` warning makes that loss visible in logs.
 Cloudflare log retention and capture coverage still apply; no claim of perfect delivery is made.
 

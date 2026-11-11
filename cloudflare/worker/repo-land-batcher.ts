@@ -32,6 +32,7 @@ type Submission = {
  * their own bindings. `schedule(ms)` asks for one `step()` after `ms`.
  */
 export class LandBatcher {
+  #ticketParents = new Map<number, OperationCarrier[]>();
   #waiters = new Map<number, ((settled: Settled | null) => void)[]>();
   #settled = new Map<number, Settled>();
   #submissions: Submission[] = [];
@@ -48,9 +49,17 @@ export class LandBatcher {
    * Resolves with `ticket`'s outcome once a batch settles it, or null after `timeoutMs`
    * (the caller checks the authority and waits again).
    */
-  async wait(target: Target, ticket: number, timeoutMs: number) {
+  async wait(target: Target, ticket: number, timeoutMs: number, observation?: OperationCarrier) {
+    if (this.env.OPERATION_METRICS === 'on' && observation) {
+      const parents = this.#ticketParents.get(ticket) ?? [];
+      if (!parents.some((p) => p.span === observation.span))
+        this.#ticketParents.set(ticket, [...parents, observation].slice(-20));
+    }
     const done = this.#settled.get(ticket);
-    if (done) return done;
+    if (done) {
+      this.#ticketParents.delete(ticket);
+      return done;
+    }
     this.target = target;
     let deadline: ReturnType<typeof setTimeout> | null = null;
     const settled = new Promise<Settled | null>((resolve) => {
@@ -63,7 +72,10 @@ export class LandBatcher {
           log.warn('land.timed_out', { repo: target.repo, phase: 'wait' });
         const left = waiting.filter((r) => r !== resolve);
         if (left.length) this.#waiters.set(ticket, left);
-        else this.#waiters.delete(ticket);
+        else {
+          this.#waiters.delete(ticket);
+          this.#ticketParents.delete(ticket);
+        }
         resolve(null);
       }, timeoutMs);
     }).finally(() => clearTimeout(deadline));
@@ -164,10 +176,10 @@ export class LandBatcher {
     // The projector and the head holder hear about it without holding up the next batch.
     if (out.items.some((r: Json) => r.status === 'landed')) {
       const notified = Promise.all([
-        kickProjection(merger.env, merger.repo).catch((e) =>
+        kickProjection(merger.env, merger.repo, batchLink).catch((e) =>
           log.warn('projection.kick_failed', { error: e }),
         ),
-        refreshHead(merger.env, merger.repo),
+        refreshHead(merger.env, merger.repo, false, batchLink),
       ]).finally(() => this.#background.delete(notified));
       this.#background.add(notified);
     }
@@ -243,6 +255,15 @@ export class LandBatcher {
 
   #settle(settled: Settled[]) {
     for (const s of settled) {
+      const batch = operationCarrier();
+      if (batch)
+        for (const parent of this.#ticketParents.get(s.ticket) ?? [])
+          log.info('landing.ticket_link', {
+            span_id: batch.span,
+            parent_span_id: parent.span,
+            parent_request_id: parent.requestId,
+          });
+      this.#ticketParents.delete(s.ticket);
       this.#settled.set(s.ticket, s);
       for (const resolve of this.#waiters.get(s.ticket) ?? []) resolve(s);
       this.#waiters.delete(s.ticket);

@@ -44,12 +44,15 @@ export function measuredOutcome(value: unknown, thrown = false): OperationOutcom
   const state = (value as { status?: string } | null)?.status;
   if (state === 'deferred' || state === 'pending') return 'retry';
   if (state === 'conflict' || state === 'refused') return 'refused';
-  if (state === 'failed') return 'failed';
+  if (state === 'cancelled') return 'cancelled';
+  if (state === 'failed')
+    return /^(CONFLICT|STALE_HEAD|REPO_FULL|REPO_SIZE_LIMIT|NOT_READY|FORBIDDEN|UNAUTHORIZED|NOT_FOUND|GONE)$/.test(
+      String((value as { code?: string })?.code ?? ''),
+    )
+      ? 'refused'
+      : 'failed';
   const error = (value as { error?: { code?: string }; code?: string } | null)?.error;
-  const code =
-    error?.code ??
-    (state === 'failed' ? (value as { code?: string })?.code : undefined) ??
-    (thrown ? (value as { code?: string } | null)?.code : undefined);
+  const code = error?.code ?? (thrown ? (value as { code?: string } | null)?.code : undefined);
   if (!error && !thrown) return 'ok';
   if (!code || /^(?:DATABASE|INTERNAL|COMPUTE|OVERLOADED|STORAGE|UNAVAILABLE|TIMEOUT)$/.test(code))
     return 'failed';
@@ -165,6 +168,20 @@ export async function observeOperation<T>(
   const ctx = context(detail, env);
   const started = performance.now();
   return contexts.run(ctx, async () => {
+    if (ctx.selected && detail.kind !== 'request')
+      try {
+        log.info(`${detail.kind}.started`, {
+          operation: detail.operation,
+          source: ctx.source,
+          traffic: ctx.traffic,
+          origin: ctx.origin,
+          span_id: ctx.span,
+          parent_span_id: parent,
+          ...(detail.repo && REPO.test(detail.repo) ? { repo: detail.repo } : {}),
+        });
+      } catch {
+        /* Metadata cannot change execution. */
+      }
     let outcome: OperationOutcome = 'unknown';
     let status: number | undefined;
     try {

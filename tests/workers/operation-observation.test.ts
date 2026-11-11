@@ -91,3 +91,11 @@ it('expires full-capture metadata carried by a delayed job',async()=>{
  await withCarrier(s.env,{requestId:'request-old',span:'parent-old',origin:'POST /api/v1/repos/:repo/commits',source:'rest',traffic:'ordinary',selected:true,fullUntil:'2020-01-01T00:00:00.000Z'},()=>observeOperation(s.env,{kind:'background',operation:'derive'},async()=>true));
  expect(s.points).toHaveLength(1);expect(s.lines).toHaveLength(0);
 });
+
+it('separates refused landing decisions and cancellations from system failures',async()=>{
+ const {measuredOutcome}=await import('../../cloudflare/worker/operation-observation');
+ expect(measuredOutcome({status:'failed',code:'CONFLICT'})).toBe('refused');
+ expect(measuredOutcome({status:'failed',code:'REPO_FULL'})).toBe('refused');
+ expect(measuredOutcome({status:'failed',code:'INTERNAL'})).toBe('failed');
+ expect(measuredOutcome({status:'cancelled'})).toBe('cancelled');
+});

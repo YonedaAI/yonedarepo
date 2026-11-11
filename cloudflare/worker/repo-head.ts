@@ -14,7 +14,7 @@
 import { rpcValue } from './durable';
 import { Flights } from './flights';
 import { log, warned } from './log';
-import { operationCarrier } from './operation-carrier';
+import { type OperationCarrier, operationCarrier } from './operation-carrier';
 import { teamEntries } from './platform-org-access';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
@@ -183,10 +183,17 @@ function beginFloor(repo: string, paths: string[]) {
 /** Marks the published head stale after a landing, projection or access change. After an
  * access change (`access`) it returns once the holder reloaded from a read that started
  * after the change, so no reader is admitted by the access snapshot that change replaced. */
-export async function refreshHead(env: Env, repo: string, access = false) {
+export async function refreshHead(
+  env: Env,
+  repo: string,
+  access = false,
+  observation: OperationCarrier | undefined = operationCarrier(),
+) {
   noteWrite(repo);
   heads.delete(repo);
-  await holder(env, repo)?.refresh(repo, access).catch(warned('head.refresh_failed', { repo }));
+  await holder(env, repo)
+    ?.refresh(repo, access, observation)
+    .catch(warned('head.refresh_failed', { repo }));
 }
 
 /** After the authority became a tombstone: drops main's published head everywhere before
@@ -203,7 +210,7 @@ export async function dropDeletedHead(env: Env, repo: string) {
 export async function accessEverywhere(env: Env, repo: string) {
   noteWrite(repo);
   heads.delete(repo);
-  await holder(env, repo)?.refresh(repo, true);
+  await holder(env, repo)?.refresh(repo, true, operationCarrier());
   await new Promise((resolve) => setTimeout(resolve, ACCESS_MS));
 }
 

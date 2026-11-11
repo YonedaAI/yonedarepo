@@ -39,9 +39,11 @@ export const shownSections = (reports?: AdminReports) =>
       ? reports?.visitors
       : id === 'agents'
         ? reports?.agents
-        : id === 'operations' || id === 'infrastructure'
-          ? reports?.operations
-          : true,
+        : id === 'infrastructure'
+          ? reports?.operations || reports?.measurements
+          : id === 'operations'
+            ? reports?.operations
+            : true,
   );
 
 export type Overview = {

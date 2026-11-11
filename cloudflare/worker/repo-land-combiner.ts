@@ -26,6 +26,18 @@ import { RefsHolder } from './repo-snapshots';
 import { inScope } from './request-scope';
 import type { Env } from './types';
 
+/** Adds trace metadata to the existing write; the legacy projector key stays a string. */
+export function rememberProjection(
+  storage: DurableObjectStorage,
+  env: Env,
+  repo: string,
+  observation?: OperationCarrier,
+) {
+  return env.OPERATION_METRICS === 'on'
+    ? storage.put({ projector: repo, projection_observation: observation ?? null })
+    : storage.put('projector', repo);
+}
+
 export class LandCombiner extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, cellEnv(env));
@@ -52,7 +64,17 @@ export class LandCombiner extends DurableObject<Env> {
         inScope({ env: this.env, source: 'queue' }, async () => {
           do {
             this.#again = false;
-            await this.#batcher.step();
+            await observeOperation(
+              this.env,
+              {
+                kind: 'background',
+                source: 'queue',
+                actor: 'system',
+                operation: 'landing.step',
+                origin: 'landing.queue',
+              },
+              () => this.#batcher.step(),
+            );
           } while (this.#again);
         }),
       )
@@ -65,9 +87,15 @@ export class LandCombiner extends DurableObject<Env> {
   #head = new HeadHolder(this.env, this.ctx);
   #refs = new RefsHolder(this.env, this.ctx);
 
-  async wait(repo: string, ref: string, ticket: number, timeoutMs: number) {
+  async wait(
+    repo: string,
+    ref: string,
+    ticket: number,
+    timeoutMs: number,
+    observation?: OperationCarrier,
+  ) {
     await this.ctx.storage.put('target', { repo, ref });
-    return this.#batcher.wait({ repo, ref }, ticket, timeoutMs);
+    return this.#batcher.wait({ repo, ref }, ticket, timeoutMs, observation);
   }
 
   async submit(
@@ -141,9 +169,17 @@ export class LandCombiner extends DurableObject<Env> {
 
   /** Head role: the head is stale (a landing, projection or access change; after an access
    * change it answers once the held head is dropped and reloaded). */
-  refresh(repo: string, access = false) {
-    this.#refs.forget();
-    return this.#head.refresh(repo, access);
+  refresh(repo: string, access = false, observation?: OperationCarrier) {
+    return withCarrier(this.env, observation, () =>
+      observeOperation(
+        this.env,
+        { kind: 'repository', operation: 'holder.refresh', repo, actor: 'system' },
+        async () => {
+          this.#refs.forget();
+          return this.#head.refresh(repo, access);
+        },
+      ),
+    );
   }
 
   /** REGION_HINT_TEST only: the platform's routes, run here (repo-region-serve.ts). */
@@ -169,7 +205,7 @@ export class LandCombiner extends DurableObject<Env> {
 
   /** Projector role: waits until this repository's changesets are projected. */
   async catchUp(repo: string, observation?: OperationCarrier) {
-    await this.ctx.storage.put('projector', repo);
+    await this.#projectionTrigger(repo, observation);
     return withCarrier(this.env, observation, () =>
       observeOperation(
         this.env,
@@ -180,25 +216,40 @@ export class LandCombiner extends DurableObject<Env> {
   }
 
   /** Projector role: projects in the background (an alarm, so it survives the caller). */
-  async kick(repo: string) {
-    await this.ctx.storage.put('projector', repo);
+  async kick(repo: string, observation?: OperationCarrier) {
+    await this.#projectionTrigger(repo, observation);
     if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now());
   }
 
+  #projectionTrigger(repo: string, observation?: OperationCarrier) {
+    return rememberProjection(this.ctx.storage, this.env, repo, observation);
+  }
+
   async alarm() {
-    const repo = await this.ctx.storage.get<string>('projector');
+    const saved = await this.ctx.storage.get<string | OperationCarrier>([
+      'projector',
+      'projection_observation',
+    ]);
+    const value = saved.get('projector');
+    const repo = typeof value === 'string' ? value : undefined;
+    const carrier = saved.get('projection_observation');
+    const observation = carrier && typeof carrier === 'object' ? carrier : undefined;
     if (repo) {
-      await inScope({ env: this.env, source: 'alarm' }, () =>
-        observeOperation(
-          this.env,
-          {
-            kind: 'background',
-            source: 'alarm',
-            operation: 'projection.alarm',
-            actor: 'system',
-            repo,
-          },
-          () => this.#projection.catchUp(repo),
+      await withCarrier(this.env, observation, () =>
+        inScope(
+          { env: this.env, source: 'alarm', job: { request_id: observation?.requestId } },
+          () =>
+            observeOperation(
+              this.env,
+              {
+                kind: 'background',
+                source: 'alarm',
+                operation: 'projection.alarm',
+                actor: 'system',
+                repo,
+              },
+              () => this.#projection.catchUp(repo),
+            ),
         ),
       );
       return;
