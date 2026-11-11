@@ -126,9 +126,13 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     assert_eq!(vars["TRAFFIC_REPORT"], "on");
     // Sign-ups and repository requests share the approved locality behavior.
     assert_eq!(vars["REGION_SIGNALS"], "on");
-    // Observability O1's two switches stay off until dev has run them.
-    assert_eq!(vars["REQUEST_IDS"], "off");
-    assert_eq!(vars["CLIENT_ERRORS"], "off");
+    // The accepted observability wave includes request and browser diagnostics.
+    assert_eq!(vars["REQUEST_IDS"], "on");
+    assert_eq!(vars["CLIENT_ERRORS"], "on");
+    assert_eq!(vars["CLIENT_PERFORMANCE"], "on");
+    assert_eq!(vars["OPERATION_METRICS"], "on");
+    assert_eq!(vars["OPERATION_COMPONENT"], "front");
+    assert_eq!(vars["OPERATION_DETAIL_EVERY"], "10");
     for switch in [
         "CELLS",
         "AUTOMATIC_LOCALITY",
@@ -142,7 +146,7 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     ] {
         assert_eq!(vars[switch], "on", "{switch}");
     }
-    assert_eq!(vars.as_object().map(|v| v.len()), Some(19));
+    assert_eq!(vars.as_object().map(|v| v.len()), Some(23));
     assert_eq!(
         role(&workers, "superfan").config["vars"]["RESPONSE_LATENCY"],
         "on"

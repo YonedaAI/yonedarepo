@@ -871,6 +871,12 @@ fn prod_has_every_switch_dev_has() {
                 .collect::<Vec<_>>()
         };
         for name in names(&in_dev).into_iter().chain(names(in_prod)) {
+            if name == "OPERATION_DETAIL_EVERY" {
+                // Dev keeps every detail; production returns to 10% after capture expires.
+                assert_eq!(in_dev[&name], "1", "{role}: dev detail capture");
+                assert_eq!(in_prod[&name], "10", "{role}: production detail sampling");
+                continue;
+            }
             let excused = OWN.iter().chain([&DEV_TEST]).any(|(own, _)| *own == name);
             assert!(
                 excused || in_dev[&name] == in_prod[&name],
