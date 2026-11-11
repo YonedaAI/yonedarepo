@@ -16,6 +16,7 @@ import { duration } from '../source-platform/insightsModel';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { useSource } from '../source-platform/useSource';
 import { AdminOperationMetrics } from './AdminOperationMetrics';
+import { TIMING_HELP, TIMING_LABELS } from './adminOperationModel';
 import { figure } from './trafficModel';
 
 type Who = 'people' | 'ours';
@@ -62,7 +63,7 @@ function Figures({ head, rows }: { head: string[]; rows: string[][] }) {
         <thead>
           <tr>
             {head.map((name, i) => (
-              <th key={name} className={i ? 'admin-num' : undefined}>
+              <th key={name} className={i ? 'admin-num' : undefined} title={TIMING_HELP[name]}>
                 {name}
               </th>
             ))}
@@ -91,7 +92,14 @@ function Operations({ rows }: { rows: ServiceRow[] }) {
     return <p className="source-empty">No requests in the last 30 days.</p>;
   return (
     <Figures
-      head={['Operation', 'Requests', 'Failed', 'P50', 'P95', 'P99']}
+      head={[
+        'Operation',
+        'Requests',
+        'Failed',
+        TIMING_LABELS.p50,
+        TIMING_LABELS.p95,
+        TIMING_LABELS.p99,
+      ]}
       rows={rows.map((r) => [
         OPERATION[r.operation],
         figure(r.requests, r.estimated),
@@ -112,7 +120,7 @@ function Outside({ rows }: { rows: ProbeRow[] }) {
         From outside, last 30 days
       </h2>
       <Figures
-        head={['Check', 'Runs', 'Failed', 'P50', 'P95']}
+        head={['Check', 'Runs', 'Failed', TIMING_LABELS.p50, TIMING_LABELS.p95]}
         rows={rows.map((r) => [
           CHECK[r.check] ?? 'Other check',
           figure(r.runs),
