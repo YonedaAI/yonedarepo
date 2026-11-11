@@ -128,7 +128,7 @@ it('execution references require independent closed hours instead of three overl
   expect(invocationSignals('source_repository',snapshot,baselines).find(s=>s.name==='p95_execution_ms')?.anomalous).toBe(false);
   expect(invocationSignals('source_repository',snapshot,{
     'source_repository/p95_wall_ms':{value:100,samples:25,windows:25,spanMs:24*3_600_000,ceiling:150},
-  }).find(s=>s.name==='p95_execution_ms')?.anomalous).toBe(true);
+  }).find(s=>s.name==='p95_execution_ms')?.anomalous).toBe(false);
 });
 
 it('status reads do not manufacture calibration windows',async()=>{
@@ -140,12 +140,28 @@ it('status reads do not manufacture calibration windows',async()=>{
   });
 });
 
-it('keeps a calibrated execution warning separate from an actual failure',()=>{
+it('keeps actual failures actionable when invocation lifetime rises',()=>{
   const snapshot={latencyCalibration:true,tail:{source_repository:{invocations:100,errors:10,exceptions:0,errorLogs:0,p95WallMs:1000}}} as unknown as Snapshot;
   const signals=invocationSignals('source_repository',snapshot,{
     'source_repository/p95_wall_ms':{value:100,samples:25,windows:25,spanMs:24*3_600_000,ceiling:150},
   });
   expect(problems({component:'source_repository',watched:true,anomalous:true,samples:[],signals}).map(p=>p.key).sort()).toEqual([
-    'source_repository:error_rate','source_repository:p95_execution_ms',
+    'source_repository:error_rate',
   ]);
+});
+
+it('retires lifetime findings without resolving failures or losing execution measurements', async () => {
+  const e = testEnv({ RESPONSE_LATENCY:'on' });
+  const ledger = deps(e,{now:at}).ledger;
+  for (const key of ['source_repository:p95_execution_ms', 'front_worker:page_execution_p95_ms', 'source_repository:error_rate'])
+    await ledger.observe({key,component:'source_repository',kind:'anomaly',signals:[],summary:'existing'},at);
+  await seedBaseline(ledger,at);
+  await feedWindow(ledger,at,100,500);
+  await ledger.httpLatency(at);
+  await feedWindow(ledger,at+LATENCY_WINDOW_MS,100,500);
+  await watchHttp(e,ledger,at+LATENCY_WINDOW_MS,'abc123');
+  const keys=(await ledger.findings('open',50)).map(f=>f.dedup_key).sort();
+  expect(keys).toEqual(['front_worker:page_response_p95_ms','source_repository:error_rate']);
+  const execution=(await ledger.httpStatus(at+LATENCY_WINDOW_MS)).series.find(s=>s.traffic==='page'&&s.metric==='execution');
+  expect(execution?.p95_ms).toBeGreaterThan(0);
 });

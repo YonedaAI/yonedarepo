@@ -3,7 +3,7 @@ import type { SuperfanLedger } from './ledger';
 import { notifyFindings } from './notify';
 import { type ComponentReport, observation, problems } from './signals';
 
-export const LEGACY_LATENCY_KEYS = [
+export const RETIRED_LIFETIME_KEYS = [
   'api_worker',
   'source_repository',
   'check_runs',
@@ -12,11 +12,14 @@ export const LEGACY_LATENCY_KEYS = [
   'commit_shards',
   'pack_builder',
   'ssh_gateway',
+  'ssh_maintenance',
   'workspace_authority',
   'cron',
   'front_worker',
   'managed_worker',
-].map((component) => `${component}:p95_wall_ms`);
+].flatMap((component) =>
+  ['p95_wall_ms', 'p95_execution_ms', 'release_p95_ms'].map((signal) => `${component}:${signal}`),
+);
 
 /** Tail-only calibrated check. Existing failure/kill/health alarms remain independent. */
 export async function watchHttp(
@@ -27,10 +30,13 @@ export async function watchHttp(
 ) {
   if (env.RESPONSE_LATENCY !== 'on') return;
   const states = await ledger.httpLatency(now);
-  // Retire the old mixed-workload rule; retain its history as a resolved finding.
-  const evaluated = [...LEGACY_LATENCY_KEYS];
+  // Retire mixed invocation-lifetime rules; retain their history as resolved findings.
+  const evaluated = [...RETIRED_LIFETIME_KEYS];
+  evaluated.push('front_worker:page_execution_p95_ms', 'front_worker:api_execution_p95_ms');
   const present: string[] = [];
   for (const state of states) {
+    // Execution telemetry remains in the ledger; only response-ready latency can alert.
+    if (state.metric === 'execution') continue;
     // No traffic does not prove recovery and cannot resolve an established alert.
     if (state.status !== 'ready') continue;
     const name = `${state.traffic}_${state.metric}_p95_ms`;

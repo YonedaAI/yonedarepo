@@ -1,6 +1,6 @@
 // After a deploy, is the new release worse than the one before it? Each pass compares a window
 // after the deploy with an equal window before it, by minute counters the tail already keeps:
-// error rate, and p95 wall time by the same rules as the baseline drift. The minutes of the rollout
+// error rate, with invocation lifetime retained as diagnostics only. The minutes of the rollout
 // are in neither window, nor are the first minutes after it, when every Durable Object wakes cold.
 // Six hours on the window closes: by then the baselines have the release. A closed or thin window
 // reports no number, so it can end an open finding, and never reads as worse. Off unless
@@ -11,7 +11,6 @@ import { tailWindow } from './ledger-tail';
 import {
   type ComponentReport,
   DRIFT_FACTOR,
-  DRIFT_FLOOR_MS,
   MAX_ERROR_RATE,
   MIN_INVOCATIONS,
   report,
@@ -100,12 +99,8 @@ function signals(after?: TailStats, before?: TailStats): Signal[] {
       name: LATENCY,
       value: slow,
       unit: 'ms',
-      anomalous:
-        slow !== null &&
-        usual !== null &&
-        slow > usual * DRIFT_FACTOR &&
-        slow - usual >= DRIFT_FLOOR_MS,
-      rule: `> ${DRIFT_FACTOR}x the release before (+${DRIFT_FLOOR_MS} ms)`,
+      anomalous: false,
+      rule: 'Diagnostic only: invocation lifetime is not response-ready latency',
       ...(usual === null ? {} : { baseline: usual }),
     },
   ];

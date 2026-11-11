@@ -135,7 +135,7 @@ describe('superfan watch pass', () => {
     expect(await d.ledger.reserve(start + 24 * HOUR, 500_000, 1_000_000)).toBeTypeOf('string');
   });
 
-  it('flags p95 drift only after a quiet baseline exists', async () => {
+  it('keeps invocation lifetime diagnostic-only after a quiet baseline exists', async () => {
     const clock = { now: start };
     const e = testEnv();
     fakeUpstreams(analytics());
@@ -151,10 +151,8 @@ describe('superfan watch pass', () => {
     }
     clock.now += HOUR;
     await feed(d.ledger, hour(recent(clock.now), slow), clock.now);
-    expect(await runWatch(e, d)).toMatchObject({ anomalies: 1, modelCalls: 1 });
-    const [finding] = await d.ledger.findings('open', 1);
-    expect(finding.dedup_key).toBe('source_repository:p95_wall_ms');
-    expect(finding.summary).toContain('baseline 85ms');
+    expect(await runWatch(e, d)).toMatchObject({ anomalies: 0, modelCalls: 0 });
+    expect(await d.ledger.findings('open', 10)).toEqual([]);
   });
 
   it('counts push retries from platform logs', async () => {

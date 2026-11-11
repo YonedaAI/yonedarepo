@@ -52,17 +52,11 @@ describe('comparing releases', () => {
     expect(text).toContain('100% of calls fail, against 0% before it.');
   });
 
-  it('files a finding when a release is twice as slow', async () => {
+  it('does not file a release incident for invocation lifetime alone', async () => {
     const e = on();
     const d = await scenario({ source_repository: { wallMs: 900 } }, e);
-    await runWatch(e, d);
-    expect(await keys(d)).toContain('source_repository:release_p95_ms');
-    const found = (await d.ledger.findings('open', 20)).find(
-      (f) => f.dedup_key === 'source_repository:release_p95_ms',
-    );
-    expect(renderNotice({ env: 'dev', site: '', api: '' }, found ? [found] : []).text).toMatch(
-      /The slowest calls take [\d,.]+ (ms|s), against [\d,.]+ ms before it\./,
-    );
+    expect(await runWatch(e, d)).toMatchObject({ anomalies: 0, modelCalls: 0 });
+    expect(await keys(d)).toEqual([]);
   });
 
   it('says nothing about a release like the one before', async () => {
