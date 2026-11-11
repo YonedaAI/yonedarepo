@@ -180,7 +180,7 @@ export class ProjectionRunner {
 
 type Projector = {
   catchUp(repo: string, observation?: OperationCarrier): Promise<number>;
-  kick(repo: string): Promise<void>;
+  kick(repo: string, observation?: OperationCarrier): Promise<void>;
 };
 
 /** The repository's projector (one per repository), when the deployment has one. */
@@ -204,9 +204,9 @@ export async function awaitProjection(env: Env, repo: string) {
 
 /** Starts projecting in the background after changesets landed (without a projector,
  * as locally, the lander projects before it answers). */
-export async function kickProjection(env: Env, repo: string) {
+export async function kickProjection(env: Env, repo: string, observation = operationCarrier()) {
   const shared = projector(env, repo);
-  if (shared) return shared.kick(repo);
+  if (shared) return shared.kick(repo, observation);
   await projectChangesets(env, repo);
 }
 

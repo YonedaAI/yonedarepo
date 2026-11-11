@@ -2,7 +2,7 @@
 import type { OperationSource, OperationTraffic } from '../../shared/operation-metrics';
 import { capturePolicy, type ObservationSettings } from './operation-context';
 import { type OperationLink, operationLinks } from './operation-links';
-import { currentScope, inScope, requestId } from './request-scope';
+import { currentScope, ensureScope, inScope, requestId } from './request-scope';
 import type { Env } from './types';
 
 export type OperationCarrier = {
@@ -64,7 +64,7 @@ export function withCarrier<T>(
     !ID.test(carrier.requestId ?? '') ||
     !/^[A-Za-z0-9_:/ .-]{1,128}$/.test(carrier.origin)
   )
-    return run();
+    return ensureScope({ env }, run);
   const link: OperationLink = {
     span: carrier.span,
     origin: carrier.origin,

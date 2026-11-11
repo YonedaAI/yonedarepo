@@ -13,7 +13,7 @@ type Holder = {
     observation?: OperationCarrier,
   ): Promise<Json>;
   access(repo: string, observation?: OperationCarrier): Promise<Json>;
-  refresh(repo: string, access?: boolean): Promise<void>;
+  refresh(repo: string, access?: boolean, observation?: OperationCarrier): Promise<void>;
   trees(
     repo: string,
     root: string,
