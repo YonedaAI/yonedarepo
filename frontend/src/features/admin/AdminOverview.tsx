@@ -1,7 +1,9 @@
 // Admin overview: account, activity and repository totals, the Flight log's confirmed subscribers
 // where NEWSLETTER is on, sign-ups per day for 30 days, and the revenue view where ADMIN_BILLING
 // is on.
+import { useEffect } from 'react';
 import type { Navigate } from '../shell/useRoute';
+import { contentReady } from '../site/clientPerformance';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { useReadSource } from '../source-platform/useReadSource';
 import { AdminRevenueSection } from './AdminRevenue';
@@ -11,6 +13,9 @@ import { dayBars } from './trafficModel';
 
 export function AdminOverview({ navigate }: { navigate: Navigate }) {
   const overview = useReadSource<Overview>('/admin/overview');
+  useEffect(() => {
+    if (!overview.loading) contentReady();
+  }, [overview.loading]);
   if (overview.loading && !overview.data) return <Loading what="the overview" />;
   if (overview.error || !overview.data)
     return <Failure error={overview.error ?? ''} what="the overview" onRetry={overview.reload} />;

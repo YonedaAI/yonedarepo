@@ -1,8 +1,11 @@
 // Source platform operations shared by the HTTP API and MCP. Each takes plain arguments
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
+
 import { auditOn } from './account-audit';
+import { cellOfRepo } from './cells';
 import { durableJson, notingFull, storageGuard } from './durable';
+import { credentialActor, observeOperation } from './operation-observation';
 import { type HoldAnswer, holdSwitch, verifiedHold } from './platform-legal-hold';
 import type { OrgAccess } from './platform-org-access';
 import { noteWriter } from './platform-write-origin';
@@ -106,10 +109,22 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
       ...archiveSwitches(env),
     };
   };
-  const once = async (command: Json, hold?: HoldAnswer) => {
+  const once = async (command: Json, hold?: HoldAnswer, attempt = 1) => {
     const body = JSON.stringify({ ...sign(command), ...(hold && { _hold: hold }) });
     const value = await timed(`do.${command.op}`, () =>
-      notingFull(repo, command.op, durableJson<Json>(stub, 'https://source-repository/', body)),
+      observeOperation(
+        env,
+        {
+          kind: 'repository',
+          operation: command.op,
+          repo,
+          authorityRegion: cellOfRepo(repo),
+          actor: credentialActor(auth),
+          attempt,
+        },
+        () =>
+          notingFull(repo, command.op, durableJson<Json>(stub, 'https://source-repository/', body)),
+      ),
     ).finally(() => {
       // Counted when it settles (it may have committed even if its answer was lost).
       if (!KEEPS_REFS.has(command.op)) noteWrite(repo);
@@ -128,7 +143,7 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
     let hold: HoldAnswer | undefined;
     for (let attempt = 0; ; attempt++) {
       try {
-        return await once(sent, hold);
+        return await once(sent, hold, attempt + 1);
       } catch (e) {
         if (e instanceof ApiError && e.code === 'HOLD_UNCHECKED' && !hold) {
           hold = await verifiedHold(env, e.message, repo);
@@ -160,7 +175,9 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
 export async function batch(env: Env, repo: string, commands: Json[]): Promise<Json[]> {
   const stub = () => env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
   const answers = await timed(`do.${commands.map((c) => c.op).join('+')}`, () =>
-    durableJson<Json[]>(stub, 'https://source-repository/batch', JSON.stringify(commands)),
+    observeOperation(env, { kind: 'repository', operation: 'batch', repo }, () =>
+      durableJson<Json[]>(stub, 'https://source-repository/batch', JSON.stringify(commands)),
+    ),
   ).finally(() => {
     if (commands.some((c) => !KEEPS_REFS.has(c.op))) noteWrite(repo);
   });

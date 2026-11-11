@@ -2,6 +2,7 @@
 // workspace session cookie. The UI holds no authority: every decision is the server's.
 
 import { clearEarlyReads, takeEarlyResponse } from '../../lib/earlyReads';
+import { apiTiming, performanceNavigation } from '../site/clientPerformance';
 import { atLatestLanding, noteLanding } from './landedReads';
 
 export class SourceApiError extends Error {
@@ -76,6 +77,7 @@ export type ApiInit = {
  * SERVER_FAILURE with the platform's reference, never its raw text.
  */
 export async function sourceApi<T = any>(path: string, init: ApiInit = {}): Promise<T> {
+  const navigation = performanceNavigation();
   const base = init.base ?? '/api/v1';
   const method = init.method ?? (init.body === undefined ? 'GET' : 'POST');
   if (method !== 'GET') {
@@ -85,6 +87,7 @@ export async function sourceApi<T = any>(path: string, init: ApiInit = {}): Prom
   const retries = method === 'GET' && !init.once ? RETRY_DELAYS_MS.length : 0;
   const url = method === 'GET' ? atLatestLanding(path) : path;
   for (let attempt = 0; ; attempt++) {
+    const attemptStarted = performance.now();
     let response: Response;
     const early =
       attempt === 0 && method === 'GET'
@@ -100,6 +103,13 @@ export async function sourceApi<T = any>(path: string, init: ApiInit = {}): Prom
           credentials: 'same-origin',
         }));
     } catch (e) {
+      apiTiming(
+        performance.now() - attemptStarted,
+        0,
+        undefined,
+        init.signal?.aborted ? 'cancelled' : 'failed',
+        navigation,
+      );
       early?.release();
       if (init.signal?.aborted || attempt >= retries) {
         if (init.signal?.aborted) throw e;
@@ -116,6 +126,13 @@ export async function sourceApi<T = any>(path: string, init: ApiInit = {}): Prom
       });
       if (init.signal?.aborted) throw init.signal.reason;
     } finally {
+      apiTiming(
+        performance.now() - attemptStarted,
+        response.status,
+        response.headers.get('x-request-id') ?? undefined,
+        init.signal?.aborted ? 'cancelled' : undefined,
+        navigation,
+      );
       early?.release();
     }
     if (response.ok) {

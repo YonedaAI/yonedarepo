@@ -2,6 +2,7 @@
 // midway, and the clone pack the store holds (repo-pack-cache), streamed as it is or copied
 // into the store while a built one streams.
 
+import type { OperationOutcome } from '../../shared/operation-metrics';
 import { deferrer } from './background';
 import { log } from './log';
 import { ReadStats } from './repo-bundles';
@@ -53,14 +54,17 @@ export function sendStored(
   };
   (async () => {
     await write(head);
+    stats?.firstByte();
     await stored.body.pipeTo(writable, { preventClose: true });
     stats?.streamed(stored.size);
     if (stats?.report) await write(sideBand(2, stats.line(), band));
     await write(new TextEncoder().encode('0000'));
     await writable.close();
-  })()
-    .catch((e) => writable.abort(e).catch(() => {}))
-    .finally(() => stats?.finish());
+    stats?.finish('ok');
+  })().catch((e) => {
+    stats?.finish('failed');
+    return writable.abort(e).catch(() => {});
+  });
   return new Response(readable, { headers: RESULT });
 }
 
@@ -169,8 +173,20 @@ export class PackStats {
     });
   }
 
-  finish() {
+  outcome: OperationOutcome = 'unknown';
+  firstByteMs?: number;
+  private finished = false;
+  finish(outcome: OperationOutcome = 'unknown') {
+    if (this.finished) return;
+    this.finished = true;
+    this.outcome = outcome;
     this.settle?.();
+  }
+  get elapsedMs() {
+    return performance.now() - this.started;
+  }
+  firstByte() {
+    this.firstByteMs ??= this.elapsedMs;
   }
 
   /** Pack bytes sent so far. */
@@ -180,11 +196,13 @@ export class PackStats {
 
   /** Counts bytes of a stored pack streamed as they are. */
   streamed(bytes: number) {
+    this.firstByte();
     this.bytes += bytes;
   }
 
   /** Counts a pack entry (REF_DELTA entries are type 7). */
   sent(entry: Uint8Array) {
+    this.firstByte();
     this.entries++;
     this.bytes += entry.length;
     if (((entry[0] >> 4) & 7) === 7) this.deltas++;

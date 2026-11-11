@@ -3,7 +3,6 @@
 # `cargo xtask health lines --update`. Never add an entry or raise a count.
 [files]
 "backend/crates/yoneda-cli/src/agent_hook.rs" = 382
-"backend/crates/yoneda-cli/src/command.rs" = 326
 "backend/crates/yoneda-core/src/git_object/pack_walk.rs" = 304
 "backend/crates/yoneda-pack-builder/src/git.rs" = 360
 "backend/crates/yoneda-platform/src/platform_git_receive.rs" = 328

@@ -2,7 +2,9 @@
 // an ordinary API client of the platform. Its public hostname takes only signed webhooks and
 // /health and Stripe's signed billing webhook (/stripe/webhook); the browser API is served to the front Worker's service binding on the site's own
 // origin. The platform itself never runs, schedules or knows about agents.
+
 import { log, served } from '../worker/log';
+import { observeRequest } from '../worker/operation-observation';
 import { inScope, withTimings } from '../worker/request-scope';
 import { adminBilling, adminPlatform } from './admin-billing';
 import { ApiRefusal, managedApi, workspaceName } from './api';
@@ -145,7 +147,9 @@ export async function managedFetch(req: Request, env: ManagedEnv): Promise<Respo
 
 export default {
   fetch: (req, env, ctx) =>
-    served({ env, req, waitUntil: (work) => ctx.waitUntil(work) }, () => managedFetch(req, env)),
+    served({ env, req, waitUntil: (work) => ctx.waitUntil(work) }, () =>
+      observeRequest(env, req, () => managedFetch(req, env)),
+    ),
   async queue(batch, env) {
     await inScope({ env }, () => consume(batch, env));
   },

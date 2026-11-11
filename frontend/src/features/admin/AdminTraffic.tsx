@@ -3,13 +3,14 @@
 // with the period before, each class over time, platform use by client kind and Cloudflare Web
 // Analytics beside our own count, then the top pages, referrers and countries of the class the
 // filter picks (Humans first), campaigns and sign-ups by source.
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   SiteTrafficResult,
   TrafficClass,
   TrafficCount,
   TrafficRange,
 } from '../../../../shared/site-traffic';
+import { contentReady } from '../site/clientPerformance';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { useReadSource } from '../source-platform/useReadSource';
 import { AdminLandings } from './AdminLandings';
@@ -108,6 +109,9 @@ export function AdminTraffic() {
   const [range, setRange] = useState<TrafficRange>('7d');
   const [who, setWho] = useState<TrafficClass>('humans');
   const report = useReadSource<SiteTrafficResult>(`/admin/traffic?range=${range}&class=${who}`);
+  useEffect(() => {
+    if (!report.loading) contentReady();
+  }, [report.loading]);
   // What's offered comes with the first answer, and stays while another range loads.
   const offered = useRef<TrafficRange[]>([]);
   if (report.data?.ok) offered.current = report.data.traffic.ranges;

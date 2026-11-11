@@ -4,6 +4,7 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { frontFetch } from './front-routes';
 import { served } from './log';
+import { observeRequest } from './operation-observation';
 import { responseTimed } from './response-timing';
 import type { Env } from './types';
 
@@ -11,7 +12,7 @@ export class FrontEntrypoint extends WorkerEntrypoint<Env> {
   async fetch(req: Request): Promise<Response> {
     const waitUntil = (work: Promise<unknown>) => this.ctx.waitUntil(work);
     return served({ env: this.env, req, waitUntil }, () =>
-      responseTimed(this.env, () => frontFetch(req, this.env)),
+      observeRequest(this.env, req, () => responseTimed(this.env, () => frontFetch(req, this.env))),
     );
   }
 }

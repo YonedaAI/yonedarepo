@@ -3,6 +3,7 @@
 // it, switching automatic top-up on or off, Stripe's webhooks (a saved card, a top-up's
 // outcome), and the automatic top-up a low balance asks for (queued, charged off-session with
 // one idempotency key per top-up).
+
 import {
   AUTO_TOP_UP,
   type BillingState,
@@ -12,6 +13,7 @@ import {
 import { operatorEvent } from './billing-events';
 import { type ManagedEnv, promoMicrousd, type QueueMessage } from './config';
 import { ledgerStub, type Paused } from './ledger';
+import { enqueueManaged } from './queue-observation';
 import {
   cardOf,
   chargeOffSession,
@@ -127,7 +129,7 @@ export const resumeAll = async (env: ManagedEnv, resume: Paused[]) => {
 
 /** Queues the top-up a charge asked for (`key` from the ledger), if any. */
 export async function requestTopUp(env: ManagedEnv, account: string, key: string | null) {
-  if (key) await env.RUNS.send({ kind: 'topup', account, key });
+  if (key) await enqueueManaged(env, { kind: 'topup', account, key });
 }
 
 /** The queued top-up: charged to the saved card (a retry reuses its idempotency key), then

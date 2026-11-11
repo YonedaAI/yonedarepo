@@ -7,12 +7,15 @@ import {
   type ManagedAgentId,
   type ModelProvider,
 } from '../../shared/managed-agents';
+import type { ObservationSettings } from '../worker/operation-context';
 import type { HarnessContainer } from './harness';
 import type { CreditLedger } from './ledger';
 import type { RepoAgents } from './repo-agents';
 import type { WorkspaceAgents } from './workspace-agents';
 
-export interface ManagedEnv {
+export interface ManagedEnv extends ObservationSettings {
+  SITE_EVENTS?: AnalyticsEngineDataset;
+  API_REGION?: string;
   /** The deployed commit, set by `cargo xtask deploy`; /health reports it. */
   BUILD_REVISION?: string;
   /** Overlap list state/credit after fresh owner proof while discovery completes. */
@@ -69,6 +72,7 @@ export interface ManagedEnv {
 
 /** A Workflow instance's input: one agent reviewing one change head. */
 export interface RunParams {
+  observation?: import('../worker/operation-carrier').OperationCarrier;
   repo: string;
   account: string;
   agent: ManagedAgentId;
@@ -78,7 +82,7 @@ export interface RunParams {
   head: string;
 }
 
-export type QueueMessage =
+export type QueueMessage = (
   | {
       kind: 'event';
       repo: string;
@@ -103,7 +107,8 @@ export type QueueMessage =
   | { kind: 'reconcile-all' }
   | { kind: 'reconcile'; account: string }
   /** Push every day of an account's ledger to the revenue rollup again. */
-  | { kind: 'rollup'; account: string };
+  | { kind: 'rollup'; account: string }
+) & { observation?: import('../worker/operation-carrier').OperationCarrier; queued_at?: number };
 
 /** Why a run did nothing. A run stopped for automation_paused starts again on the resume. */
 export const notReviewed = (reason: string) => `Not reviewed: ${reason}`;

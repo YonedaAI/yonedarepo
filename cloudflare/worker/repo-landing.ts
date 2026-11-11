@@ -7,6 +7,7 @@
 
 import { deferred } from './background';
 import { rpcValue } from './durable';
+import { type OperationCarrier, operationCarrier } from './operation-carrier';
 import { awaitProjection, type LandMode, landMode } from './repo-changesets';
 import { forgetHead } from './repo-head';
 import { pollLanding } from './repo-land-poll';
@@ -149,8 +150,20 @@ async function landOn(
 }
 
 type Combiner = {
-  wait(repo: string, ref: string, ticket: number, timeoutMs: number): Promise<Json | null>;
-  submit(repo: string, ref: string, item: Json, timeoutMs: number): Promise<Json | null>;
+  wait(
+    repo: string,
+    ref: string,
+    ticket: number,
+    timeoutMs: number,
+    observation?: OperationCarrier,
+  ): Promise<Json | null>;
+  submit(
+    repo: string,
+    ref: string,
+    item: Json,
+    timeoutMs: number,
+    observation?: OperationCarrier,
+  ): Promise<Json | null>;
 };
 
 /**
@@ -167,7 +180,13 @@ async function landSubmitted(ctx: RepoContext, ref: string, sha: string, own: Js
   while (Date.now() < deadline) {
     const out = await timed('land.submit', () =>
       rpcValue(
-        combiner.submit(ctx.repo, ref, item, Math.min(WAIT_ROUND_MS, deadline - Date.now())),
+        combiner.submit(
+          ctx.repo,
+          ref,
+          item,
+          Math.min(WAIT_ROUND_MS, deadline - Date.now()),
+          operationCarrier(),
+        ),
       ),
     ).catch((e) => {
       if (e instanceof ApiError) throw e;
@@ -230,7 +249,13 @@ async function awaitTicket(
       while (Date.now() < deadline) {
         const status = await timed('land.wait', () =>
           rpcValue(
-            combiner.wait(ctx.repo, ref, ticket, Math.min(WAIT_ROUND_MS, deadline - Date.now())),
+            combiner.wait(
+              ctx.repo,
+              ref,
+              ticket,
+              Math.min(WAIT_ROUND_MS, deadline - Date.now()),
+              operationCarrier(),
+            ),
           ),
         );
         if (status) return settled(status);

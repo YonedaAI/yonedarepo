@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { clearEarlyReads } from '../../lib/earlyReads';
 import { isEmailLink } from '../account-settings/emailLinkRoute';
+import { navigationStarted } from '../site/clientPerformance';
 import type { NavigationOverview } from '../source-platform/overviewBootstrap';
 import {
   formatSourceRoute,
@@ -28,6 +29,7 @@ export function useRoute(): [SourceRoute, Navigate] {
   useEffect(() => {
     const sync = () => {
       clearEarlyReads();
+      navigationStarted(window.location.pathname);
       setRoute(current());
     };
     window.addEventListener('popstate', sync);
@@ -52,6 +54,7 @@ export function useRoute(): [SourceRoute, Navigate] {
       window.history.pushState(null, '', url);
       window.scrollTo({ top: 0 });
     }
+    navigationStarted(window.location.pathname);
     setRoute(next);
   }, []);
   return [route, navigate];

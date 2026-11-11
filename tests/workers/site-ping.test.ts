@@ -4,6 +4,7 @@
 import { env } from 'cloudflare:workers';
 import { expect, it, vi } from 'vitest';
 import { encodeAccountIdentifier } from '../../shared/account';
+import { rememberPublicPage } from '../../cloudflare/worker/page-ping-evidence';
 import { frontFetch } from '../../cloudflare/worker/front-routes';
 import { forgetInternalAccounts } from '../../cloudflare/worker/internal-accounts';
 import type { Env } from '../../cloudflare/worker/types';
@@ -32,6 +33,7 @@ const platform = () =>
     return Response.json({ error: { code: 'NOT_FOUND' } }, { status: 404 });
   });
 function site(extra: Partial<Env> = {}) {
+  rememberPublicPage('/alice/compiler',ORIGIN);rememberPublicPage('/alice',ORIGIN);
   const points: AnalyticsEngineDataPoint[] = [];
   const limit = vi.fn(async (_: { key: string }) => ({ success: true }));
   const fetch = platform();
@@ -125,11 +127,11 @@ it('finds real pages behind any address: an inside page, a public repository and
   expect(JSON.stringify(points)).not.toContain('secret');
 });
 
-it('carries the visitor address to the platform, so anonymous limits stay theirs', async () => {
-  const { using, fetch } = site();
-  await frontFetch(ping({ path: '/alice/compiler' }), using);
-  expect(fetch.mock.calls[0][0].headers.get('cf-connecting-ip')).toBe('203.0.113.77');
-  expect(fetch.mock.calls[0][0].headers.has('cookie')).toBe(false);
+it('uses recent public-page evidence without another platform request', async () => {
+  const {using,fetch,points}=site();
+  await frontFetch(ping({path:'/alice/compiler'}),using);
+  expect(fetch).not.toHaveBeenCalled();
+  expect(points).toHaveLength(1);
 });
 
 it('keeps only a referring host that is a host and not this site', async () => {
@@ -249,4 +251,10 @@ it('asks nothing about a signed-in reader with the switch off', async () => {
   await frontFetch(ping({ path: '/pricing' }, { ...browser, cookie }), using);
   expect(points).toHaveLength(1);
   expect(internalAccounts).not.toHaveBeenCalled();
+});
+
+it('never resolves a repository to validate a visit ping', async () => {
+  const {using,fetch}=site();
+  await frontFetch(ping({path:'/alice/compiler'}),using);
+  expect(fetch).not.toHaveBeenCalled();
 });
