@@ -18,6 +18,7 @@ const SECTIONS = [
   ['organizations', 'Organizations'],
   ['repository', 'Repository'],
   ['declared reads', 'Declared reads'],
+  ['local repository', 'Local repository'],
   ['offline checkouts', 'Offline checkouts'],
   ['--json', 'JSON output'],
   ['Git:', 'With plain Git'],
