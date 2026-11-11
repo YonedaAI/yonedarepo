@@ -4,39 +4,18 @@ import { contentReady } from '../site/clientPerformance';
 import { duration } from '../source-platform/insightsModel';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { useSource } from '../source-platform/useSource';
+import {
+  OPERATION_KIND as KIND,
+  nextOperationSort,
+  OPERATION_COLUMNS,
+  type OperationSort,
+  OPERATION_SOURCE as SOURCE,
+  sortOperationRows,
+  TIMING_HELP,
+  OPERATION_TRAFFIC as TRAFFIC,
+} from './adminOperationModel';
 import { figure } from './trafficModel';
 
-const SOURCE: Record<string, string> = {
-  web: 'Website',
-  rest: 'API',
-  mcp: 'MCP',
-  git_https: 'Git HTTPS',
-  git_ssh: 'Git SSH',
-  queue: 'Queue',
-  cron: 'Scheduled',
-  workflow: 'Workflow',
-  alarm: 'Alarm',
-  monitor: 'Health check',
-  unknown: 'Unknown',
-};
-const KIND: Record<string, string> = {
-  request: 'Requests',
-  repository: 'Repository commands',
-  background: 'Background work',
-  browser: 'Browser reports',
-  transfer: 'Git transfers',
-};
-const TRAFFIC: Record<string, string> = {
-  ordinary: 'Unmarked',
-  marked_automation: 'Our tools',
-  crawler_claimed: 'Crawler claim',
-  agent_claimed: 'Agent claim',
-  automation_claimed: 'Automation claim',
-  health: 'Health check',
-  scanner: 'Scanner',
-  telemetry: 'Telemetry',
-  unknown: 'Unknown',
-};
 const ms = (n: number | null) => (n === null ? '—' : duration(n));
 
 export function OperationMetricsView({
@@ -46,6 +25,7 @@ export function OperationMetricsView({
   report: OperationReport;
   onRetry?: () => void;
 }) {
+  const [order, setOrder] = useState<OperationSort>({ key: 'requests', direction: 'desc' });
   if (report.status === 'off')
     return <p className="source-empty">Operation measurements are off.</p>;
   if (report.status === 'unavailable')
@@ -69,29 +49,45 @@ export function OperationMetricsView({
               : 'Timings are measured at the server; browser reports are client reported.'}{' '}
             {report.rows.some((r) => r.estimated) && '≈ marks estimates from sampled data.'}
           </p>
-          <div className="source-table-wrap">
+          <section
+            className="source-table-wrap"
+            aria-label="Measured operations"
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users must be able to scroll the wide table.
+            tabIndex={0}
+          >
             <table className="source-table admin-table">
               <thead>
                 <tr>
-                  {[
-                    'Operation',
-                    'Trigger',
-                    'Traffic',
-                    'Result',
-                    'Count',
-                    'P50',
-                    'P95',
-                    'P99',
-                    'Queue P95',
-                  ].map((h, i) => (
-                    <th key={h} className={i >= 4 ? 'admin-num' : undefined}>
-                      {h}
+                  {OPERATION_COLUMNS.map(({ key, label, number }) => (
+                    <th
+                      key={key}
+                      className={number ? 'admin-num' : undefined}
+                      aria-sort={
+                        order.key === key
+                          ? order.direction === 'asc'
+                            ? 'ascending'
+                            : 'descending'
+                          : 'none'
+                      }
+                    >
+                      <button
+                        type="button"
+                        className="admin-sort"
+                        title={TIMING_HELP[label]}
+                        aria-label={`Sort by ${label.toLowerCase()}`}
+                        onClick={() => setOrder((current) => nextOperationSort(current, key))}
+                      >
+                        {label}
+                        <span aria-hidden="true">
+                          {order.key === key ? (order.direction === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
+                        </span>
+                      </button>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {report.rows.map((r) => (
+                {sortOperationRows(report.rows, order).map((r) => (
                   <tr
                     key={[
                       r.component,
@@ -127,7 +123,7 @@ export function OperationMetricsView({
                 ))}
               </tbody>
             </table>
-          </div>
+          </section>
         </>
       )}
     </>
@@ -170,7 +166,7 @@ export function AdminOperationMetrics() {
   );
   return (
     <section className="home-section" aria-labelledby="operation-measurements">
-      <div className="admin-traffic-row">
+      <div className="operation-metrics-header">
         <h2 className="home-label" id="operation-measurements">
           Operation measurements
         </h2>

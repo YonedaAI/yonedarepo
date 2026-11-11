@@ -757,8 +757,16 @@
   field-sizing: content;
 }
 
+.operation-metrics-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
 .operation-metrics-note {
   max-width: 76ch;
+  margin: 0;
 }
 
 @media (max-width: 600px) {
