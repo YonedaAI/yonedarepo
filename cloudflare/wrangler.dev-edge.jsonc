@@ -1,7 +1,6 @@
 // Generated from infra/envs/dev.json by `cargo xtask infra up`; edit the spec, not this file.
 // Dev edge Worker (worker/edge-index.ts, docs/global-scale-plan.md, cells as built): unpinned, so it runs where a request arrives, and it passes every request to the cell it belongs in over a service binding.
 // It holds no data. WORKSPACES is read only to find a readable name's repository. On edge.dev.yonedarepo.com until it has passed the kit there; api.dev.yonedarepo.com moves to it last (R10).
-// Operation and browser measurements observe existing work only (docs/repository-observability.md). OPERATION_FULL_UNTIL is an explicit UTC capture expiry; normal production detail is 1 in 10, dev retains full detail. No repository lookup validates a beacon.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -80,11 +79,6 @@
   "vars": {
     "AUTOMATIC_LOCALITY": "on",
     "CELLS": "on",
-    "CLIENT_ERRORS": "on",
-    "CLIENT_PERFORMANCE": "on",
-    "OPERATION_COMPONENT": "front",
-    "OPERATION_DETAIL_EVERY": "1",
-    "OPERATION_METRICS": "on",
     "REGIONAL_API": "on",
     "REQUEST_IDS": "on"
   },

@@ -98,3 +98,12 @@ describe('the Workers', () => {
     expect(answer.status).toBe(404);
   });
 });
+
+it('carries attribution through the regional account-created RPC without changing its target',async()=>{
+  const seen:unknown[][]=[];
+  const target={accountCreated:async(...args:unknown[])=>{seen.push(args);}} as unknown as Fetcher;
+  const routed=frontEnv({...env,CELL_WEUR:target});
+  const observation={requestId:'request-123',span:'parent-123',source:'web',traffic:'ordinary',origin:'POST /api/auth/signup',selected:true};
+  await (routed.PLATFORM as any).accountCreated('alice',{region:'weur'},observation);
+  expect(seen).toEqual([['alice',{region:'weur'},observation]]);
+});

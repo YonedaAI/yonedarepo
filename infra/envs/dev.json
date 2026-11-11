@@ -596,8 +596,7 @@
       "file": "wrangler.dev-edge.jsonc",
       "notes": [
         "Dev edge Worker (worker/edge-index.ts, docs/global-scale-plan.md, cells as built): unpinned, so it runs where a request arrives, and it passes every request to the cell it belongs in over a service binding.",
-        "It holds no data. WORKSPACES is read only to find a readable name's repository. On edge.dev.yonedarepo.com until it has passed the kit there; api.dev.yonedarepo.com moves to it last (R10).",
-        "Operation and browser measurements observe existing work only (docs/repository-observability.md). OPERATION_FULL_UNTIL is an explicit UTC capture expiry; normal production detail is 1 in 10, dev retains full detail. No repository lookup validates a beacon."
+        "It holds no data. WORKSPACES is read only to find a readable name's repository. On edge.dev.yonedarepo.com until it has passed the kit there; api.dev.yonedarepo.com moves to it last (R10)."
       ],
       "health": "yonedarepo-edge",
       "ephemeral": false,
@@ -632,12 +631,7 @@
           "CELLS": "on",
           "AUTOMATIC_LOCALITY": "on",
           "REGIONAL_API": "on",
-          "REQUEST_IDS": "on",
-          "OPERATION_METRICS": "on",
-          "OPERATION_DETAIL_EVERY": "1",
-          "CLIENT_PERFORMANCE": "on",
-          "CLIENT_ERRORS": "on",
-          "OPERATION_COMPONENT": "front"
+          "REQUEST_IDS": "on"
         },
         "services": [
           {
@@ -894,7 +888,8 @@
         "ADMIN_ACCOUNTS: the platform Worker's operator list, repeated here for the session answer's is_admin (the admin entry in the sidebar); keep the two equal.",
         "REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.",
         "CLIENT_ERRORS=on: POST /api/client-error logs what browsers report, message and route only, rate limited by AUTH_LIMITER (worker/client-errors.ts). Off, it answers 204 and does nothing.",
-        "Built assets are served where the request arrives, without this Worker: /assets/* and /brand/* are out of run_worker_first. Pages, /api and everything else run it first."
+        "Built assets are served where the request arrives, without this Worker: /assets/* and /brand/* are out of run_worker_first. Pages, /api and everything else run it first.",
+        "Operation and browser measurements observe existing work only (docs/repository-observability.md). OPERATION_FULL_UNTIL is an explicit UTC capture expiry; normal production detail is 1 in 10, dev retains full detail. No repository lookup validates a beacon."
       ],
       "secrets": [
         "OWNER_TOKEN"
@@ -959,8 +954,8 @@
           "PUBLIC_APP_ORIGIN": "{origin}",
           "WEB_ANALYTICS_TOKEN": "70b90cc7e849429fa25cc64897ebfd2b",
           "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
-          "REQUEST_IDS": "off",
-          "CLIENT_ERRORS": "off",
+          "REQUEST_IDS": "on",
+          "CLIENT_ERRORS": "on",
           "CELLS": "on",
           "AUTOMATIC_LOCALITY": "on",
           "GLOBAL_AUTH_LIMITS": "on",
@@ -968,7 +963,11 @@
           "FAST_APP_HEAD": "on",
           "OVERVIEW_MARKDOWN_PRELOAD": "on",
           "EARLY_READS": "on",
-          "REGIONAL_API": "on"
+          "REGIONAL_API": "on",
+          "OPERATION_METRICS": "on",
+          "OPERATION_COMPONENT": "front",
+          "OPERATION_DETAIL_EVERY": "1",
+          "CLIENT_PERFORMANCE": "on"
         },
         "services": [
           {
